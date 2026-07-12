@@ -1,0 +1,12 @@
+[package]
+name = "phoenix"
+version = "0.1.0"
+edition = "2021"
+description = "A format-neutral binary inspection tool for the Phoenix project"
+license = "MIT"
+repository = "https://github.com/kurtheiden/phoenix-studio-vision"
+rust-version = "1.70"
+
+[dependencies]
+sha2 = "0.10"
+
