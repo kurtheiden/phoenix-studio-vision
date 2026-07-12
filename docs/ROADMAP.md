@@ -12,7 +12,13 @@ may change priorities.
 - [x] Reject missing, unreadable, and empty inputs clearly.
 - [x] Add automated tests using synthetic files.
 
-## Milestone 2: research workflow
+## Milestone 2: Inspect the first real Studio Vision project
+
+- [ ] Select a lawfully obtained local project and document its provenance.
+- [ ] Preserve the original file unchanged and record its SHA-256 digest.
+- [ ] Run the format-neutral inspector and record evidence-based observations.
+
+## Milestone 3: research workflow
 
 - [ ] Define a lawful, redistributable fixture policy.
 - [ ] Record observations from independently obtained samples.

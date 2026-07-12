@@ -1,0 +1,7 @@
+# Ignore every local sample and all category-directory contents by default.
+*
+
+# Keep the workflow documentation and blank metadata template in Git.
+!.gitignore
+!README.md
+!sample-notes-template.md
