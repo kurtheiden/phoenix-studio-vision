@@ -18,7 +18,15 @@ may change priorities.
 - [x] Record its size and SHA-256 digest.
 - [x] Record direct observations without interpreting file structures.
 
-## Milestone 3: research workflow
+## Milestone 3: Discovery Inspector — completed
+
+- [x] Scan complete files for printable ASCII strings of at least four bytes.
+- [x] Report string offsets, lengths, and literal values in file order.
+- [x] Summarize string counts, the longest string, the percentage of bytes in
+      reported printable strings, and whole-file Shannon entropy.
+- [x] Cover discovery analysis and existing CLI behavior with automated tests.
+
+## Milestone 4: research workflow
 
 - [ ] Define a lawful, redistributable fixture policy.
 - [ ] Record observations from independently obtained samples.

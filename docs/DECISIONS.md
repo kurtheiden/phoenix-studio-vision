@@ -39,3 +39,22 @@ terms, or the licensing of research fixtures.
 The CLI uses the RustCrypto `sha2` crate rather than maintaining a custom
 cryptographic implementation. Dependency scope will remain deliberately small.
 
+## 2026-07-12: keep discovery inspection streaming and format neutral
+
+**Status:** Accepted
+
+The Discovery Inspector updates its SHA-256 digest, byte-frequency histogram,
+printable-string scanner, and 256-byte preview during the same buffered,
+read-only pass. Printable strings use only bytes from `0x20` through `0x7e`,
+have a minimum length of four bytes, and remain ordered by starting offset.
+Strings may span read-buffer boundaries.
+
+Shannon entropy is calculated directly from the complete file's 256-bin byte
+frequency histogram, avoiding another dependency. The `Bytes in reported
+printable strings` percentage counts only bytes in strings that meet the
+four-byte reporting threshold. If multiple strings share the greatest length,
+the first one in file order is reported as the longest.
+
+These values are byte-level observations only. They do not identify file
+formats or assign semantic meaning to strings or surrounding bytes. Repeated
+block detection remains outside this decision.
