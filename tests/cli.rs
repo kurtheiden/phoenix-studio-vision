@@ -39,9 +39,33 @@ fn inspects_a_binary_file_without_an_extension() {
     assert!(stdout.contains("Longest string: none"));
     assert!(stdout.contains("Bytes in reported printable strings: 0 of 5 (0.00%)"));
     assert!(stdout.contains("Shannon entropy:"));
+    assert!(stdout.contains("Studio Vision identification:"));
+    assert!(stdout.contains("Observation:"));
+    assert!(stdout.contains("Evidence:"));
+    assert!(stdout.contains("Conclusion: Unknown confidence"));
     assert_eq!(
         fs::read(&path).expect("fixture should remain readable"),
         b"abc\0\xff"
+    );
+
+    fs::remove_file(path).expect("fixture should be removed");
+}
+
+#[test]
+fn a_misleading_extension_is_not_identification_evidence() {
+    let path = temporary_path("not-studio-vision.vsn");
+    fs::write(&path, b"synthetic data").expect("fixture should be written");
+
+    let output = run(&[path.as_os_str()]);
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Filename:"));
+    assert!(stdout.contains("not-studio-vision.vsn"));
+    assert!(stdout.contains("Conclusion: Unknown confidence"));
+    assert_eq!(
+        fs::read(&path).expect("fixture should remain readable"),
+        b"synthetic data"
     );
 
     fs::remove_file(path).expect("fixture should be removed");

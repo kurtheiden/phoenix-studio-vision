@@ -28,6 +28,11 @@ may change priorities.
 
 ## Milestone 4: research workflow
 
+- [x] Add conservative, evidence-based Studio Vision identification from
+      classic Mac Finder type and creator metadata.
+- [x] Keep identification independent of filenames and structural parsing.
+- [x] Report observation, evidence, and confidence separately.
+
 - [ ] Define a lawful, redistributable fixture policy.
 - [ ] Record observations from independently obtained samples.
 - [ ] Add comparison-oriented inspection only where evidence supports it.

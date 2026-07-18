@@ -58,3 +58,30 @@ the first one in file order is reported as the longest.
 These values are byte-level observations only. They do not identify file
 formats or assign semantic meaning to strings or surrounding bytes. Repeated
 block detection remains outside this decision.
+
+## 2026-07-17: identify Studio Vision from explicit Finder metadata evidence
+
+**Status:** Accepted
+
+Phoenix keeps identification separate from both format-neutral inspection and
+Studio Vision structural parsing. Identification does not consider filename
+extensions or infer a content signature from the available authentic sample.
+
+Identification reports three distinct layers:
+
+- **Observation:** the literal Finder type and creator codes, or an explicit
+  absent, unsupported, malformed, or read-error state.
+- **Evidence:** the documented relevance assigned to those observations. The
+  `MID2` and `MIDA` pair is strong observed Studio Vision evidence; a single
+  matching code with the other unavailable is provisional evidence.
+- **Conclusion:** one confidence value from Very High, High, Medium, Low, or
+  Unknown. The initial implementation assigns only High, Low, and Unknown.
+
+The `MID2` type plus `MIDA` creator produces High confidence. One matching code
+with the other absent or unavailable produces Low confidence. Conflicting,
+missing, unsupported, malformed, or unreadable metadata produces Unknown.
+Confidence is not proof that a file is Studio Vision or structurally valid.
+
+On macOS, Phoenix reads the first eight bytes of `com.apple.FinderInfo` through
+a small read-only platform adapter. Unsupported platforms report that state
+without failing. AppleDouble sidecars remain outside this decision.
