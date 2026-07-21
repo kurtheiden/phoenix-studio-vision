@@ -40,7 +40,7 @@ may change priorities.
 
 ## Issue #6: Inventory Studio Vision Pro and OMS artifacts for file-format evidence
 
-- [ ] Catalog the Studio Vision Pro 4.5 and OMS 2.3.8 installers.
+- [x] Catalog the Studio Vision Pro 4.5 and OMS 2.3.8 installers.
 - [ ] Catalog the Studio Vision application, Studio Vision Setup, and OMS
       applications.
 - [ ] Catalog manuals, templates, plug-ins, and example projects.
