@@ -353,15 +353,34 @@ They are recorded without interpretation:
 
 ## OMS applications
 
-- Filename: Unknown
-- Source: Unknown
-- Size: Unknown
-- SHA-256: Unknown
-- Finder Type: Unknown
-- Finder Creator: Unknown
-- Resource information: Unknown
-- Printable strings: Unknown
-- Notes: Unknown
+### Observations
+
+- No separately extracted OMS application artifacts were located in the
+  documented Phoenix research directories.
+- The only OMS-named artifact located was the already inventoried
+  `Install OMS 2.3.8` regular file.
+- The installer identity was reconfirmed as:
+  - Data-fork size: 2,485,279 bytes.
+  - SHA-256:
+    `34d3f759284941ca4ecc91fb33902087140accbcd37c4677f94cd58ee68f826d`.
+  - Finder Type: `APPL`.
+  - Finder Creator: `VIS3`.
+  - Data-fork header: `SVCT`.
+- The installed read-only tools `bsdtar`, `xar`, `hdiutil`, and `unzip` did
+  not recognize the payload as a supported archive or disk image.
+- The installed copies of The Unarchiver and StuffIt Expander did not provide
+  a demonstrated command-line listing method or explicit VISE or `SVCT`
+  support.
+- No extraction directory was created. Nothing was extracted or executed.
+
+### Unknowns and limitations
+
+- The internal `SVCT` container structure is unknown.
+- The identities and contents of any embedded OMS applications are unknown.
+- It is unknown whether the installer contains standalone OMS applications.
+- A safe non-executing extraction method has not been identified.
+- The absence of separately extracted OMS applications is not evidence that
+  OMS applications do not exist.
 
 ## Documentation
 

@@ -43,6 +43,9 @@ may change priorities.
 - [x] Catalog the Studio Vision Pro 4.5 and OMS 2.3.8 installers.
 - [ ] Catalog the Studio Vision application, Studio Vision Setup, and OMS
       applications.
+  - The Studio Vision application and Studio Vision Setup inventories are
+    complete. OMS application inventory is blocked because no extracted
+    payload is available and no safe extraction method has been identified.
 - [ ] Catalog manuals, templates, plug-ins, and example projects.
 - [ ] Record filenames, sources, sizes, and SHA-256 digests for each artifact.
 - [ ] Record Finder type and creator metadata, resource information, printable
