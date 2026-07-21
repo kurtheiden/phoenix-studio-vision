@@ -292,15 +292,64 @@ resource fork. They are recorded without interpretation:
 
 ## Studio Vision Setup
 
-- Filename: Unknown
-- Source: Unknown
-- Size: Unknown
-- SHA-256: Unknown
-- Finder Type: Unknown
-- Finder Creator: Unknown
-- Resource information: Unknown
-- Printable strings: Unknown
-- Notes: Unknown
+### Observations
+
+- Filename: `Studio Vision Setup`
+- Source: Local research copy at
+  `/Users/kurtheiden/Documents/Phoenix Research/Studio Vision Pro 4.5 ƒ/Studio Vision Setup`
+- Filesystem object: Regular file.
+- File size and data-fork size: 34,039 bytes.
+- Data-fork SHA-256:
+  `be78001952e5f8eb78ed94ccb0efe8ac87f7131bf0b5c9a63ff1d01aa1fe52e5`
+- Finder Type: `MIDS` (`4d 49 44 53`).
+- Finder Creator: `MIDA` (`4d 49 44 41`).
+- Three extended attributes are present:
+  `com.apple.FinderInfo` (32 bytes), `com.apple.ResourceFork` (286 bytes), and
+  `com.apple.quarantine` (57 bytes).
+- A resource fork is present and is 286 bytes long.
+- Resource-fork SHA-256:
+  `40dc81615e0c31b2e4fe653a3c1a41e50530dcf64a4b2428ff8ae6b5770863b6`
+- `file` identifies the resource fork as an Apple HFS/HFS+ resource fork.
+- `DeRez` parses the resource fork but reports no resources. Consequently, no
+  `vers` resource or resource type was observed.
+- Generic `file` identification reports the data fork only as `data`. No
+  executable format or architecture identifier was observed.
+
+#### Directly observed printable strings
+
+The following are representative literal strings observed in the data fork.
+They are recorded without interpretation:
+
+- Setup: `Save As Setup`, `Page Setup...`, `Hardware Setup...`,
+  `OMS Studio Setup...`, and `OMS MIDI Setup...`.
+- OMS: `OMS Studio Setup...` and `OMS MIDI Setup...`.
+- MIDI devices: `MIDIKeys Window`, `Enable Input Devices`,
+  `Show Console Remote Devices`, `D-550`, and `K2000`.
+- Synchronization: `Sync to Internal Clock`, `Sync to External Beat Clock`,
+  `Sync to MIDI Time Code`, `Sync to MTC/Machine Control`, `Send Sync`, and
+  `Toggle Sync Mode`.
+- Instruments: `Set Instrument...`, `New Instrument`, `Instruments Window`,
+  `Select Unused Instruments`, and `Make Instruments from Studio Setup...`.
+- Preferences: `Preferences...` and `Audio Preferences...`.
+- Audio: `Audio Instruments Window`, `Mix Audio...`, `Import Audio...`,
+  `Lock Audio to Tape`, and `Audio Event Height Automatic`.
+- A case-insensitive scan of printable strings found no matches for `port`,
+  `routing`, or `configuration`.
+
+### Unknowns and unexamined metadata
+
+- The data-fork format and internal organization are unknown and unexamined.
+- The semantic roles and relationships of the observed strings are
+  unexamined.
+- The printable-string observations are representative, not a complete string
+  inventory.
+- The absence of printable matches for `port`, `routing`, and `configuration`
+  does not establish that corresponding data or concepts are absent.
+- The meaning of the empty resource fork and metadata other than the directly
+  reported Finder information and extended-attribute names and sizes is
+  unexamined.
+- Notes: The artifact was inspected in place and was not executed, modified,
+  installed, renamed, or copied.
 
 ## OMS applications
 
