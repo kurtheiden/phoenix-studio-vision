@@ -196,15 +196,99 @@ the listed primary ZIP entry data streams.
 
 ## Studio Vision application
 
-- Filename: Unknown
-- Source: Unknown
-- Size: Unknown
-- SHA-256: Unknown
-- Finder Type: Unknown
-- Finder Creator: Unknown
-- Resource information: Unknown
-- Printable strings: Unknown
-- Notes: Unknown
+### Observations
+
+- Filename: `StudioVision.app`
+- Source: Local research copy at
+  `/Users/kurtheiden/Documents/Phoenix Research/Studio Vision Pro 4.5 ƒ/StudioVision.app`
+- Filesystem object: Regular file, despite the `.app` suffix; it is not a
+  directory bundle.
+- File size and data-fork size: 3,159,081 bytes.
+- Data-fork SHA-256:
+  `24b58a168086a65776f715a7c92c1295818d6b42ebbd406a7a9c583bd1c0eb4b`
+- Finder Type: `APPL` (`41 50 50 4c`).
+- Finder Creator: `MIDA` (`4d 49 44 41`).
+- The Finder information is stored in a 32-byte `com.apple.FinderInfo`
+  extended attribute.
+- A `com.apple.ResourceFork` extended attribute is present and is 2,112,471
+  bytes long.
+- Resource-fork SHA-256:
+  `718df2f317713a51101fe64cf113ab03b479103e053dc49ac42ec00a4ce4676e`
+
+#### Version and executable observations
+
+- The `vers` resource reports version `4.5.1` and the string
+  `4.5.1, Copyright © Opcode Systems, Inc. 1985-99`.
+- `file` identifies the data fork as a PowerPC PEF executable.
+- The data fork begins `Joy!peffpwpc` in ASCII.
+- The `cfrg` resource contains the architecture code `pwpc` and the name
+  `StudioVision PPC`.
+- No `CODE` resource is present in the resource map.
+
+#### Resource types
+
+`DeRez` parsed the resource fork and reported 65 distinct resource types:
+
+- `ABSz`, `ALRT`, `BNDL`, `CDEF`, `CNTL`, `CURS`, `Cmd#`, `Cpic`, `DITL`,
+  `DLGX`, `DLOG`, `ETYP`, `ErrS`, `FNAM`, `FOND`, `FREF`, `FTBL`, `Fnt#`,
+  `GRAM`, `Gpic`, `ICN#`, `KCHR`, `LDEF`, `LMAP`, `MDEF`, `MENU`, `MIDA`,
+  `Mcmd`, `MdSw`, `NFNT`, `OpHk`, `PICT`, `PMAP`, `SICN`, `SIZE`, `STR `,
+  `STR#`, `SVSM`, `TMPL`, `WDEF`, `WIND`, `actb`, `bmap`, `cctb`, `cfrg`,
+  `cicn`, `clut`, `dctb`, `iSNP`, `icl4`, `icl8`, `icm#`, `icm4`, `icm8`,
+  `ics#`, `ics4`, `ics8`, `ictb`, `mctb`, `odcs`, `ppat`, `snd `, `sysz`,
+  `vers`, and `wctb`.
+
+#### Directly observed printable strings
+
+The following are representative literal strings observed in the data fork or
+resource fork. They are recorded without interpretation:
+
+- Studio Vision and Vision: `About Studio Vision Pro`, `Studio Vision`,
+  `Vision`, `Vision Setup`, and `StudioVision PPC`.
+- OMS: `Initializing OMS`, `Error starting OMS`, `OMS missing`,
+  `Can't Use OMS`, and `AV OMS Driver`.
+- MIDI: `MIDI Devices`, `MIDIKeys Window`, `MIDI File`, `Importing MIDI`,
+  `Export MIDI File...`, and `Start MIDI Time Code`.
+- Devices: `Input Device`, `Output Device Popup`, `Device Dialog`,
+  `Device Sync Options`, and `Checking Device Control Network`.
+- Instruments: `Instruments`, `Instrument Window`, `Set Instrument`,
+  `Audio Instruments`, and `All Instruments In Use`.
+- Tracks: `Tracks`, `Groove Tracks`, `Song Track`, `Track Setup`, and
+  `Detailed Track Overview`.
+- Sequences: `Sequences Window`, `New Sequence`, `Clear Sequences`,
+  `Capture Sequence to Sequence`, and `Duplicate Sequence`.
+- Audio: `Audio`, `Audio System`, `Audio Recording Preferences`,
+  `Audio Routings`, `Audio-to-MIDI`, and `MIDI-to-Audio`.
+- Synchronization: `Initializing synchronization`, `Send Sync`,
+  `Sync Options`, and `Sync has been set to "Internal"`.
+- SMPTE: `SMPTE Setup`, `Absolute SMPTE`, `Display Relative SMPTE`, and
+  `Insert SMPTE Marker`.
+- MTC: `Send MTC` and `MTC`.
+- Tempo: `Change Tempo`, `Tempo Track`, `Enter New Tempo:`, and
+  `Average tempo:`.
+- Markers: `Insert Bar Marker`, `Insert SMPTE Marker`, `MarkerPanel`, and
+  `StripDrawingAreaMarkers`.
+- Regions: `Allow crossfade regions to move about splice point as needed.` and
+  `New events contain data inside fade region`.
+
+#### Bundle information
+
+- The artifact is not a modern application bundle at the inspected path. No
+  bundle directory structure or `Info.plist` is present.
+
+### Unknowns and unexamined metadata
+
+- The semantic roles and relationships of the resource types and strings are
+  unexamined.
+- The printable-string observations are representative, not a complete string
+  inventory.
+- No file-format structures were inferred from executable bytes, resources,
+  or terminology.
+- Metadata other than the directly reported Finder information, forks,
+  version, resource types, architecture identifiers, and strings is
+  unexamined.
+- Notes: The application was inspected in place and was not executed,
+  modified, renamed, installed, or copied.
 
 ## Studio Vision Setup
 
