@@ -363,17 +363,157 @@ They are recorded without interpretation:
 - Printable strings: Unknown
 - Notes: Unknown
 
-## Manuals
+## Documentation
 
-- Filename: Unknown
-- Source: Unknown
-- Size: Unknown
-- SHA-256: Unknown
-- Finder Type: Unknown
-- Finder Creator: Unknown
-- Resource information: Unknown
-- Printable strings: Unknown
-- Notes: Unknown
+### Directory observations
+
+- Source directory:
+  `/Users/kurtheiden/Documents/Phoenix Research/Studio Vision Pro 4.5 ƒ/Documentation`
+- The directory contains five PDF documents and one non-document `Icon\r`
+  entry.
+- Each PDF begins with a PDF 1.2 signature.
+
+### `Vision opPLUGS Manual.pdf`
+
+- Filesystem object: Regular file.
+- Size: 228,178 bytes.
+- SHA-256:
+  `ff9baddb4176fc31645289f95e91d574e5cad2253af34565bb0ec8d7f8c4fa4c`
+- Filesystem creation date: 1998-11-13 09:06:09 +0000.
+- Filesystem modification date: 1998-11-13 09:06:09 +0000.
+- Format: PDF 1.2; `file` reports 14 pages.
+- Embedded title: `Vision opPLUGS Manual`.
+- Embedded author: `Gregory Simpson`.
+- Embedded creator and producer: `FrameMaker 5.5` and
+  `Acrobat Distiller 3.01 for Power Macintosh`.
+- Embedded creation date: 1998-08-20 12:54:57; no time-zone offset is present
+  in the field.
+- Embedded modification date: 1998-08-20 12:58:27; no time-zone offset is
+  present in the field.
+- Directly observed outline titles include `opPLUGS Overview`,
+  `Credits, Colophon, & Notices`, `opSQUASH`, `opRING`, `opREZN8`, `opPLATE`,
+  `opPANNER`, `opFLANGE`, `opECHO`, `opCYCLE`, `opCOMP`, `opCHORUS`,
+  `opBOXDLY`, and `opALIGN`.
+- No requested-topic determination beyond the literal outline titles above was
+  made.
+
+### `MIDI Reference Manual.pdf`
+
+- Filesystem object: Regular file.
+- Size: 6,062,074 bytes.
+- SHA-256:
+  `9f99fad6a358848398ce3513e06e6ef49140458683bacda7e282f061a2992239`
+- Filesystem creation date: 1999-07-30 10:56:13 +0100.
+- Filesystem modification date: 1999-07-30 10:56:13 +0100.
+- Format: PDF 1.2.
+- Embedded title: `Reference Book`.
+- Embedded author: `ahill`.
+- Embedded creator and producer: `FrameMaker 5.5` and
+  `Acrobat Distiller 3.02 for Power Macintosh`.
+- Embedded creation date: 1999-07-30 17:48:34; no time-zone offset is present
+  in the field.
+- Directly observed chapter or section titles include
+  `CHAPTER 2: About MIDI`, `CHAPTER 3: Vision Basics`,
+  `The Open Music System (OMS)`, `Tracks`, `Instruments`, `Sequences`,
+  `CHAPTER 18: Synchronization`, `CHAPTER 20: Templates`,
+  `CHAPTER 22: Custom Instruments`, `OMS MIDI Setup`,
+  `Export as MIDI File`, and `Import Audio Using QuickTime`.
+- Those literal titles directly contain references to MIDI, Vision, OMS,
+  instruments, synchronization, templates, export, import, and audio.
+
+### `QuickStart - Vis 4.5.pdf`
+
+- Filesystem object: Regular file.
+- Size: 362,458 bytes.
+- SHA-256:
+  `1b550919ba2af7e889f3aff1638859ab8db298ac15bce222c7e9af713716da99`
+- Filesystem creation date: 1999-07-30 04:41:52 +0100.
+- Filesystem modification date: 1999-07-30 04:41:52 +0100.
+- Format: PDF 1.2; `file` reports 2 pages.
+- Embedded title: `QuickStart - Vis 4.1`.
+- Embedded author: `ahill`.
+- Embedded creator and producer: `QuarkXPress\250: LaserWriter 8 8.6.5` and
+  `Acrobat Distiller 3.02 for Power Macintosh`.
+- Embedded creation date: 1999-07-30 11:41:52; no time-zone offset is present
+  in the field.
+- No table of contents, section headings, or requested-topic references were
+  directly observable with the available byte-string inspection.
+
+### `Audio Reference Manual.pdf`
+
+- Filesystem object: Regular file.
+- Size: 7,220,565 bytes.
+- SHA-256:
+  `75a333f99b846cde6db3c5a0e3d408085c94851402f6c5139c9dac5e3717fdc9`
+- Filesystem creation date: 1999-07-30 11:04:41 +0100.
+- Filesystem modification date: 1999-07-30 11:04:41 +0100.
+- Format: PDF 1.2.
+- Embedded title: `AudioRef`.
+- Embedded author: `ahill`.
+- Embedded creator and producer: `FrameMaker 5.5` and
+  `Acrobat Distiller 3.02 for Power Macintosh`.
+- Embedded creation date: 1999-07-30 17:57:13; no time-zone offset is present
+  in the field.
+- Directly observed chapter or section titles include
+  `Introduction to Digital Audio`, `CHAPTER 3: Acadia: Hardware Setup`,
+  `CHAPTER 6: Acadia: Audio Instruments & Routings Window`,
+  `Saving Instrument Setups`, `Audio Preferences`,
+  `CHAPTER 20: Import/Export Cornucopia`,
+  `CHAPTER 29: Synchronizing Audio Playback`, `Creating Custom Audio Templates`,
+  `Importing MIDI from a QuickTime Movie`, and
+  `Using Pro Tools Project with Studio Vision`.
+- Those literal titles directly contain references to Studio Vision, a
+  project, MIDI, instruments, synchronization, audio, routing, import/export,
+  preferences, and templates.
+- No outline title containing `OMS` was observed by the targeted title scan.
+
+### `What's New in 4.5.pdf`
+
+- Filesystem object: Regular file.
+- Size: 2,480,419 bytes.
+- SHA-256:
+  `537013a927c8b889cb42eb10c8564d047a9369f39792333457193aff18dca411`
+- Filesystem creation date: 1999-07-30 07:50:36 +0100.
+- Filesystem modification date: 1999-07-30 07:50:36 +0100.
+- Format: PDF 1.2.
+- Embedded title: `4.5.book`.
+- Embedded author: `ahill`.
+- Embedded creator and producer: `FrameMaker 5.5` and
+  `Acrobat Distiller 3.02 for Power Macintosh`.
+- Embedded creation date: 1999-07-30 14:38:28; no time-zone offset is present
+  in the field.
+- Directly observed chapter or section titles include
+  `CHAPTER 2: Automation`, `MIDI Controller Data`, `CHAPTER 3: ReWire`,
+  `ReWire and Synchronization`, `CHAPTER 4: File Management Changes`,
+  `CHAPTER 5: Strip Silence and Slice Audio`, `Audio Sends`,
+  `Build Console From MIDI Instruments In Use`, and
+  `Instrument, Device, Channel Number and Controller`.
+- Those literal titles directly contain references to MIDI, devices,
+  instruments, synchronization, and audio.
+
+### Non-document directory entry: `Icon\r`
+
+- Filesystem object: Regular file.
+- Data-fork size: 0 bytes.
+- Data-fork SHA-256:
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+- Filesystem creation date: 1999-07-07 11:36:56 +0100.
+- Filesystem modification date: 1999-07-07 11:36:56 +0100.
+- Finder Type: `icon`; Finder Creator: `MACS`.
+- A 2,670-byte resource fork is present with SHA-256
+  `dd5fa527661fd0ffb0d67f98c670ff66aa7c4a16da4255d96cba2c939d88471c`.
+- No document format is attributed to this entry.
+
+### Unknowns and unexamined metadata
+
+- Poppler PDF metadata, text, and rendering tools were unavailable, and the
+  installed system PDFKit toolchain could not be used. No pages were rendered.
+- PDF fields and outline titles not exposed as direct printable byte strings
+  remain unexamined.
+- Page counts for PDFs where `file` did not report a count are unexamined.
+- The absence of an observed outline title or topic term does not establish
+  that the document does not contain that topic.
+- The manuals were not summarized or interpreted.
 
 ## Templates
 
