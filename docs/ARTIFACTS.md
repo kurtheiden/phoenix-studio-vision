@@ -117,15 +117,82 @@ the listed primary ZIP entry data streams.
 
 ## OMS 2.3.8 installer
 
-- Filename: Unknown
-- Source: Unknown
-- Size: Unknown
-- SHA-256: Unknown
-- Finder Type: Unknown
-- Finder Creator: Unknown
-- Resource information: Unknown
-- Printable strings: Unknown
-- Notes: Unknown
+### Observations
+
+- Filename: `Install OMS 2.3.8`
+- Source: Local research copy at
+  `/Users/kurtheiden/Documents/Phoenix Research/Install OMS 2.3.8`
+- Filesystem object: Regular file.
+- File size and data-fork size: 2,485,279 bytes.
+- Data-fork SHA-256:
+  `34d3f759284941ca4ecc91fb33902087140accbcd37c4677f94cd58ee68f826d`
+- Finder Type: `APPL` (`41 50 50 4c`).
+- Finder Creator: `VIS3` (`56 49 53 33`).
+- The Finder information is stored in a 32-byte `com.apple.FinderInfo`
+  extended attribute.
+- The first four data-fork bytes are ASCII `SVCT` (`53 56 43 54`). Generic
+  `file` reports the data fork only as `data`.
+- A `com.apple.ResourceFork` extended attribute is present and is 295,885
+  bytes long.
+- Resource-fork SHA-256:
+  `a66e9c96711e24fe6a27b5981efcaed66eea22a1f734ed85ac2c5a9991c94188`
+- `DeRez` parsed the resource fork and reported two `vers` resources naming
+  `Installer VISE 5.5.1` and `InstallerVISE 5.5.1`, with a copyright string for
+  MindVision Software covering 1991–1998.
+- The parsed resource map includes classic Mac application resources such as
+  `CODE`, `BNDL`, `FREF`, `SIZE`, `MENU`, `DLOG`, `DITL`, icon resources, and
+  an owner resource of type `VIS3`. It also includes a resource of type `XOMS`
+  named `OMSVISE`.
+- Printable resource-fork strings include `OMS Folder`, `OMS Preferences`,
+  `OMS Current State`, `Install OMS 2.3.8`, and an instruction to click the
+  Install button to install OMS 2.3.8.
+- `bsdtar` reports `Unrecognized archive format` when asked to list the data
+  fork.
+
+### Tentative format identification
+
+- The observed Finder metadata, version resources, and resource map are
+  consistent with an Installer VISE application. The internal organization of
+  the data fork remains unexamined.
+- This is not identified as a ZIP archive or disk image. The observation does
+  not establish the internal format of the `SVCT` data or prove that the
+  installer payload is self-extracting.
+
+### Safely observable structure
+
+- The resource fork can be listed non-destructively with `DeRez`.
+- No safely listable top-level payload structure was identified in the data
+  fork with the currently available generic archive tool.
+- No contained OMS applications, utilities, drivers, documentation, or
+  examples were enumerated. The printable names above are evidence of strings
+  in the resource fork, not proof of contained files or their paths.
+
+### Preservation-container observations
+
+- The artifact is preserved on the current filesystem as a data fork plus
+  Finder-information and resource-fork extended attributes.
+- The inspected data-fork header is not a MacBinary or BinHex header and does
+  not begin with the standard `SIT!` or `StuffIt` signatures.
+- No AppleDouble container was used to access the observed Finder information
+  or resource fork; both are directly available as extended attributes.
+- No adjacent `._Install OMS 2.3.8` AppleDouble file is present at the source
+  location.
+- These header observations do not rule out nested or embedded structures in
+  the unexamined data.
+
+### Unknowns and unexamined metadata
+
+- The internal structure and compression, if any, of the `SVCT` data fork are
+  unknown and unexamined.
+- The installer was not executed, so its install choices, destinations,
+  contained-file inventory, and runtime behavior are unknown.
+- No appropriate non-executing integrity checker for the Installer VISE data
+  was available. Successful `DeRez` parsing establishes only that the resource
+  map was readable; it is not a complete installer integrity test.
+- The semantic roles of resources other than the directly named and typed
+  observations above are unexamined.
+- Notes: The installer was inspected in place and was not renamed, modified,
+  executed, installed, extracted, recompressed, or added to the repository.
 
 ## Studio Vision application
 
