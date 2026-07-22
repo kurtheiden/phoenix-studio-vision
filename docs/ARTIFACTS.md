@@ -351,7 +351,7 @@ They are recorded without interpretation:
 - Notes: The artifact was inspected in place and was not executed, modified,
   installed, renamed, or copied.
 
-## OMS applications
+## OMS artifacts
 
 ### Earlier search and installer-extraction limitation
 
@@ -773,6 +773,197 @@ are recorded without interpretation:
   files is unknown.
 - The representative literal strings are not a complete string inventory.
 - The extension was not executed or loaded.
+
+### `Studio Patches Editor`
+
+- The filename and location under `OMS Applications/` are recorded in the
+  observed installed OMS hierarchy above.
+- This artifact has not been individually inventoried.
+
+### `USB OMSMIDIDriver`
+
+- The filename and location under `Extensions/` are recorded in the observed
+  installed OMS hierarchy above.
+- This artifact has not been individually inventoried.
+
+## Studio Vision artifacts
+
+### `Studio Vision 4.5 Prefs`
+
+#### Observations
+
+- Filename: `Studio Vision 4.5 Prefs`.
+- Full path:
+  `/Users/kurtheiden/Documents/Phoenix Research/Opcode System Files/Preferences/Studio Vision 4.5 Prefs`.
+- Filesystem object: Regular file.
+- Finder Type: `pref` (`70 72 65 66`).
+- Finder Creator: `MIDA` (`4d 49 44 41`).
+- Data-fork size: 0 bytes.
+- Data-fork SHA-256:
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+- Resource-fork size: 60,907 bytes.
+- Resource-fork SHA-256:
+  `38c4d6dd8b463488089aa841572dc16ba88bd497963bd7f397e856af35d9a412`.
+- Extended attributes:
+  - `com.apple.FinderInfo` -- 32 bytes.
+  - `com.apple.ResourceFork` -- 60,907 bytes.
+  - `org.BasiliskII.ExtendedFinderInfo` -- 16 bytes.
+  - `org.BasiliskII.FinderInfo` -- 16 bytes.
+
+#### Version and format evidence
+
+- The data fork is empty, and `file` reports it as `empty`.
+- `file` identifies the resource fork as an Apple HFS/HFS+ resource fork.
+- No `vers`, `cfrg`, `BNDL`, `CODE`, `DATA`, or `INIT` resource was observed.
+- No executable format or processor architecture was identified.
+- The observed Finder Type is `pref`; the data fork is empty; the resource
+  fork is nonempty; and no examined executable-identifying resource type was
+  observed. These observations support describing the object as a preference
+  file, without establishing its behavior or undocumented format.
+
+#### Complete observed resource inventory
+
+`DeRez` reported 15 distinct resource types and 95 resources:
+
+- `ARPC`: ID 128.
+- `ARPS`: ID 128.
+- `Acda`: ID 128.
+- `Cmd#`: IDs 128 and 144.
+- `DSPS`: ID 128.
+- `FLOC`: ID 128, named `search dirs`.
+- `ODIO`: ID 128.
+- `QTIM`: ID 128.
+- `STKY`: ID 128.
+- `SlMd`: ID 128.
+- `SyWa`: ID 3.
+- `WIND`: IDs 119, 128, 144--148, 200--229, 231--239, 243--248,
+  250--268, 300--306, 315, and 400. Directly observed names are
+  `Preferences`, `List`, `Tracks`, `Gen Seq`, `Dummy Graphic Window`,
+  `Dummy Notate Window`, `Instruments`, `Settings`, `View`, `Select`, `Step`,
+  `Transpose`, `Bracket`, `Metrical Placement`, `Find`, `Modify Note`,
+  `Exact Chart`, `Move Events`, `Split Notes`, `TNA`, `Repeat`, `Metronome`,
+  `Scale Time`, `Change Tempo`, `Set Instrument`, `Input Map`, `MIDI Keys`,
+  `Faders`, `File`, `Control`, `Record`, `Loop Length`, `Export Quantize`,
+  `Patch Names`, `Drum Edit`, `Reassign`, `Commands`, `Colors`,
+  `Record Monitor`, `Strip Silence`, `selDupesWID`, `Audio Instruments`,
+  `ReclockWID`, `SubstituteWID`, `Device Dialog`, `Players`, `Control Names`,
+  `Audio Preferences`, `Track Instrs`, `MMC Window`,
+  `Audio To MIDI Preferences`, `PrintPreview`, `Audio-to-MIDI� Dialog`,
+  `Midi-to-Audio� Dialog`, `EQ Dialog`, `Dynamics Dialog`,
+  `Adjust Audio Dialog`, `Constrain Audio (?)`, `Time Scale Dialog`,
+  `Pitch Shift Dialog`, `Convert Sample Rate`, `Fade In / Out Dialog`,
+  `AudioMorf�`, `Formant Shift`, `User Window 1`, `Session 8 Preferences`,
+  `Make Segment / Loop`, `Select & Modify`, `Large Counter`, `File Management`,
+  `TDM PlugIn`, `Console`, `EQ Settings`, `VST Plugin Settings`,
+  `Audio Routings`, `Number of Audio Instruments`, `Performance`, and `Movie`.
+  ID 128 has no observed name, and `Settings` is observed at IDs 201 and 268.
+- `anIN`: ID 3.
+- `anOU`: ID 3.
+- `clut`: ID 999, named `Instrument Colors`.
+
+#### Representative literal strings
+
+The following literal strings were directly observed in the resource fork and
+are recorded without interpretation:
+
+- Studio Vision: no printable string containing `Studio Vision` was observed.
+- Preferences: `Preferences`, `Audio Preferences`, `Audio Preferences...`,
+  `Audio To MIDI Preferences`, `Session 8 Preferences`, and `Preferences...`.
+- Windows and user interface: `Tracks Window`, `Instruments Window`,
+  `Sequences Window`, `Console`, `Control Bar`, `Counter`, `Faders Window`,
+  and `Print Preview...`.
+- Tracks: `Tracks`, `Combine/Separate Tracks`, `Detailed Track Overview`,
+  `New Drum Track`, and `Song Track`.
+- MIDI: `MIDI Devices`, `MIDI Instruments`, `MIDI Keys`, `Export MIDI File...`,
+  `Send MIDI Time Code`, and `System Exclusive Thru`.
+- Audio: `Audio Instruments`, `Audio Routings`, `Audio-to-MIDI`,
+  `Midi-to-Audio`, `Import Audio...`, and `Convert Sample Rate`.
+- Synchronization: `Send Sync`, `Sync to External Beat Clock`,
+  `Sync to Internal Clock`, `Sync to MIDI Time Code`,
+  `Sync to MTC/Machine Control`, and `Toggle Sync Mode`.
+- OMS: `OMS MIDI Setup...`, `OMS Studio Setup...`, and
+  `Make Instruments from Studio Setup...`.
+- Devices and instruments: `Device Dialog`, `Show Console Remote Devices`,
+  `Instruments`, `Set Instrument...`, and `Select Unused Instruments`.
+- Patch names: `Patch Names`, `Edit Patch`, `Find Patch...`, and
+  `Copy Patches`.
+- Tempo and timing: `Change Tempo`, `Adjust Audio Tempo`, `Tap Tempo`,
+  `Metronome`, and `SMPTE Format 29.97 Drop`.
+- Four-character identifiers and resource names: `ARPC`, `ARPS`, `Acda`,
+  `Cmd#`, `DSPS`, `FLOC`, `ODIO`, `QTIM`, `STKY`, `SlMd`, `SyWa`, `WIND`,
+  `anIN`, `anOU`, `clut`, `search dirs`, and `Instrument Colors`.
+- No representative error-message string was identified in the observed
+  printable-string output.
+
+#### Cross-artifact comparison evidence
+
+- Finder Creator `MIDA` is also directly documented for the Studio Vision
+  application and `Studio Vision Setup`.
+- The resource types `Cmd#`, `WIND`, and `clut` are also present in the
+  documented Studio Vision application resource-type list.
+- The directly observed strings `MIDI Devices`, `Audio Routings`,
+  `Audio-to-MIDI`, `Midi-to-Audio`, `Device Dialog`, `Set Instrument`,
+  `OMS MIDI Setup...`, and `OMS Studio Setup...` also occur in previously
+  documented Studio Vision artifacts.
+- References to OMS and OMS Setup are present as `OMS MIDI Setup...` and
+  `OMS Studio Setup...`. No printable string containing `Open Music System`
+  was observed.
+- No identical version string was available for comparison because this
+  artifact has no observed `vers` resource.
+- These are shared observations only; no relationship is inferred from them.
+
+#### Structural observations
+
+- The data fork is empty and the resource fork is nonempty.
+- All directly observed resource, identifier, and literal-string evidence is
+  in the resource fork.
+- Resource ID 128 recurs across 11 resource types; ID 3 recurs across `SyWa`,
+  `anIN`, and `anOU`.
+- The resource map contains 80 `WIND` resources, including long consecutive
+  ID ranges and directly named entries.
+- Printable strings occur among binary regions in the resource fork. Their
+  boundaries and the surrounding binary data were not analyzed.
+- No record layout, offset table, repeated binary marker, or undocumented
+  binary structure was identified.
+
+#### Evidence for future Studio Vision project comparison
+
+- Finder identifiers: Type `pref` and Creator `MIDA`.
+- Resource identifiers include `ARPC`, `ARPS`, `Acda`, `Cmd#`, `DSPS`,
+  `FLOC`, `ODIO`, `QTIM`, `STKY`, `SlMd`, `SyWa`, `WIND`, `anIN`, `anOU`,
+  and `clut`.
+- Directly observed resource names and object or document names include
+  `search dirs`, `Instrument Colors`, `Preferences`, `Tracks`, `Instruments`,
+  `MIDI Keys`, `Patch Names`, `Device Dialog`, `Audio Preferences`,
+  `Audio Routings`, and `Movie`.
+- Other directly observed identifiers include `MIDA`, `pref`, `selDupesWID`,
+  `ReclockWID`, `SubstituteWID`, `OMS MIDI Setup...`, and
+  `OMS Studio Setup...`.
+- These identifiers are recorded for possible later comparison only; no
+  mapping to Studio Vision project-file structures is attempted.
+
+#### Conclusions limited to observed evidence
+
+- The object has Finder Type `pref`, Finder Creator `MIDA`, an empty data
+  fork, and a 60,907-byte resource fork containing 15 observed resource types.
+- No executable format, processor architecture, or version resource was
+  observed.
+- These conclusions do not establish application behavior, resource
+  semantics, record layouts, or relationships to other file formats.
+
+#### Unknowns and unexamined structures
+
+- Binary contents of resources remain unexamined except for the directly
+  reported types, IDs, names, and literal strings.
+- The semantics of all observed resource types and resources are unknown.
+- Any record layouts, repeated-pattern meanings, offset structures, and
+  string-table structures are unknown.
+- The significance of the recurring resource IDs and shared identifiers is
+  unknown.
+- The relationship, if any, to Studio Vision project files is unknown.
+- The representative literal strings are not a complete string inventory.
+- The artifact was not executed, imported, modified, converted, repaired, or
+  rewritten.
 
 ## Documentation
 
