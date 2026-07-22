@@ -534,6 +534,128 @@ interpretation:
 - The representative strings are not a complete string inventory.
 - No extracted artifact was executed during this inventory.
 
+### Installed `OMS Preferred Device`
+
+#### Observations
+
+- Filename: `OMS Preferred Device`.
+- Full path:
+  `/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS_extracted/Opcode_OMS/OMS Preferred Device`.
+- Filesystem object: Regular file.
+- Finder Type: `APPL` (`41 50 50 4c`).
+- Finder Creator: raw bytes `6f a7 b9 44`; no all-ASCII representation is
+  attributed to this value.
+- Data-fork size: 0 bytes.
+- Data-fork SHA-256:
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+- Resource-fork size: 11,446 bytes.
+- Resource-fork SHA-256:
+  `f423938a7e468f1d5d0fff2e8977f506c3678acc66a3bde4b5b804b11eb77945`.
+- Extended attributes:
+  - `com.apple.FinderInfo` — 32 bytes.
+  - `com.apple.ResourceFork` — 11,446 bytes.
+
+#### Version and format evidence
+
+- Two `vers` resources, IDs 1 and 2, report `2.3.8`.
+- The ID 1 `vers` resource also contains
+  `©1990-1999 Opcode Systems, Inc.`.
+- The ID 2 `vers` resource also contains `Open Music System 2.3.8`.
+- The data fork is empty, and `file` reports it as `empty`; no executable
+  format or processor architecture was identified by that tool.
+- `CODE` resources are present at IDs 0 and 1. ID 1 is named `Sources`.
+- A `DATA` resource with ID 0 and a `SIZE` resource with ID -1 are present.
+- No `cfrg` resource was observed.
+- The `BNDL` resource with ID 128 contains the raw Creator bytes
+  `6f a7 b9 44` and references the four-character resource types `ICN#` and
+  `FREF`, each with ID 128.
+- No functionality or processor architecture is inferred from these resource
+  observations.
+
+#### Complete observed resource inventory
+
+`DeRez` reported 17 distinct resource types:
+
+- `BNDL`, `CODE`, `DATA`, `DITL`, `DLOG`, `FREF`, `ICN#`, `MBAR`, `MENU`,
+  `SIZE`, `STR#`, `icl4`, `icl8`, `ics#`, `ics4`, `ics8`, and `vers`.
+
+Observed resource IDs and names, where present:
+
+- `MENU`: IDs 201, 128, and 200.
+- `MBAR`: ID 128.
+- `STR#`, `DITL`, `DLOG`, `BNDL`, and `FREF`: ID 128 for each.
+- `icl8`, `ICN#`, `ics#`, `icl4`, `ics4`, and `ics8`: ID 128 for each.
+- `CODE`: ID 1 named `Sources`, and ID 0.
+- `DATA`: ID 0.
+- `SIZE`: ID -1.
+- `vers`: IDs 1 and 2.
+
+#### Representative literal strings
+
+The following literal strings were directly observed in the resource fork and
+are recorded without interpretation:
+
+- OMS: `OMS Preferred Device`, `OMS Folder`, `Preferred Device`, and
+  `Open Music System 2.3.8`.
+- MIDI and devices:
+  `Simple MIDI applications which only communicate with a single device should use:`.
+- Preferences and configuration: `Set Preferred OMS Device` was observed as
+  separated printable fragments `Set Prefe`, `ed OMS Device`; the intervening
+  bytes were not interpreted.
+- User-interface terms: `File`, `Quit`, and `Cancel`.
+- Four-character identifiers: `APPL`, `ICN#`, `FREF`, `CODE`, `DATA`, and
+  `SIZE`.
+- Resource name: `Sources`.
+- No case-insensitive printable-string matches were observed for `studio`,
+  `port`, `interface`, `driver`, `timing`, `hardware`, `patch`, `manufacturer`,
+  `model`, or `error`.
+
+#### Evidence for future comparison
+
+- Finder identifiers: type `APPL` and Creator bytes `6f a7 b9 44`.
+- Resource identifiers include `BNDL`, `CODE`, `DATA`, `FREF`, `ICN#`, `SIZE`,
+  and `vers`.
+- Direct names include `OMS Preferred Device`, `OMS Folder`,
+  `Preferred Device`, `Open Music System 2.3.8`, and `Sources`.
+- Resource ID 128 recurs across `MBAR`, `STR#`, `DITL`, `DLOG`, `BNDL`,
+  `FREF`, and the six observed icon resource types.
+- These identifiers are recorded for possible later comparison only; no mapping
+  to Studio Vision structures is attempted.
+
+#### Structural observations
+
+- The data fork is empty while the resource fork is 11,446 bytes.
+- All directly observed version, code-resource, identifier, and literal-string
+  evidence is present in the resource fork.
+- The resource map contains repeated ID 128 assignments across multiple
+  resource types.
+- Printable-string output also contains repeated short character patterns
+  interspersed with nonprintable data. Their offsets and boundaries were not
+  analyzed.
+- No undocumented record layout or binary structure was identified.
+
+#### Conclusions limited to observed evidence
+
+- The object has Finder Type `APPL`, an empty data fork, a nonempty resource
+  fork, two `CODE` resources, and version resources reporting `2.3.8`.
+- This evidence supports describing the inspected object as resource-based
+  rather than data-fork-based. It does not establish its behavior, processor
+  architecture, or undocumented format.
+
+#### Unknowns and unexamined structures
+
+- Binary contents of resources remain unexamined except for the directly
+  reported types, IDs, names, version values, and literal strings.
+- The semantics of the resource types and the `Sources` resource name are
+  unknown.
+- Any record layouts, repeated-pattern meanings, and string-table structures
+  are unknown.
+- The meaning of the non-ASCII Finder Creator bytes is unknown.
+- The executable format and processor architecture remain unidentified.
+- The relationship, if any, to Studio Vision project files is unknown.
+- The representative literal strings are not a complete string inventory.
+- The artifact was not executed, imported, loaded, mounted, or modified.
+
 ### Installed `Open Music System` extension
 
 #### Observations
