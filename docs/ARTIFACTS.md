@@ -353,12 +353,12 @@ They are recorded without interpretation:
 
 ## OMS applications
 
-### Observations
+### Earlier search and installer-extraction limitation
 
-- No separately extracted OMS application artifacts were located in the
-  documented Phoenix research directories.
-- The only OMS-named artifact located was the already inventoried
-  `Install OMS 2.3.8` regular file.
+- During the earlier search, no separately extracted OMS application artifacts
+  were located in the documented Phoenix research directories.
+- The only OMS-named artifact located during that search was the already
+  inventoried `Install OMS 2.3.8` regular file.
 - The installer identity was reconfirmed as:
   - Data-fork size: 2,485,279 bytes.
   - SHA-256:
@@ -371,16 +371,168 @@ They are recorded without interpretation:
 - The installed copies of The Unarchiver and StuffIt Expander did not provide
   a demonstrated command-line listing method or explicit VISE or `SVCT`
   support.
-- No extraction directory was created. Nothing was extracted or executed.
+- No installer extraction directory was created. Nothing was extracted from or
+  executed from the installer.
 
-### Unknowns and limitations
+- The internal `SVCT` installer container structure remains unknown.
+- The identities and contents of any applications embedded in the installer
+  remain unknown.
+- It remains unknown whether the installer contains standalone OMS
+  applications.
+- A safe non-executing method for extracting the `SVCT` installer payload has
+  not been identified.
+- The absence of separately extracted OMS applications at that time was not
+  evidence that OMS applications did not exist.
 
-- The internal `SVCT` container structure is unknown.
-- The identities and contents of any embedded OMS applications are unknown.
-- It is unknown whether the installer contains standalone OMS applications.
-- A safe non-executing extraction method has not been identified.
-- The absence of separately extracted OMS applications is not evidence that
-  OMS applications do not exist.
+### Extraction provenance for the installed OMS collection
+
+- Source archive: `Opcode_OMS.sit`.
+- Source path:
+  `/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS.sit`.
+- Archive size: 4,502,486 bytes.
+- Archive SHA-256:
+  `120f52b5e3ecaf99b32b981cba95853ebca115e31f80bce60d3e4865a0d9737c`.
+- Finder Type: `SIT5`.
+- Finder Creator: `SIT!`.
+- The archive was created inside the working SheepShaver environment.
+- A destination-controlled attempt using StuffIt Expander failed with
+  `StuffItManagerError 21` and created no extracted files.
+- Extraction succeeded using The Unarchiver through its documented AppleScript
+  interface.
+- Destination:
+  `/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS_extracted`.
+- Exact successful extraction command:
+
+```text
+osascript -e 'tell application "The Unarchiver" to unarchive {"/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS.sit"} to "/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS_extracted" deleting Original false creating Folder Never wait Until Finished true'
+```
+
+- The original archive hash remained unchanged after extraction.
+- No extracted application, extension, driver, installer, or utility was
+  executed.
+- Extracted files retained FinderInfo attributes, and classic Macintosh files
+  retained resource forks where present.
+
+### Observed installed OMS hierarchy
+
+The primary working source is
+`/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS_extracted/Opcode_OMS`.
+The following hierarchy was directly observed:
+
+```text
+Opcode_OMS/
+├── Control Panels/
+├── OMS Preferred Device
+├── Install OMS 2.3.8
+├── OMS_2.3_Mac.pdf
+├── Extensions/
+│   ├── Open Music System
+│   └── USB OMSMIDIDriver
+└── OMS Applications/
+    ├── Studio Patches Editor
+    ├── Icon\r
+    ├── OMS 2.3.8 Read Me
+    ├── OMS Setup
+    └── OMS Tech Pubs/
+        ├── OMS_NameMgr.pdf
+        ├── OMS_MTP.pdf
+        ├── OMS_Pbay.pdf
+        └── XTC Read Me
+```
+
+No purpose is attributed to these entries beyond their filenames, locations,
+and directly observed metadata.
+
+### Installed `OMS Setup`
+
+#### Observations
+
+- Filename: `OMS Setup`.
+- Source path:
+  `/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS_extracted/Opcode_OMS/OMS Applications/OMS Setup`.
+- Filesystem object: Regular file.
+- Data-fork size: 259,828 bytes.
+- Data-fork SHA-256:
+  `1e2a0be4c4f8cb8cd34994b86bc94f1972211789e6903a43035388787ce52998`.
+- Finder Type: `APPL`.
+- Finder Creator: `OmsS`.
+- `com.apple.FinderInfo` is present.
+- Resource-fork size: 430,252 bytes.
+- Resource-fork SHA-256:
+  `7b1efbb36b2383c5662f4d6af2523f5f7ae13070c8f4c3ce75446a982e3783d0`.
+
+#### Version and executable evidence
+
+- Two `vers` resources report `2.3.8`; one contains
+  `Open Music System 2.3.8`, and the other contains
+  `©1990-1999 Opcode Systems, Inc.`.
+- `file` identifies the data fork as a PowerPC PEF executable.
+- The data fork begins `Joy!peffpwpc` in ASCII.
+- The `cfrg` resource contains `pwpc` and `OMSSetupPPC`.
+- A `CODE` resource type is present. No architecture conclusion is drawn from
+  that resource-type observation.
+
+#### Complete observed resource-type list
+
+`DeRez` reported 40 distinct resource types:
+
+- `ALRT`, `BNDL`, `CNTL`, `CODE`, `CURS`, `DATA`, `DITL`, `DLOG`, `Estr`,
+  `FOND`, `FONT`, `FREF`, `Fnt#`, `ICN#`, `ICON`, `LDEF`, `MBAR`, `MENU`,
+  `MMA `, `OmsS`, `PICT`, `PROC`, `SICN`, `SIZE`, `STR `, `STR#`, `TEXT`,
+  `WIND`, `bmap`, `cfrg`, `cicn`, `clut`, `hmnu`, `icl4`, `icl8`, `ics#`,
+  `ics4`, `ics8`, `snd `, and `vers`.
+
+#### Representative literal strings
+
+The following literal strings were directly observed and are recorded without
+interpretation:
+
+- OMS: `About OMS Setup`, `OMS MIDI Setup`, `OMS Setup version `,
+  `OMS Timing`, and `Open Music System 2.3.8`.
+- Studios: `Create a New Studio Setup`, `My Studio Setup`, `Test Studio`,
+  `Studio Setup Editing`, and `Studio setup errs`.
+- MIDI devices: `MIDI Device Info`, `Identifying MIDI devices...`,
+  `Auto-Detect Devices`, `New Device`, and `Device list`.
+- Ports: `Add Device Per Port`, `Different In/Out Ports`, `Port disabled`,
+  `Ports:`, and `Sort by Port/Name`.
+- Interfaces: `Interfaces`, `MIDI Cards & Interfaces`,
+  `MIDI Cards and Interfaces`, and `The MIDI interface `.
+- Drivers: `Drivers`, `Edit Driver Device`, and `NoSyncRoutDrvr`.
+- Synchronization: `Check this if the device receives MIDI Time Code.`,
+  `Check this if the device sends MIDI Time Code`, `OMS Timing`, and
+  `To route sync to or from ^1, choose `.
+- Preferences: `Preferences`.
+- Setup files and documents: `Open Current Studio Setup`,
+  `Save studio setup as:`, `Studio Setup Doc Help`, and
+  `Customizing the Studio Setup Document`.
+- Patches: `New Patch`, `New Patcher`, `Clear Patches`, and `Paste Patches`.
+
+#### Comparison evidence
+
+- The archive-extracted copy exactly matches the `Opcode System Files` loose
+  copy in data-fork hash, resource-fork size and hash, and FinderInfo bytes.
+- The other `Opcode` loose copy has the same data fork but a resource fork 54
+  bytes smaller, a different resource-fork hash, and different Finder flag
+  bytes.
+- The cause and semantic significance of that difference are unknown.
+
+#### Conclusion limited to observed evidence
+
+- The extracted object has Finder Type `APPL`, Finder Creator `OmsS`, version
+  resources reporting `2.3.8`, and directly observed PowerPC PEF evidence.
+- These observations do not establish undocumented application behavior,
+  resource semantics, file-format structures, or relationships to Studio
+  Vision project bytes.
+
+#### Unknowns and unexamined structures
+
+- Resource contents beyond the directly reported version, type, name, and
+  printable-string observations remain unexamined.
+- The internal organization of the data fork and resource fork is unexamined.
+- The semantic roles and relationships of the observed resources and strings
+  are unknown.
+- The representative strings are not a complete string inventory.
+- No extracted artifact was executed during this inventory.
 
 ## Documentation
 
