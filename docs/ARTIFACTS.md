@@ -534,6 +534,124 @@ interpretation:
 - The representative strings are not a complete string inventory.
 - No extracted artifact was executed during this inventory.
 
+### Installed `Open Music System` extension
+
+#### Observations
+
+- Filename: `Open Music System`.
+- Full path:
+  `/Users/kurtheiden/Documents/Phoenix Research/Opcode_OMS_extracted/Opcode_OMS/Extensions/Open Music System`.
+- Filesystem object: Regular file.
+- Finder Type: `INIT` (`49 4e 49 54`).
+- Finder Creator: `OmsI` (`4f 6d 73 49`).
+- Data-fork size: 0 bytes.
+- Data-fork SHA-256:
+  `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+- Resource-fork size: 231,637 bytes.
+- Resource-fork SHA-256:
+  `922c55f061fca6de982cf4a39d156ae481c537dc9fbcd844172a60eebcf26fd8`.
+- Extended attributes:
+  - `com.apple.FinderInfo` — 32 bytes.
+  - `com.apple.ResourceFork` — 231,637 bytes.
+
+#### Version and executable evidence
+
+- Two `vers` resources, IDs 1 and 2, contain the string `2.3.8`.
+- The ID 1 `vers` resource also contains
+  `©1990-1999 Opcode Systems, Inc.`.
+- The ID 2 `vers` resource also contains `Open Music System 2.3.8`.
+- Both `vers` resources begin with the bytes `02 37`, while their directly
+  readable version strings report `2.3.8`. The significance of this difference
+  is unknown.
+- The data fork is empty, and `file` reports it as `empty`; no executable
+  format or processor architecture was identified by that tool.
+- The resource map contains three `INIT` resources: ID 128 with the `sysheap`
+  attribute, ID 200 with `sysheap` and `locked`, and ID 0 with `sysheap` and
+  `locked`.
+- The resource map also contains `PROC` resources with IDs 0 and 1, and a
+  `PPCC` resource with ID 601 named `OMSR M2N3`.
+- No `cfrg` resource was observed.
+- No processor architecture conclusion is drawn from the `INIT`, `PROC`, or
+  `PPCC` resource observations.
+
+#### Complete observed resource-type list
+
+`DeRez` reported 31 distinct resource types:
+
+- `ALRT`, `BNDL`, `CCI�`, `CNFG`, `DITL`, `DLOG`, `ErrS`, `FREF`, `Fnt#`,
+  `ICN#`, `ICON`, `INIT`, `LDEF`, `MDEF`, `MENU`, `OmsI`, `PICT`, `PPCC`,
+  `PROC`, `SICN`, `STR `, `STR#`, `cicn`, `dctb`, `icl4`, `icl8`, `ics#`,
+  `ics4`, `ics8`, `sysz`, and `vers`.
+
+#### Representative literal strings
+
+The following literal strings were directly observed in the resource fork and
+are recorded without interpretation:
+
+- OMS: `Open Music System 2.3.8`, `OMS Current State`, `OMS Folder`,
+  `OMS Preferences`, `OMS Setup`, and `Open OMS Setup`.
+- MIDI: `MIDI`, `MIDI IN`, `MIDI OUT`, `MIDI Setup`, `MIDI/Thru`, and
+  `Setting up MIDI...`.
+- Devices: `OMS Device Info`, `Identifying MIDI devices...`,
+  `Looking for MIDI devices`, `Device Setup`, and `Device searching...`.
+- Drivers: `Driver Search`, `Driver Setup`, `Driver Troubleshooting`,
+  `OMS Driver Search`, `OMS Driver Setup`, and `Searching for driver hardware`.
+- Interfaces: `InterfaceLib`, `MIDI interface`,
+  `Std. Interface, Modem`, `Studio 5`, and `MIDI Time Piece`.
+- Ports: `External ports to use:`, `Forget Port`, `PortInUse`, `Reset Port`,
+  and `Serial Port Errors`.
+- Synchronization: `Inability of a sequence to sync to incoming MIDI Time Code or clock.`
+  and `MIDI Time Code`.
+- Studio: `Minimal Studio Setup`, `studio setup`, and
+  `The current OMS studio setup document`.
+- Preferences: `OMS Preferences` and `Preferences dialog`.
+- Timing: `MIDI Time Code`, `clock`, and `communication speed`.
+- Errors: `Disk error`, `Driver Initialization Error`, `Error Log`,
+  `Framing errors`, `General error`, and `Overrun errors`.
+- Services: `network services`, `file servers`, and `printers`.
+- Serial communication: `standard serial driver`, `Serial Port Errors`,
+  `Serial Switch control panel`, `modem port`, and `printer port`.
+- AppleTalk: `AppleTalk`, `AppleTalk Options`, and `AppleTalk network`.
+- Networking: `AppleTalk network`, `network services`, `file servers`, and
+  `LocalTalk`.
+- Other recurring terminology: `MIDI Manager`, `PatchBay`, `Config/Empty`,
+  `Finding hardware`, and `System 7.0`.
+- No case-insensitive printable-string match for `USB` was observed.
+
+#### Evidence identifiers
+
+- Finder identifiers: type `INIT` and creator `OmsI`.
+- Resource identifiers include `OmsI`, `INIT`, `PROC`, `PPCC`, `CNFG`,
+  `ErrS`, and `sysz`.
+- Directly named resources include `OMSR M2N3`, `General error`, `PortInUse`,
+  `DriverOutOfMem`, `Driver Setup`, `Device Troubleshooting`, `MIDI Setup`,
+  `AppleTalk options`, and `midi setup help`.
+- Other directly observed identifiers include `InterfaceLib`, `MIDI Manager`,
+  `MIDI Time Code`, `AppleTalk`, `LocalTalk`, `Serial Switch`, `Studio 5`,
+  `MIDI Time Piece`, and `PatchBay`.
+- These identifiers are recorded for possible later comparison only; no mapping
+  to Studio Vision structures is attempted.
+
+#### Conclusions limited to observed evidence
+
+- The object has Finder Type `INIT`, Finder Creator `OmsI`, an empty data fork,
+  and a resource fork containing three `INIT` resources and version strings
+  reporting `2.3.8`.
+- No application behavior, resource meaning, processor architecture, or
+  undocumented binary structure is concluded from those observations.
+
+#### Unknowns and unexamined structures
+
+- Binary contents of the resources remain unexamined except for the directly
+  reported types, IDs, names, attributes, version bytes, and literal strings.
+- The semantics of the `INIT`, `PROC`, `PPCC`, `CNFG`, `OmsI`, and other
+  resource types are unknown in this inventory.
+- The executable format and processor architecture remain unidentified.
+- The relationship, if any, between this extension and Studio Vision project
+  files is unknown.
+- The representative literal strings are not a complete string inventory.
+- The extension was not executed or loaded.
+
 ## Documentation
 
 ### Directory observations
