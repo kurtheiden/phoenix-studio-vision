@@ -1,15 +1,13 @@
 # Contributing Authentic Studio Vision Samples
 
-Phoenix is an Open Source development project intended to help people who have old Studio Vision Pro projects they would like to migrate to modern DAWs. The development could use your help!
+Phoenix is an open-source preservation and recovery project. Its goal is to
+help musicians recover access to their own creative work by developing an
+evidence-based understanding of these legacy formats and eventually helping get old projects into modern DAWs with ease. The development could use your help!
 
 Authentic Studio Vision and Studio Vision Pro project files are the most
 valuable evidence available for understanding the Studio Vision file format.
 Each sample can reveal structures, relationships, and version differences that
 cannot be established reliably from speculation alone.
-
-Phoenix is an open-source preservation and recovery project. Its goal is to
-help musicians recover access to their own creative work by developing an
-evidence-based understanding of these legacy formats.
 
 ## What kinds of files are helpful?
 
