@@ -53,7 +53,7 @@ Before contributing, you may:
 - Contribute small test projects instead of personal projects
 - Contact the project privately before sharing sensitive material
 
-Contributors are welcome to contact the project privately before sending
+Contributors are welcome to contact the project privately at soundzilla@yahoo.com before sending
 materials. Public posting is not required.
 
 When modifying a project for privacy, preserve the untouched original
