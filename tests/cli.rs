@@ -94,6 +94,79 @@ fn reports_printable_strings_with_offsets_lengths_and_values() {
 }
 
 #[test]
+fn experimental_opening_inspection_is_opt_in_and_preserves_input() {
+    const START: usize = 0x0e;
+    const SPACING: usize = 0x2d;
+    const COUNT: usize = 11;
+    let path = temporary_path("opening-candidate");
+    let mut fixture = vec![0_u8; START + SPACING * COUNT];
+    fixture[START..START + 10].copy_from_slice(b"IAC Bus #1");
+    fixture[START + 10] = 0xff;
+    fixture[START + 11..START + 15].copy_from_slice(b"Test");
+    fs::write(&path, &fixture).expect("fixture should be written");
+
+    let output = run(&["--inspect-candidate-opening".as_ref(), path.as_os_str()]);
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+
+    assert!(output.status.success());
+    assert!(stdout.starts_with("EXPERIMENTAL opening name-entry candidate inspector\n"));
+    assert!(stdout.contains("Candidate structures only; no semantic interpretation is implied."));
+    assert!(stdout.contains(
+        "Reports the currently documented candidate opening region described in docs/DEVICE_TABLE_RESEARCH.md."
+    ));
+    assert!(!stdout.contains("Inspection heuristic:"));
+    assert!(!stdout.contains("record size"));
+    assert!(stdout.contains("Candidate entry:"));
+    assert!(stdout.contains("Raw file offset: 0x0000000e"));
+    assert!(stdout.contains("Candidate byte range: 0x0000000e--0x0000003a"));
+    assert!(stdout.contains("offset=0x0000000e bytes=IAC Bus #1"));
+    assert!(stdout.contains("offset=0x00000019 bytes=Test"));
+    assert!(!stdout.contains("length="));
+    assert!(!stdout.contains("Printable strings (minimum length 4):"));
+    assert_eq!(
+        fs::read(&path).expect("fixture should remain readable"),
+        fixture
+    );
+
+    fs::remove_file(path).expect("fixture should be removed");
+}
+
+#[test]
+fn experimental_opening_inspection_handles_truncated_files() {
+    let path = temporary_path("truncated-opening");
+    fs::write(&path, vec![0_u8; 0x1fc]).expect("fixture should be written");
+
+    let output = run(&["--inspect-candidate-opening".as_ref(), path.as_os_str()]);
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Candidate structure could not be inspected"));
+    assert!(stdout.contains("complete documented candidate opening region"));
+    assert!(!stdout.contains("Candidate entry:"));
+
+    fs::remove_file(path).expect("fixture should be removed");
+}
+
+#[test]
+fn default_inspection_output_does_not_include_experimental_output() {
+    let path = temporary_path("default-remains-default");
+    fs::write(&path, b"unchanged default path").expect("fixture should be written");
+
+    let output = run(&[path.as_os_str()]);
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+
+    assert!(output.status.success());
+    assert!(stdout.starts_with("Filename: "));
+    assert!(stdout.contains("default-remains-default"));
+    assert!(stdout.contains("Printable strings (minimum length 4):"));
+    assert!(stdout.contains("Studio Vision identification:"));
+    assert!(!stdout.contains("EXPERIMENTAL"));
+    assert!(!stdout.contains("Candidate entry"));
+
+    fs::remove_file(path).expect("fixture should be removed");
+}
+
+#[test]
 fn rejects_an_empty_file() {
     let path = temporary_path("empty");
     fs::write(&path, []).expect("fixture should be written");
