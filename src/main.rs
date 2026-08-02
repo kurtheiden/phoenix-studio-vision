@@ -1,14 +1,15 @@
 mod identification;
 mod inspection;
-mod opening;
 
 use identification::{identify, read_finder_metadata, Confidence};
 use inspection::{format_hex_dump, inspect};
-use opening::inspect_opening;
+use phoenix::opening::{parse_opening_region, CANDIDATE_END};
 use std::env;
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt::Write as _;
+use std::fs::File;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 fn main() {
@@ -105,25 +106,46 @@ fn run_opening_inspection(path: &Path) -> Result<(), Box<dyn Error>> {
     println!("Candidate structures only; no semantic interpretation is implied.");
     println!("Reports the currently documented candidate opening region described in docs/DEVICE_TABLE_RESEARCH.md.");
 
-    let Some(entries) = inspect_opening(path)? else {
+    let mut file = File::open(path).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("cannot open '{}': {error}", path.display()),
+        )
+    })?;
+    let mut bytes = vec![0_u8; CANDIDATE_END];
+    let mut bytes_read = 0;
+    while bytes_read < bytes.len() {
+        let count = file.read(&mut bytes[bytes_read..]).map_err(|error| {
+            io::Error::new(
+                error.kind(),
+                format!("cannot read '{}': {error}", path.display()),
+            )
+        })?;
+        if count == 0 {
+            bytes.truncate(bytes_read);
+            break;
+        }
+        bytes_read += count;
+    }
+    let Some(region) = parse_opening_region(&bytes) else {
         println!("Candidate structure could not be inspected: the file does not contain the complete documented candidate opening region.");
         return Ok(());
     };
 
-    for entry in &entries {
+    for range in &region.ranges {
         println!("Candidate entry:");
-        println!("  Raw file offset: 0x{:08x}", entry.offset);
+        println!("  Raw file offset: 0x{:08x}", range.start);
         println!(
             "  Candidate byte range: 0x{:08x}--0x{:08x}",
-            entry.offset,
-            entry.offset + entry.bytes.len() - 1
+            range.start,
+            range.end - 1
         );
-        println!("  Bytes (hex): {}", format_bytes(&entry.bytes));
+        println!("  Bytes (hex): {}", format_bytes(&range.bytes));
         println!("  Printable ASCII sequences:");
-        if entry.printable_sequences.is_empty() {
+        if range.printable_sequences.is_empty() {
             println!("    none");
         } else {
-            for sequence in &entry.printable_sequences {
+            for sequence in &range.printable_sequences {
                 println!(
                     "    offset=0x{:08x} bytes={}",
                     sequence.offset,

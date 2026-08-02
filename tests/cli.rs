@@ -1,3 +1,4 @@
+use phoenix::opening::{parse_opening_region, CANDIDATE_COUNT, CANDIDATE_SPACING, CANDIDATE_START};
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -95,14 +96,11 @@ fn reports_printable_strings_with_offsets_lengths_and_values() {
 
 #[test]
 fn experimental_opening_inspection_is_opt_in_and_preserves_input() {
-    const START: usize = 0x0e;
-    const SPACING: usize = 0x2d;
-    const COUNT: usize = 11;
     let path = temporary_path("opening-candidate");
-    let mut fixture = vec![0_u8; START + SPACING * COUNT];
-    fixture[START..START + 10].copy_from_slice(b"IAC Bus #1");
-    fixture[START + 10] = 0xff;
-    fixture[START + 11..START + 15].copy_from_slice(b"Test");
+    let mut fixture = vec![0_u8; CANDIDATE_START + CANDIDATE_SPACING * CANDIDATE_COUNT];
+    fixture[CANDIDATE_START..CANDIDATE_START + 10].copy_from_slice(b"IAC Bus #1");
+    fixture[CANDIDATE_START + 10] = 0xff;
+    fixture[CANDIDATE_START + 11..CANDIDATE_START + 15].copy_from_slice(b"Test");
     fs::write(&path, &fixture).expect("fixture should be written");
 
     let output = run(&["--inspect-candidate-opening".as_ref(), path.as_os_str()]);
@@ -123,6 +121,23 @@ fn experimental_opening_inspection_is_opt_in_and_preserves_input() {
     assert!(stdout.contains("offset=0x00000019 bytes=Test"));
     assert!(!stdout.contains("length="));
     assert!(!stdout.contains("Printable strings (minimum length 4):"));
+
+    let parsed = parse_opening_region(&fixture).expect("fixture should parse");
+    for range in parsed.ranges {
+        assert!(stdout.contains(&format!("  Raw file offset: 0x{:08x}", range.start)));
+        assert!(stdout.contains(&format!(
+            "  Candidate byte range: 0x{:08x}--0x{:08x}",
+            range.start,
+            range.end - 1
+        )));
+        let hex = range
+            .bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(stdout.contains(&format!("  Bytes (hex): {hex}")));
+    }
     assert_eq!(
         fs::read(&path).expect("fixture should remain readable"),
         fixture
