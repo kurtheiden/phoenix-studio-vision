@@ -3,3 +3,4 @@
 pub mod analysis;
 pub mod comparison;
 pub mod opening;
+pub mod smf;
