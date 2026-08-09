@@ -85,3 +85,15 @@ Confidence is not proof that a file is Studio Vision or structurally valid.
 On macOS, Phoenix reads the first eight bytes of `com.apple.FinderInfo` through
 a small read-only platform adapter. Unsupported platforms report that state
 without failing. AppleDouble sidecars remain outside this decision.
+
+## 2026-08-09: keep the first event parser explicitly bounded and diagnostic
+
+**Status:** Accepted
+
+The first parser spike is confined to a caller-supplied Track 7 byte range and
+the experimentally supported sequence `[timing VLQ][pitch][attack][release][duration VLQ]`.
+It reports source offsets and provisional accumulated interval units. It does
+not scan whole files, infer unsupported framing or channels, classify the
+provisional third structure as a confirmed note, or emit MIDI. A command-line
+interface is deferred until an evidence-backed region-selection contract is
+available.

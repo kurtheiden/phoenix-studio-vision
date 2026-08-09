@@ -44,3 +44,18 @@ not establish a file signature, structure, or parser behavior.
 
 These observations do not establish general Finder-code meanings, resource
 fork semantics, file-format structures, parser behavior, or compatibility.
+
+## Bounded Track 7 parser spike
+
+- A new `track7` library module decodes only an explicitly supplied local
+  sequence of timing VLQ, three property bytes, and duration VLQ.
+- The observed values `81 65`, `83 60`, `81 70`, `83 3a`, `81 75`, and `6b`
+  decode mechanically as 229, 480, 240, 442, 245, and 107.
+- The authentic Experiment 007 local range at offsets `0x00031c1d` through
+  `0x00031c30` produced the documented values 229/442, 480/245, and 240/107,
+  with provisional accumulated intervals 229, 709, and 949.
+- Read-only runs on Experiments 019, 020, and 022 reproduced their controlled
+  timing changes exactly.
+
+These are bounded diagnostic observations, not evidence of complete Track 7
+framing, SMF delta-time semantics, channel/status encoding, or MIDI export.

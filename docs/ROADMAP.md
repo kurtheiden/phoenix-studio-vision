@@ -57,6 +57,22 @@ Only after sufficient evidence exists, consider format recognition, structured
 parsing, richer validation, or a graphical interface. None is currently
 committed or specified.
 
+## Milestone 5: bounded Track 7 event-chain parser spike
+
+- [x] Add a bounded 7-bit big-endian VLQ decoder with focused malformed-input
+      tests.
+- [x] Decode the evidence-backed timing/property/duration structure only within
+      an explicit caller-supplied range.
+- [x] Validate the baseline fixture and position-control fixtures.
+- [x] Validate the authentic Experiment 007, 019, 020, and 022 artifacts
+      read-only.
+- [ ] Verify the provisional third structure against a documented sixth List
+      Window event.
+- [ ] Establish complete Track 7 framing before considering broader parsing.
+
+This milestone is diagnostic only. It does not establish general Studio Vision
+parsing or emit MIDI.
+
 ## Long-term product vision
 
 Subject to evidence-based format research, Phoenix aims to:

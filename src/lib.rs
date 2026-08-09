@@ -4,3 +4,4 @@ pub mod analysis;
 pub mod comparison;
 pub mod opening;
 pub mod smf;
+pub mod track7;
