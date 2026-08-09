@@ -56,6 +56,25 @@ fork semantics, file-format structures, parser behavior, or compatibility.
   with provisional accumulated intervals 229, 709, and 949.
 - Read-only runs on Experiments 019, 020, and 022 reproduced their controlled
   timing changes exactly.
+- The third decoded structure `81 70 | 24 7f 60 6b` was predicted before the
+  corresponding Studio Vision check and then matched the sixth List Window
+  event at position `26·2·229`: C1, attack 127, release 96, duration 107.
+- The leading value 240 remains timing-related/provisional; the independent
+  check does not establish its ownership or conversion to displayed position.
+- Three overlapping Track 7 List Window screenshots reconcile to 143 unique
+  rows. Rows 4–143 align strictly to 140 consecutive binary candidates with
+  560/560 musical-property field agreement.
+- Under a four-beat/480-unit coordinate calculation, all 140 displayed
+  start-to-start differences equal the later candidate's timing interval.
+- The final visible aligned candidate begins at `0x00031f96` and returns
+  cursor `0x00031f9c`; no structural failure occurs within the screenshot
+  evidence bound.
+- Boundary follow-up found matching property bytes for rows 1–3 at `0x31c0c`,
+  `0x31c12`, and `0x31c18`. Rows 2 and 3 have `81 70` timing prefixes; row
+  1's preceding timing field remains ambiguous.
+- Bytes after the final cursor begin `ff fa b9 2f ff 2f ...`; conservative
+  pitch/velocity plausibility stops the note model at `0x31f9c`. No footer,
+  terminator, or track-framing semantics are established.
 
 These are bounded diagnostic observations, not evidence of complete Track 7
 framing, SMF delta-time semantics, channel/status encoding, or MIDI export.

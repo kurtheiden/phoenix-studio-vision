@@ -66,8 +66,14 @@ committed or specified.
 - [x] Validate the baseline fixture and position-control fixtures.
 - [x] Validate the authentic Experiment 007, 019, 020, and 022 artifacts
       read-only.
-- [ ] Verify the provisional third structure against a documented sixth List
-      Window event.
+- [x] Verify the formerly provisional third structure against the documented
+      sixth List Window event.
+- [x] Manually verify preregistered rows 7–11 against the screenshot ground
+      truth before extending the parser's evidence range.
+- [x] Validate the supplied complete visible Track 7 List Window against the
+      bounded chain: 143 rows, 140 aligned candidates, 560/560 fields.
+- [x] Account locally for rows 1–3 property structures and characterize the
+      conservative post-row-143 stop.
 - [ ] Establish complete Track 7 framing before considering broader parsing.
 
 This milestone is diagnostic only. It does not establish general Studio Vision

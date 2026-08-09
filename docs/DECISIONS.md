@@ -97,3 +97,25 @@ not scan whole files, infer unsupported framing or channels, classify the
 provisional third structure as a confirmed note, or emit MIDI. A command-line
 interface is deferred until an evidence-backed region-selection contract is
 available.
+
+## 2026-08-09: preserve strict sequential alignment for Track 7 validation
+
+**Status:** Accepted
+
+Full-list validation compares screenshot row N only with binary candidate N
+after the experimentally established fourth-event anchor. The first three
+visible rows remain an explicitly unaligned prefix, and a parser failure is
+reported rather than repaired by skipping or resynchronizing. This preserves
+the distinction between screenshot ground truth, parser mechanics, and
+unresolved track framing.
+
+## 2026-08-09: keep Track 7 boundary claims conservative
+
+**Status:** Accepted
+
+Local bytes match the property fields of all 143 visible rows. Rows 2–143
+also have established timing prefixes; row 1's prefix is not assigned because
+backward VLQ boundaries are ambiguous. The post-row-143 bytes begin with a
+syntactically consumable VLQ but an out-of-range property byte, so the bounded
+note model stops without calling the bytes a footer, terminator, or complete
+track framing.

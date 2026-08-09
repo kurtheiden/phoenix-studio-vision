@@ -12,10 +12,12 @@ Controlled experiments support the local repeating sequence:
 `[timing VLQ] [pitch] [attack velocity] [release velocity] [duration VLQ]`
 
 The fourth event and the immediately following fifth event have direct or
-independent documented support. The next `24 7f 60 6b` structure is only
-mechanically consistent and remains provisional. Timing values are described
-as interval units; they are not called SMF delta-times, MIDI ticks, or Studio
-Vision absolute positions.
+independent documented support. The following `24 7f 60 6b` structure was
+initially only mechanically consistent, then independently checked against
+Studio Vision's sixth List Window row after the parser prediction. Its four
+musical properties are now independently verified. Timing values are still
+described as interval units; they are not called SMF delta-times, MIDI ticks,
+or Studio Vision absolute positions.
 
 The implementation accepts an explicit byte slice and start/end range. It
 never scans the whole file for plausible events and never searches ahead to
@@ -86,8 +88,17 @@ produces three mechanical structures:
 | 14 | 949 | 240 | `0x24` | 127 | 96 | 107 |
 
 The first two structures correspond to the controlled/documented fourth and
-fifth events. The third is a mechanically parsed, provisional candidate; its
-successful decode is not an independent Studio Vision row identification.
+fifth events. The third initially made a prediction and was then independently
+verified:
+
+| SVP row | Position | Pitch | Attack | Release | Duration | Binary structure |
+|---|---|---|---:|---:|---:|---|
+| sixth | `26·2·229` | C1 | 127 | 96 | 107 | `81 70 | 24 7f 60 6b` |
+
+All four musical-property predictions succeeded. The property structure is no
+longer merely provisional. This observation does not independently establish
+the semantics or ownership of the leading `81 70` timing value, nor complete
+event framing.
 
 The position fixtures also decode mechanically:
 
@@ -114,8 +125,10 @@ reported:
 | `0x00031c24` | 709 | 480 | `0x26` | 127 | 86 | 245 |
 | `0x00031c2b` | 949 | 240 | `0x24` | 127 | 96 | 107 |
 
-The authentic result matches both experimentally identified structures and
-the following provisional structure. No artifact was copied or modified.
+The authentic result matches the two experimentally identified structures and
+the third structure whose four properties were subsequently independently
+verified against the sixth List Window row. No artifact was copied or
+modified.
 
 # Position-control results
 
@@ -141,7 +154,8 @@ the current local model.
 - It does not establish complete event boundaries, channel/status encoding,
   non-note event representation, or broader track framing.
 - It does not prove that every byte sequence matching the local shape is a
-  note; the third structure remains provisional.
+  note; later structures remain parser-predicted candidates until independent
+  List Window checks.
 - It does not write MIDI output.
 
 # Evidence supported
@@ -149,24 +163,31 @@ the current local model.
 - A bounded parser can safely decode the exact evidence-backed local model.
 - The VLQ implementation handles all documented values and malformed bounds.
 - The authentic baseline produces the two controlled structures and the
-  provisional third structure at exact source offsets.
+  independently verified sixth-event structure at exact source offsets.
 - Position experiments 019, 020, and 022 decode the established timing
   mutations exactly.
+- Strict sequential screenshot validation matched 140 consecutive candidates
+  (560/560 pitch, attack, release, and duration fields) after the established
+  fourth-event alignment.
+- The visible validation range includes the candidate at `0x00031f96`, which
+  returns `0x00031f9c`; the prior smaller-bound stop at `0x00031f96` was a
+  boundary artifact, not a contradiction.
 - The parser does not need whole-file heuristic recovery to reproduce the
   controlled evidence.
 
 # Unknowns
 
 - The start/end framing for a complete Track 7 stream remains unknown.
-- The sixth and later property-like structures lack independent List Window
-  matching in the current evidence.
+- Later candidate structures lack independent List Window matching in the
+  current evidence.
 - Timing ownership, internal units, status/channel representation, and event
   ordering beyond the bounded local chain remain unresolved.
 - No valid Standard MIDI File has yet been recovered.
 
 # Single recommended next step
 
-Verify the provisional third structure against Studio Vision's sixth List
-Window event. This is the highest-information next step because it can extend
-the bounded chain with an independently documented row before expanding the
-parser's range or attempting any MIDI reconstruction.
+Open Studio Vision and manually verify the preregistered rows 7–11 in
+`TRACK7_CONSECUTIVE_EVENT_PREDICTIONS.md`. This is the highest-information next
+step because the parser already reaches those candidates sequentially and the
+next observations can either extend the independently verified chain or
+identify the first disagreement without introducing a new controlled edit.
