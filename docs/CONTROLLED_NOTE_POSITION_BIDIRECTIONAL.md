@@ -155,6 +155,13 @@ property structure more strongly than as part of the controlled note's five
 properties. Ownership is still provisional because the next `26` structure
 has not itself been independently manipulated.
 
+Experiment 021 subsequently changed only that following structure's pitch from
+D1 to C#1. Under a 56-byte event-stream shift, the sequence changed exactly
+`26 7f 56 81 75 -> 25 7f 56 81 75`, while preceding `83 60` and the fourth
+event remained stable. This independently identifies the sequence following
+`83 60` as the fifth List Window event. See
+`CONTROLLED_NEXT_EVENT_PITCH_CHANGE.md`.
+
 # Whole-file comparison
 
 Experiments 007 and 020 both contain 211,468 bytes. They differ at 1,761
@@ -208,12 +215,9 @@ The 1,761 differences classify as:
 
 # Single recommended next step
 
-In a fresh native Finder duplicate of Experiment 007, move only the immediately
-following fifth List Window event one position unit later, first recording its
-exact displayed baseline position and properties. Leave the controlled fourth
-event unchanged. Preregister the fourth event's `81 65 24 7f 5c 83 3a` as
-stable, test whether `83 60` increases to `83 61`, and inspect whether the
-subsequent `81 70` interval decreases to `81 6f`. This single experiment has
-the highest information value because it tests ownership of the candidate
-between the two provisional property structures and extends the delta chain
-toward repeatable event framing.
+Experiment 021 independently identified the fifth property structure; see
+`CONTROLLED_NEXT_EVENT_PITCH_CHANGE.md`. The next controlled experiment should
+move only that fifth event from `26·1·469` to `26·1·470`, testing whether its
+leading `83 60` interval increases to `83 61` and the following `81 70`
+interval decreases to `81 6f` while both identified property structures remain
+stable.
