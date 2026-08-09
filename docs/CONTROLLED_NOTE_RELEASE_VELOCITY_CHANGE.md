@@ -172,6 +172,13 @@ components `25`, `4`, or `469`, and prior research established no repeatable
 timing representation connecting them to the note position. They remain
 plausible adjacent numeric fields but are not assigned timing semantics.
 
+Experiment 019 subsequently moved only the same note from `25·4·469` to
+`25·4·468`. The five confirmed property bytes remained stable, while the
+second preceding VLQ changed `81 65 -> 81 64` (229 to 228) and a following VLQ
+changed `83 60 -> 83 61` (480 to 481). This paired response strongly favors a
+compensating delta-style timing relationship without establishing field
+ownership. See `CONTROLLED_NOTE_POSITION_CHANGE.md`.
+
 # Evidence supported
 
 - Experiment 018 exactly matches preregistered sequence `24 7f 5b 83 3a`.
@@ -201,10 +208,8 @@ plausible adjacent numeric fields but are not assigned timing semantics.
 
 # Single recommended next step
 
-From a fresh native Finder duplicate of Experiment 007, move only the same note
-from position `25·4·469` to `25·4·468` in the List Window while retaining C1,
-attack velocity 127, release velocity 92, duration 442, and note count.
-Preregister the confirmed five-byte sequence `24 7f 5c 83 3a` as stable, then
-test the preceding `81 3b 81 65` values and other compact neighboring bytes for
-one control-stable timing-correlated response. This is the narrowest experiment
-for extending the confirmed musical-property structure toward event timing.
+Experiment 019 completed the one-unit earlier position edit and found paired
+VLQ changes around the stable five-byte property structure; see
+`CONTROLLED_NOTE_POSITION_CHANGE.md`. The next controlled experiment should
+move only the same note one unit later, from `25·4·469` to `25·4·470`, to test
+the preregistered opposite delta response.
