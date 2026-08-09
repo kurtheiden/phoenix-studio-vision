@@ -145,6 +145,32 @@ are not treated as supported encodings. The byte is reproducibly
 velocity-correlated, while its relationship to velocity magnitude remains
 unknown.
 
+Experiment 013 subsequently tested velocity 126. The isolated pair remained
+`24 0f`, placing the observed `0f`/`2d` state change below tested velocity 126
+and between tested values 126 and 124 without establishing monotonic behavior.
+A separate exact `7f` to `7e` change appeared at `0x00031c20`, one byte after
+the first dense pitch anchor, but that offset remains `7f` in the velocity-124
+and velocity-121 artifacts. Full evidence is recorded in
+`CONTROLLED_NOTE_VELOCITY_BOUNDARY.md`.
+
+Experiment 014 then tested velocity 125. It retained `24 0f` at the isolated
+pair, bracketing the tested state change between 125 and 124, and exactly
+matched the preregistered direct pair `24 7d` at `0x00031c1f–0x00031c20`.
+No control-stable moving direct value was found for velocities 124 or 121. See
+`CONTROLLED_NOTE_VELOCITY_125.md` for the complete evidence.
+
+Experiment 015 independently repeated velocity 124 and produced `24 0f` at the
+isolated pair and exact direct pair `24 7c`. Neither Experiment 011 candidate
+replicated. The direct sequence now spans velocities 127–124, while the old
+`0f`/`2d` boundary is not reproducible at 124. See
+`CONTROLLED_NOTE_VELOCITY_124_REPLICATION.md`.
+
+Experiment 016 independently repeated velocity 121 and produced `24 0f` at the
+isolated pair and exact direct pair `24 79`. Neither Experiment 012 candidate
+replicated. The fixed pitch-adjacent byte now equals the known velocity at five
+independently tested values: 127, 126, 125, 124, and 121. See
+`CONTROLLED_NOTE_VELOCITY_121_REPLICATION.md`.
+
 # Experiment 011 vs Experiment 012
 
 The two velocity-only artifacts have equal sizes and aligned labels. Their data
@@ -224,13 +250,22 @@ immediately after the independently established isolated pitch anchor.
   new velocity-magnitude candidate was found.
 - Experiment 011 and 012 differ only at previously variable positions; no
   control-stable byte distinguishes their two velocity values.
+- The velocity-126 and velocity-125 tests retain `0f` at `0x0002f770`,
+  bracketing the tested state boundary between 125 and 124. They also produce
+  exact direct values `7e` and `7d` at `0x00031c20`.
+- The independent velocity-124 replication retains `0f` and extends the direct
+  sequence with exact value `7c`; Experiment 011's `2d` and `7f` do not
+  replicate.
+- The independent velocity-121 replication retains `0f` and produces exact
+  direct value `79`; Experiment 012's `2d` and `7f` do not replicate.
 
 # Unknowns
 
 - It is unknown whether `0x2d` represents a threshold, quantized category,
   edit state, lookup output, or another property correlated with velocity.
-- The actual magnitude encoding for velocity 127, 124, and 121 remains
-  unknown.
+- The fixed candidate directly matches velocities 127, 126, 125, 124, and 121
+  in the clean replication series; why the original 124 and 121 artifacts do
+  not match remains unknown.
 - It is unknown whether the adjacent pair is a field pair, mapping entry,
   cached state, or another structure.
 - The reason the 80 dense pitch-bearing bytes lack nearby velocity responses
@@ -241,9 +276,11 @@ immediately after the independently established isolated pitch anchor.
 
 # Single recommended next step
 
-From a fresh native Finder duplicate of Experiment 007, change only the same C1
-drum note's velocity from 127 to 126. After the verified-working save-on-quit
-procedure, test whether `0x0002f770` remains baseline `0f` or enters the edited
-`2d` state while all 81 pitch anchors remain `24`. This boundary-focused test
-is the narrowest way to distinguish an immediate edit-state transition from a
-coarser velocity threshold without assuming an unsupported numeric formula.
+Experiment 014 completed the velocity-125 test; see
+`CONTROLLED_NOTE_VELOCITY_125.md`. Experiment 015 completed the velocity-124
+replication; see `CONTROLLED_NOTE_VELOCITY_124_REPLICATION.md`. The completed
+velocity-121 replication is reported in
+`CONTROLLED_NOTE_VELOCITY_121_REPLICATION.md`. The next controlled experiment
+should change only the same note's duration by an exact recorded amount while
+holding pitch and velocity stable, to begin locating another event-related
+numeric field.
