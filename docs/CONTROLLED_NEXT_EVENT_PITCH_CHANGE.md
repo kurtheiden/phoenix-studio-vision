@@ -220,11 +220,9 @@ claiming that every note or track uses identical framing.
 
 # Single recommended next step
 
-From a fresh native Finder duplicate of Experiment 007, move only the fifth
-event from `26·1·469` to `26·1·470`, retaining D1 pitch, attack velocity 127,
-release velocity 86, duration 245, and note count. Preregister the fourth-event
-timing and properties as stable; test whether the fifth-event leading interval
-`83 60` becomes `83 61` and whether the following interval `81 70` becomes
-`81 6f`. This is the highest-information next experiment because it directly
-tests timing ownership between two now independently identified consecutive
-property structures and extends the delta-style chain.
+Experiment 022 subsequently performed this position edit. The fifth-event
+properties remained `26 7f 56 81 75`, its leading interval changed exactly
+`83 60 -> 83 61`, and its following interval changed exactly
+`81 70 -> 81 6f`, preserving their sum of 720. See
+`CONTROLLED_NEXT_EVENT_POSITION_CHANGE.md`. The next step is the bounded,
+diagnostic-only Track 7 event-chain parser spike recommended there.

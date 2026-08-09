@@ -220,4 +220,7 @@ Experiment 021 independently identified the fifth property structure; see
 move only that fifth event from `26·1·469` to `26·1·470`, testing whether its
 leading `83 60` interval increases to `83 61` and the following `81 70`
 interval decreases to `81 6f` while both identified property structures remain
-stable.
+stable. Experiment 022 subsequently confirmed all of those predictions and
+preserved the interval sum of 720; see
+`CONTROLLED_NEXT_EVENT_POSITION_CHANGE.md`. The same compensating timing rule
+therefore applies to two consecutive controlled events.
