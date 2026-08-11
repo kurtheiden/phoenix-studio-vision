@@ -217,6 +217,11 @@ level Sequence ownership remain unknown.
 
 # Single recommended next step
 
-Perform one controlled Patch-only edit on a disposable copy, leaving all notes
-and event positions unchanged, to isolate the Patch type/program/name fields
-and timing ownership before implementing mixed-event parsing.
+Experiment 023 subsequently confirmed the direct Program Change value at
+`0x318a5` with the preregistered change `17 -> 18` for displayed `PC 23 -> PC
+24`; the complete note chain remained unchanged. See
+`CONTROLLED_TRACK3_2_PATCH_CHANGE.md`. Complete Patch framing and timing remain
+unresolved.
+
+Perform a second controlled Program Change experiment using a deliberately
+non-adjacent value while leaving name, position, and notes unchanged.

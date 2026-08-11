@@ -131,6 +131,17 @@ marker-relative value is 86 rather than 85, so Phoenix withdraws the exact
 85/143 event-count interpretation and still does not add a general parser.
 Patch parsing remains deferred until its local fields and timing are isolated.
 
+## 2026-08-11: identify the Patch program byte without adding Patch parsing
+
+**Status:** Accepted
+
+Experiment 023 confirms the preregistered direct Program Change field at
+`0x318a5`: displayed `PC 23 -> PC 24` produces `17 -> 18`, while the Patch
+name and complete note stream remain unchanged. Phoenix records the field but
+does not implement Patch parsing because event start/type/timing framing remains
+partial. A non-adjacent-value replication is required before broader field-
+behavior claims.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

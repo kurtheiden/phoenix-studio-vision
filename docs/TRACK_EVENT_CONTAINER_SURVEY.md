@@ -161,3 +161,11 @@ prefix followed by 84 notes. Its marker-minus-eight value is 86, not the 85
 events shown by Studio Vision, so exact event-count semantics are contradicted
 for the corrected region. The original five candidates and their Sequence
 ownership remain unknown.
+
+Experiment 023 later showed that the corrected Track 3 #2 context bytes
+`2c c4 b2 5c` change to `2c c7 85 24` during a Patch Program Change edit,
+while the name, complete 84-note chain, and post-chain context stay aligned at
+the same offsets. Thus the full `2c c4 b2` sequence is recurring baseline
+context, not an invariant marker. The leading `2c` and broader structural
+relationships remain useful alignment evidence; the three changed bytes have
+no assigned semantics.

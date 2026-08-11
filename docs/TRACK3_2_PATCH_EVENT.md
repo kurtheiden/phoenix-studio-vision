@@ -247,7 +247,15 @@ unknown.
 
 # Single recommended next step
 
-Perform one controlled Patch-only save experiment on a disposable copy:
-change only the first Track 3 #2 Patch event while leaving all 84 notes and its
-position untouched. This is the smallest experiment capable of isolating the
-Patch type/program/name fields and testing the unresolved timing ownership.
+Experiment 023 subsequently changed only displayed `PC 23` to `PC 24`. The
+preregistered candidate changed exactly `0x318a5: 17 -> 18`; `Ming Dynasty`,
+the position candidates, first-note boundary, and complete 84-note chain stayed
+byte-identical. Three bytes at `0x31883–0x31885` also changed and remain
+unexplained header/dependent/save candidates. The direct Program Change field
+is now identified, while complete Patch framing and timing remain unresolved.
+See `CONTROLLED_TRACK3_2_PATCH_CHANGE.md`.
+
+Perform a second controlled Program Change experiment using a deliberately
+non-adjacent value while leaving name, position, and notes unchanged. This
+tests direct field behavior beyond a one-step correlation and separates the
+program byte from the unexplained three-byte header change.

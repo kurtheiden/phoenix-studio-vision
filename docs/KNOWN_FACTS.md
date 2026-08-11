@@ -109,3 +109,15 @@ Track 3 #2 stores literal `Ming Dynasty` in its pre-note region and has
 Program Change data value 23 at the Patch position. This partially identifies
 the Patch representation but does not establish complete Patch field or timing
 framing.
+
+Experiment 023 changed only displayed `PC 23` to `PC 24`. The preregistered
+local candidate changed exactly `0x318a5: 17 -> 18` at the same offset. Literal
+`Ming Dynasty`, the complete 84-note stream, all note timing, first-note
+boundary, and post-chain context remained byte-identical. This identifies the
+direct Program Change value field for this event instance and supports the
+literal name as independently stored/editable from the program value.
+
+Three adjacent context bytes at `0x31883–0x31885` also changed (`c4 b2 5c ->
+c7 85 24`) and remain unexplained. Consequently `2c c4 b2` is not an invariant
+marker across this controlled save. Complete Patch-event framing, its exact
+type field, and Patch timing representation remain unestablished.
