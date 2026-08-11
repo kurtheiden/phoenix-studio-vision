@@ -144,17 +144,20 @@ tested all five candidates under fixed 17-row alignment. Each failed on all
 four properties of row 1; none produced a complete property-row match or a
 timing match. Their identities remain unknown.
 
-A preregistered multi-event search then found exact 17-row hits at `0x313fa`
+A preregistered multi-event search then found exact 17-note hits at `0x313fa`
 and `0x31994`, in two marker-framed regions omitted by this survey. The first
-region is identified as Track 3 #2 by the independently expected count
-relationship: `00 00 00 55` occurs eight bytes before its `2c c4 b2` marker,
-analogous to Track 7's `00 00 00 8f` at the same relative position. The second
-region has `00 00 00 56` and remains unidentified despite sharing the exact
-17-row prefix.
+investigation incorrectly selected the former from its nearby value 85 because
+the sample was mistakenly described as the beginning of the List Window.
+
+Complete ground truth later established that Track 3 #2 begins with a Patch
+event and then a C#5 note with attack 100. It selects the `0x31882` marker /
+`0x318b5` note-chain region, which contains literal `Ming Dynasty`; the
+17-note sample at `0x31994` is note indices 33–49. The `0x312fc` region begins
+with attack 78 and contains `Wavox`, so it remains unidentified.
 
 The earlier heuristic missed Track 3 #2 because it required a long walk from a
-mechanically clean timing/property start. Track 3 #2 has ambiguous initial
-timing/header material and yields 84 consecutive note-property structures
-against the nearby/UI count of 85. This follow-up strengthens the repeated
-record-family and count-field evidence without identifying the original five
-candidates or assigning them to any of the project's 18 Sequences.
+mechanically clean timing/property start. Track 3 #2 instead has a mixed Patch
+prefix followed by 84 notes. Its marker-minus-eight value is 86, not the 85
+events shown by Studio Vision, so exact event-count semantics are contradicted
+for the corrected region. The original five candidates and their Sequence
+ownership remain unknown.

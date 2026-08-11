@@ -1,16 +1,21 @@
 # Objective
 
-Test whether the independently observed first 17 Studio Vision List Window
-rows for `Ode to Clarke` / `Track 3 #2` / `JD-800` are predicted by the
+Test whether an independently observed consecutive 17-note Studio Vision List
+Window sample for `Ode to Clarke` / `Track 3 #2` / `JD-800` is predicted by the
 validated Track 7 event representation, and whether the matching bytes have a
 repeatable local container relationship. The authentic Experiment 007 baseline
 was inspected read-only. No MIDI was emitted and parser code was not changed.
 
 # Independent ground truth
 
-Studio Vision reported `85 Events`. The preregistered rows were the 17 rows
-supplied for positions `18·4·241` through `27·4·466`. This is independent
-ground truth from a different track and instrument than Track 7 / JV-1080-10.
+Studio Vision reported `85 Events`. The preregistered sample was the 17 notes
+supplied for positions `18·4·241` through `27·4·466`. It was originally
+described to the investigation as the beginning of the List Window. Complete
+screenshots obtained later established that it is actually note indices 33–49,
+or complete event indices 34–50, after one Patch event and 32 earlier notes.
+This provenance correction does not change the consecutive sample's values or
+its original comparison result. It remains independent ground truth from a
+different track and instrument than Track 7 / JV-1080-10.
 The project contains 18 Studio Vision Sequences; this report does not treat
 other event-chain regions as tracks in `Ode to Clarke` without evidence.
 
@@ -68,22 +73,23 @@ when prefixes of 2, 3, 4, 5, and 8 complete events were tested:
 - `0x313fa`, in the marker-framed region beginning near `0x312fc`;
 - `0x31994`, in a separate marker-framed region beginning near `0x31882`.
 
-The first region uniquely has the independently expected count relationship:
-the four bytes at `0x312f4` are `00 00 00 55` (85). The analogous field in the
-second region is `00 00 00 56` (86). The first region is therefore positively
-identified as Track 3 #2. The second exact musical-prefix hit is retained as an
-unidentified separate region; convenience or byte identity alone is not used
-to assign it to a track.
+The original investigation selected the first hit because `00 00 00 55` (85)
+occurs near its marker. That inference was wrong. Complete-list ground truth
+now distinguishes the hits: the first note must be C#5 with attack 100, and the
+track patch is Ming Dynasty. Those observations match the second region, whose
+note chain begins at `0x318b5` and whose pre-note region contains literal
+`Ming Dynasty`. The first region begins with C#5 attack 78 and contains
+`Wavox`; it is a separate unidentified region despite sharing the later
+17-note sequence.
 
-Track 3 #2 row 1 properties begin at `0x313fa`. A VLQ-like field `82 00`
-(256) immediately precedes them at `0x313f8`; its incoming musical semantics
-are not inferred. Row 2 timing begins at `0x313ff`, properties at `0x31401`,
-and follows row 1 without intervening bytes. Rows 1–17 are one consecutive
-timing/property sequence through `0x3146f`.
+The validated sample's first properties are at `0x31994`. A timing VLQ `82 00`
+(256) immediately precedes them at `0x31992`. The next timing begins at
+`0x31999`, properties at `0x3199b`, and follows without intervening bytes. The
+17 notes are one consecutive timing/property sequence through `0x31a09`.
 
 # Property validation
 
-At `0x313fa`, all fields match without resynchronization:
+At corrected offset `0x31994`, all fields match without resynchronization:
 
 | Property | Exact matches |
 |---|---:|
@@ -107,41 +113,38 @@ incoming displayed-position difference.
 
 # Event-count analysis
 
-The selected Track 3 #2 marker is at `0x312fc`; eight bytes earlier, the
-big-endian four-byte value at `0x312f4` is 85. Track 7's marker is at
-`0x31c04`; eight bytes earlier, `0x31bfc` contains 143. These equal the two
-independently observed Studio Vision List Window counts. The identical
-relative placement and independently correct unequal values are strong
-evidence for a repeated event-count field.
-
-The unidentified second exact prefix has 86 at the same marker-relative
-position. It is not relabeled Track 3 #2.
+This report originally selected the `0x312fc` marker because its marker-minus-
+eight value is 85. Complete ground truth corrects Track 3 #2 to marker
+`0x31882`, where the analogous value at `0x3187a` is 86, while Studio Vision
+shows 85 total events. Track 7's analogous value remains 143 for 143 displayed
+notes. The corrected 86/85 result contradicts the earlier claim that this is
+an exact repeated List Window event-count field. The `0x312f4` value 85 belongs
+to the separate Wavox region.
 
 # Complete candidate extent
 
-Beginning with the clean first property structure at `0x3131b`, 84 consecutive
-note-property structures can be mechanically decoded. Row 1 of the visible
-preregistered set is structure 33. Thus the local run contains 32 structures
-before it, the 17 validated structures, and 35 further structures after row 17.
-Later decoded musical values are not Studio Vision-validated ground truth.
+Beginning with the corrected first-note property structure at `0x318b5`, 84
+consecutive note-property structures decode and now match the complete Studio
+Vision screenshots. The preregistered sample is note structures 33–49. Thus the
+run contains 32 notes before it, the 17 validated subset, and 35 after it.
 
-The final decoded property structure begins at `0x3155f` and ends at
-`0x31564`. Bytes immediately after it are:
+The final property structure begins at `0x31af9` and ends at cursor `0x31afe`.
+Bytes immediately after it are:
 
 `ff fb 8b 7d ff 2f 00 29 00 00 00 eb 00 06 00 00 ...`
 
-The next conservative property candidate is invalid, so decoding stops there.
-Exactly 85 note-property structures cannot be bounded: 84 are accounted for.
-The nearby count of 85 may include a differently represented event, but that
-meaning is not assigned without evidence.
+The next conservative property candidate is invalid, so note decoding stops.
+The complete List Window explains the count exactly as one Patch plus 84 notes;
+it does not imply a missing note. The Patch is partially localized in the
+pre-note bytes but is not yet represented by a complete decoded event grammar.
 
 # Boundary comparison with Track 7
 
 | Relationship | Track 3 #2 | Track 7 | Assessment |
 |---|---|---|---|
-| Count then marker | 85 at marker − 8; marker `0x312fc` | 143 at marker − 8; marker `0x31c04` | repeated relationship |
+| Marker-minus-eight value | 86 at `0x3187a`; marker `0x31882` | 143 at `0x31bfc`; marker `0x31c04` | same placement, not UI-count equality |
 | Marker | `2c c4 b2` | `2c c4 b2` | exact |
-| First clean properties | no established timing for record's first property | no established timing for row 1 | similar treatment |
+| First clean properties | `90` then properties at `0x318b5` | `90` then properties at `0x31c0c` | repeated treatment |
 | Later events | timing, pitch, attack, release, duration | same | exact representation |
 | Post-chain | `ff fb 8b 7d ff 2f 00 29 ...` | `ff fa b9 2f ff 2f 00 29 ...` | repeated framing shape |
 | Alignment | count begins on 4-byte boundary; marker +8 | same | exact relationship |
@@ -183,36 +186,37 @@ their track, Sequence, and event-type identities remain unknown.
 - **A. YES:** all 68/68 note-property fields and 17/17 complete rows match.
 - **B. YES:** all 16/16 testable displayed start differences match timing.
 - **C. YES:** a preregistered multi-event signature located the region without
-  a hard-coded offset, and the independently expected 85 field selected it
-  from the two exact hits. This is evidence-backed identification, not a
-  general discovery parser.
-- **D. YES:** analogous marker-relative fields contain 85 and 143 for two
-  independently identified tracks with those Studio Vision counts.
-- **E. YES:** the identified regions repeat the marker, marker-relative count,
-  event representation, and post-chain shape. Field semantics beyond those
-  relationships remain limited.
+  a hard-coded offset; later complete-list first-note and Patch-name ground
+  truth selected the correct one of two hits. This is evidence-backed
+  identification, not a general discovery parser.
+- **D. NO:** the corrected Track 3 #2 field is 86 for 85 UI events, so exact
+  repeated event-count semantics are contradicted.
+- **E. YES:** the identified regions repeat the marker, marker-relative field
+  placement, event representation, and post-chain shape. Field semantics
+  beyond those relationships remain limited.
 
 # Evidence supported
 
-- Track 3 #2 is identified at row-1 property offset `0x313fa`.
+- Track 3 #2 is identified at first-note property offset `0x318b5`; the
+  validated 17-note sample begins at `0x31994`.
 - The 17 preregistered rows match 68/68 property fields and 16/16 timing tests.
-- A second exact 17-row byte hit exists at `0x31994` but has an analogous count
-  of 86 and remains unidentified.
-- The unequal 85/143 values recur at the same structural position.
+- A second exact 17-note byte hit begins at `0x313fa`, but its surrounding
+  region is Wavox and its first-note attack differs; it remains unidentified.
+- The corrected marker-relative values are 86 for Track 3 #2 and 143 for Track
+  7; the earlier 85/143 event-count conclusion is withdrawn.
 - Thirty-five note structures decode after the validated rows, and 84 total
   consecutive note-property structures are bounded in the selected region.
 - Parser and MIDI-emission code are unchanged.
 
 # Unknowns
 
-The reason for the second exact musical-prefix copy, the identity of its
-region, the non-note contribution (if any) to the 85-event count, the first
-record property's timing ownership, length/reference fields, complete
-container grammar, and higher-level Sequence ownership remain unknown.
+The reason for the duplicate musical prefix, the Wavox region's identity, the
+Track 3 #2 Patch record's exact framing/timing ownership, the meaning of the
+nearby 86, length/reference fields, complete container grammar, and higher-
+level Sequence ownership remain unknown.
 
 # Single recommended next step
 
-Resolve the exact 85-event boundary by identifying the one differently
-represented event implied by the 85 count versus 84 consecutive note-property
-structures. Do not implement general discovery until that boundary is
-explained.
+Perform one controlled Patch-only edit on a disposable copy, leaving all notes
+and event positions unchanged, to isolate the Patch type/program/name fields
+and timing ownership before implementing mixed-event parsing.

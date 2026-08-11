@@ -86,21 +86,26 @@ repeatedly contain `2c c4 b2` before the chain and
 `ff fa ?? ?? ff 2f 00 29 ...` after it; identities and field semantics remain
 unknown.
 
-Independent Studio Vision ground truth for `Ode to Clarke` / `Track 3 #2` /
-`JD-800` predicts an exact project sequence beginning at property offset
-`0x313fa`: 17/17 pitch, attack, release, and duration fields match, for 68/68
-property fields, and all 16/16 testable displayed start differences match the
-immediately preceding VLQ values. No resynchronization was used.
+Independent complete Studio Vision ground truth for `Ode to Clarke` / `Track
+3 #2` / `JD-800` reconciles to one Patch event plus 84 notes. All 84 notes
+strictly match the project chain at `0x318b5–0x31afe`: 84/84 pitch, attack,
+release, duration, and complete rows (336/336 fields), plus 83/83 note-to-note
+timing intervals. The earlier 17-note sample is note indices 33–49 at
+`0x31994`; its 68/68 properties and 16/16 timing results remain valid.
 
-The Track 3 #2 region has `00 00 00 55` (85) eight bytes before a `2c c4 b2`
-marker. Track 7 has `00 00 00 8f` (143) at the same marker-relative location.
-Both values equal independently observed Studio Vision event counts. This is
-strong evidence for a repeated event-count field and repeated local event-chain
-framing in these two identified regions. It does not establish a general track
-grammar or Sequence container.
+The prior identification of the `0x312fc` / Wavox region as Track 3 #2 was
+wrong because that 17-note sample had been misdescribed as the start of the
+List Window. The correct region has marker `0x31882`, literal `Ming Dynasty`,
+and first-note properties `55 64 7f 83 4d` at `0x318b5`.
 
-Track 3 #2's selected region contains 84 mechanically consecutive
-note-property structures, including 35 after the 17 validated rows, before a
-conservative post-chain stop. The difference between 84 note structures and
-the independently observed 85 Events remains unresolved; later decoded
-musical values are not Studio Vision-validated.
+The corrected Track 3 #2 region has `00 00 00 56` (86) eight bytes before its
+marker despite 85 displayed total events. Track 7 has 143 at the analogous
+location and 143 displayed notes. The corrected two-track evidence therefore
+contradicts interpreting that field as an exact total List Window event count,
+while repeated local chain framing remains supported.
+
+Track 3 #2 stores literal `Ming Dynasty` in its pre-note region and has
+`ff ff ff 17` nearby; an existing Studio Vision SMF export independently has a
+Program Change data value 23 at the Patch position. This partially identifies
+the Patch representation but does not establish complete Patch field or timing
+framing.

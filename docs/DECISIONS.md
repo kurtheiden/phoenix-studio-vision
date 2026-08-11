@@ -124,11 +124,12 @@ is independently matched to Studio Vision ground truth.
 **Status:** Accepted
 
 Track 3 #2 independently validates the Track 7 property and timing model and
-establishes a repeated marker-relative 85/143 event-count relationship. Phoenix
-still does not add a general track parser: Track 3 #2 bounds 84 consecutive
-note-property structures against 85 reported events, a second unidentified
-region shares the 17-row musical prefix, and no binary Sequence container is
-established. The next investigation resolves the exact 85-event boundary.
+was initially assigned to the wrong one of two duplicate 17-note regions.
+Complete ground truth corrects the selected chain to `0x318b5`, validates all
+84 notes, and explains the UI count as one Patch plus 84 notes. Its analogous
+marker-relative value is 86 rather than 85, so Phoenix withdraws the exact
+85/143 event-count interpretation and still does not add a general parser.
+Patch parsing remains deferred until its local fields and timing are isolated.
 
 ## 2026-08-09: keep Track 7 boundary claims conservative
 

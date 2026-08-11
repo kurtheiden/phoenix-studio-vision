@@ -77,10 +77,12 @@ committed or specified.
 - [ ] Establish complete Track 7 framing before considering broader parsing.
 - [x] Survey nearby repeated candidate event-chain/container contexts without
       implementing automatic discovery.
-- [x] Independently validate Track 3 #2 / JD-800: 17/17 property rows and
-      16/16 timing intervals; establish the analogous 85/143 count relationship.
-- [ ] Resolve why the identified Track 3 #2 region contains 84 consecutive
-      note-property structures while Studio Vision reports 85 Events.
+- [x] Correct Track 3 #2 to the `0x318b5` chain and validate all 84 note rows
+      plus 83 note-to-note intervals against complete List Window ground truth.
+- [x] Reconcile 85 UI events as one Patch plus 84 notes and withdraw the exact
+      event-count interpretation because the analogous binary value is 86.
+- [ ] Isolate the first Patch event's type, program/name fields, and timing
+      ownership before implementing bounded mixed-event decoding.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.
