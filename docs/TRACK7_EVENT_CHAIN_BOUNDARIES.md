@@ -116,6 +116,11 @@ footer, another event type, or unrelated data.
 Exact Track 7 start/end framing, row-1 timing prefix, semantics of surrounding
 bytes, and generality beyond this bounded region remain unresolved.
 
+Comparative inspection found five other bounded, unidentified multi-structure
+candidate chains with a nearby `2c c4 b2` marker and analogous
+`ff fa ?? ?? ff 2f 00 29 ...` post-context. This makes the local bytes
+plausibly record-related, but does not identify Track 7's container.
+
 # Single recommended next step
 
 Perform a narrow byte/record comparison at `0x31c08–0x31c0c` and

@@ -109,6 +109,27 @@ reported rather than repaired by skipping or resynchronizing. This preserves
 the distinction between screenshot ground truth, parser mechanics, and
 unresolved track framing.
 
+## 2026-08-09: defer automatic Track 7 discovery after container survey
+
+**Status:** Accepted
+
+Comparative scanning found a family of bounded candidate chains with recurring
+marker and post-context bytes, but no validated track identity or metadata
+reference selects Track 7. Phoenix therefore keeps the forensic offset
+explicit and does not add heuristic discovery until one neighboring candidate
+is independently matched to Studio Vision ground truth.
+
+## 2026-08-11: retain bounded diagnostics after Track 3 #2 generalization
+
+**Status:** Accepted
+
+Track 3 #2 independently validates the Track 7 property and timing model and
+establishes a repeated marker-relative 85/143 event-count relationship. Phoenix
+still does not add a general track parser: Track 3 #2 bounds 84 consecutive
+note-property structures against 85 reported events, a second unidentified
+region shares the 17-row musical prefix, and no binary Sequence container is
+established. The next investigation resolves the exact 85-event boundary.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

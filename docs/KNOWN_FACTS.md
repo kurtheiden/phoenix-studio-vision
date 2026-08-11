@@ -78,3 +78,29 @@ fork semantics, file-format structures, parser behavior, or compatibility.
 
 These are bounded diagnostic observations, not evidence of complete Track 7
 framing, SMF delta-time semantics, channel/status encoding, or MIDI export.
+
+Five additional bounded candidate chains were found by the same conservative
+multi-structure discovery test at `0x2fb7a–0x300d8`, `0x301d8–0x30976`,
+`0x30a32–0x30e98`, `0x30f4c–0x31254`, and `0x31677–0x317fe`. Nearby candidates
+repeatedly contain `2c c4 b2` before the chain and
+`ff fa ?? ?? ff 2f 00 29 ...` after it; identities and field semantics remain
+unknown.
+
+Independent Studio Vision ground truth for `Ode to Clarke` / `Track 3 #2` /
+`JD-800` predicts an exact project sequence beginning at property offset
+`0x313fa`: 17/17 pitch, attack, release, and duration fields match, for 68/68
+property fields, and all 16/16 testable displayed start differences match the
+immediately preceding VLQ values. No resynchronization was used.
+
+The Track 3 #2 region has `00 00 00 55` (85) eight bytes before a `2c c4 b2`
+marker. Track 7 has `00 00 00 8f` (143) at the same marker-relative location.
+Both values equal independently observed Studio Vision event counts. This is
+strong evidence for a repeated event-count field and repeated local event-chain
+framing in these two identified regions. It does not establish a general track
+grammar or Sequence container.
+
+Track 3 #2's selected region contains 84 mechanically consecutive
+note-property structures, including 35 after the 17 validated rows, before a
+conservative post-chain stop. The difference between 84 note structures and
+the independently observed 85 Events remains unresolved; later decoded
+musical values are not Studio Vision-validated.

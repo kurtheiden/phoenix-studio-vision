@@ -75,6 +75,12 @@ committed or specified.
 - [x] Account locally for rows 1–3 property structures and characterize the
       conservative post-row-143 stop.
 - [ ] Establish complete Track 7 framing before considering broader parsing.
+- [x] Survey nearby repeated candidate event-chain/container contexts without
+      implementing automatic discovery.
+- [x] Independently validate Track 3 #2 / JD-800: 17/17 property rows and
+      16/16 timing intervals; establish the analogous 85/143 count relationship.
+- [ ] Resolve why the identified Track 3 #2 region contains 84 consecutive
+      note-property structures while Studio Vision reports 85 Events.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.
