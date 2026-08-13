@@ -101,9 +101,12 @@ committed or specified.
 - [x] Validate the explicitly bounded representation on an independently
       identified real Patch event: Track 3 / JV-1080 repeats core semantic
       fields but differs in local context, so the unchanged decoder rejects it.
-- [ ] Investigate the exact Track 3 versus Track 3 #2 local-context differences
-      with one more independently identified Patch event before changing the
-      bounded decoder.
+- [x] Compare a third independently identified Patch event: Track 1 /
+      Juno-106 confirms the common semantic core and distinguishes variable
+      framing, bank-tail data, and compound pre-Note timing context.
+- [ ] Design a bounded representation-oriented Patch contract that preserves
+      opaque context and common length/transition checks; do not implement or
+      relax the existing Track 3 #2 decoder yet.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

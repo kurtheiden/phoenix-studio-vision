@@ -150,3 +150,10 @@ PC, post-PC VLQ shape, and Note transition relationships recur, but pre-name,
 post-name, payload-length, and pre-Note context differ. The unchanged decoder
 correctly fails at `0x31305`; no generalization is yet justified. See
 `INDEPENDENT_PATCH_EVENT_VALIDATION.md`.
+
+A third authentic comparison subsequently identifies Track 1 / Juno-106 /
+`Empty Patch` / PC 61. Across all three events, position VLQ, `ff 7c`, a local
+payload length through PC, length-prefixed ASCII name, direct PC, post-PC VLQ,
+and transition to `0x90` form a common semantic core. Widths and opaque context
+vary, and the unchanged decoder rejects Track 1's one-byte position as its
+Track 3 #2-specific contract requires. See `THREE_PATCH_EVENT_COMPARISON.md`.

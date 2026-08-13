@@ -237,6 +237,22 @@ weakening context validation or renaming the decoder as a shared abstraction.
 Investigate the exact local-context differences with another independently
 identified Patch event before changing code.
 
+## 2026-08-13: separate common Patch semantics from variable framing
+
+**Status:** Accepted
+
+The third authentic event, Track 1 / Juno-106 / `Empty Patch` / PC 61, confirms
+that all three representations share a VLQ position, `ff 7c`, local payload
+length through PC, length-prefixed ASCII name, direct PC, post-PC VLQ, and
+transition to `0x90`. They do not share fixed widths or context: Track 1 uses a
+one-byte position, Track 3 #2 has a wider post-name field and extra pre-Note
+context, and bank-tail values vary with exported bank selection.
+
+Future design work may define a bounded representation-oriented contract that
+preserves opaque context and validates common measured relationships. The
+existing Track 3 #2 decoder must remain strict until such a design is reviewed;
+no checks are relaxed and no generalized parser is authorized here.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

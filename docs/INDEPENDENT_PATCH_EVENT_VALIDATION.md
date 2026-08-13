@@ -88,15 +88,15 @@ tick 480. Its first four notes are:
 | 10,524 | 80 | 92 | 51 | 480 |
 | 10,987 | 75 | 90 | 60 | 301 |
 
-The project structures beginning at `0x3131c`, `0x31321`, `0x31328`, and
-`0x3132f` encode those four complete note-property rows, with intervening
+The project structures beginning at `0x3131b`, `0x31322`, `0x31329`, and
+`0x31330` encode those four complete note-property rows, with intervening
 start-to-start VLQs 483, 438, and 463. The first-note start is independently
 linked to Patch tick 480 by `9603 - 480 = 9123`.
 
 # Binary location and anchors
 
 The candidate Patch position begins at `0x31300`; the first Note status is at
-`0x3131b`, and first-note properties begin at `0x3131c`. The compact local
+`0x3131a`, and first-note properties begin at `0x3131b`. The compact local
 layout is:
 
 `83 60 | ff 7c | 13 | 00 01 9d f9 1d | 05 | 57 61 76 6f 78 |
@@ -118,16 +118,16 @@ identify the region much more strongly than a string match alone.
 | one-byte name length | `0x3130a`: `05` | MATCH |
 | variable ASCII name | `0x3130b–0x3130f`: `Wavox` | MATCH |
 | stable post-name context | `02 33 30 04 ff 51 02`, not Track 3 #2's context | DIFFERENT |
-| direct Program Change | `0x31318`: `1d` = 29, matching export | MATCH |
-| two-byte post-PC VLQ shape | `0x31319–0x3131a`: `c7 23` = 9,123 | MATCH |
+| direct Program Change | `0x31317`: `1d` = 29, matching export | MATCH |
+| two-byte post-PC VLQ shape | `0x31318–0x31319`: `c7 23` = 9,123 | MATCH |
 | stable context before Note | Track 3 has no Track 3 #2 12-byte intervening context | DIFFERENT |
-| transition to Note status | `0x3131b`: `90` | MATCH |
+| transition to Note status | `0x3131a`: `90` | MATCH |
 
 # Existing decoder result
 
 The unchanged `decode_known_track3_2_patch` was invoked with start `0x31300`
-and exclusive bound `0x3131c`, including the expected status byte at
-`0x3131b`. It failed, as expected from the comparison:
+and exclusive bound `0x3131b`, including the expected status byte at
+`0x3131a`. It failed, as expected from the comparison:
 
 `UnexpectedBytes { offset: 0x31305, expected: [00, 00, 17, 00, 17], observed:
 [00, 01, 9d, f9, 1d] }`
@@ -168,7 +168,7 @@ the MIDI instrument-name meta event.
 # Evidence supported
 
 - Track 3 contains a naturally occurring Patch-like representation at
-  `0x31300–0x3131a`, followed by Note status at `0x3131b`.
+  `0x31300–0x31319`, followed by Note status at `0x3131a`.
 - Position, length-prefixed ASCII name, direct PC, post-PC VLQ shape, and Note
   transition recur outside Track 3 #2.
 - MIDI PC, timing, device/track metadata, and four complete notes independently

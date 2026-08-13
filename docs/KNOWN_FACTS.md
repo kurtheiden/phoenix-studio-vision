@@ -208,3 +208,17 @@ ASCII name, direct PC, two-byte post-PC VLQ, and transition to Note status
 context differ from Track 3 #2. The unchanged bounded decoder therefore fails
 at `0x31305`. This is partial generalization evidence for the semantic fields,
 not evidence for one invariant local Patch layout.
+
+Track 1 / Juno-106 is independently identified in the authentic project from
+91 exported notes: Patch start `0x2f833`, one-byte position VLQ `00`, literal
+`Empty Patch`, direct PC `3d` = 61 at `0x2f84f`, post-PC `cb 78` = 9,720, and
+Note status `0x2f852`. All 91 pitches, attacks, and durations and all 90 timing
+fields match; 89/91 release velocities match, with two SMF zero-velocity
+note-offs corresponding to project `0x40`.
+
+Across Track 1, Track 3, and Track 3 #2, `ff 7c`, one-byte local payload length
+through PC, one-byte-length-prefixed ASCII name, direct PC, two-byte post-PC
+VLQ, and transition to `0x90` recur. Track 3 exports CC0=81/CC32=2 and stores
+`ff 51 02`; the two no-bank-export events store `ff ff ff`. Position width,
+post-name width, and pre-Note context vary. This supports a common semantic
+core, not a common fixed layout.

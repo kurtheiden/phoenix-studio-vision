@@ -310,3 +310,10 @@ Position, length-prefixed name, direct PC, post-PC VLQ shape, and Note status
 recur, but several local context fields differ and the Track 3 #2-specific
 decoder rejects the candidate unchanged. See
 `INDEPENDENT_PATCH_EVENT_VALIDATION.md`.
+
+The third-event comparison independently locates Track 1 / Juno-106 at Patch
+start `0x2f833`, name `Empty Patch`, PC 61, and Note status `0x2f852`. It
+confirms a cross-event semantic core while showing variable position width,
+post-name width/bank data, and pre-Note context. It also establishes that each
+local payload length counts through the direct PC byte. See
+`THREE_PATCH_EVENT_COMPARISON.md`.
