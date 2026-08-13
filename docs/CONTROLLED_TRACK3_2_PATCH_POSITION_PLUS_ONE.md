@@ -239,3 +239,8 @@ changed exactly the aligned ASCII payload at `0x31891–0x3189c`; the position
 and interval fields remained at their baseline values. The preceding `0x0c`
 is a strong but unconfirmed length byte. See
 `CONTROLLED_TRACK3_2_PATCH_NAME_CHANGE.md`.
+
+Experiment 027 subsequently confirms the length byte with `0c -> 07` and a
+seven-byte `Phoenix` payload. The position remains `84 12` = 530 at its fixed
+pre-name offset; following interval and Note fields relocate by `-5` while
+remaining unchanged. See `CONTROLLED_TRACK3_2_SHORT_PATCH_NAME.md`.

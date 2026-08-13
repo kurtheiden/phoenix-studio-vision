@@ -256,3 +256,9 @@ smallest highest-information control for testing whether `0x31890` is a length
 byte, whether the payload is variable-width or padded, whether following fields
 relocate, and whether any record-size field changes. Do not implement a Patch
 decoder until that framing evidence is available.
+
+Experiment 027 completed this recommendation. `0x31890` changed exactly
+`0c -> 07`, followed by seven ASCII bytes for `Phoenix`; no padding remained,
+and all following structure relocated by `-5`. Local size fields also decreased
+by five. A bounded diagnostic Patch decoder spike is now justified. See
+`CONTROLLED_TRACK3_2_SHORT_PATCH_NAME.md`.

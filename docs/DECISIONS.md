@@ -190,6 +190,24 @@ end ownership, name-length framing, compound interval ownership, and the exact
 event-type discriminator remain incomplete. The next control should use a
 deliberately shorter Patch name.
 
+## 2026-08-13: accept variable-length Patch name and bounded decoder spike
+
+**Status:** Accepted
+
+Experiment 027 confirms the locked length prediction: `0x31890: 0c -> 07`,
+followed immediately by seven ASCII bytes for `Phoenix`. The project and every
+following Patch/Note anchor become five bytes shorter with no padding. PC and
+all note data remain unchanged after relocation. A local payload length changes
+27 to 22, a broader size candidate changes 653 to 648, and dependent offsets
+also adjust by five.
+
+A bounded, diagnostic-only Patch decoder spike is now justified for this known
+Track 3 #2 representation. It must use explicit evidence bounds/anchors,
+decode only confirmed position, length-prefixed name, and PC fields, report
+source offsets and relocation, and validate against Experiments 007 and
+023–027. This does not authorize general Patch discovery, a general Studio
+Vision event grammar, or MIDI emission.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

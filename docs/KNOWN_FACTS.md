@@ -169,3 +169,21 @@ additional literal name copy or name-specific downstream reference was found.
 Position, name, and PC now occupy independently controlled fields in one
 coherent local span, but name-length framing, complete event end ownership,
 compound interval grammar, and the event-type discriminator remain partial.
+
+Experiment 027 changed only the Patch name from 12-character `Ming Dynasty` to
+7-character `Phoenix` in a fresh Experiment 007 duplicate. The project becomes
+exactly five bytes smaller. At the same pre-name offset, the locked prediction
+is confirmed: `0x31890: 0c -> 07`, followed immediately by exactly seven ASCII
+bytes. No padding or residual name bytes remain; all following Patch and Note
+structure relocates by `-5`.
+
+The PC byte moves from `0x318a5` to `0x318a0` and remains `0x17`. The first-note
+properties and complete chain move from `0x318b5–0x31afe` to
+`0x318b0–0x31af9` and remain byte-identical across all 84 note properties and
+83 timing fields. Absolute Patch position remains `84 12` = 530 at its fixed
+pre-name offset. A local payload-length field changes `1b` = 27 to `16` = 22,
+exactly spanning its following bytes through PC, and a broader 32-bit size
+candidate changes 653 to 648. Six downstream offset-like fields also decrease
+by five. These results establish a one-byte-length-prefixed variable-length
+ASCII name with no fixed-width padding and justify a bounded diagnostic parser
+spike for this known representation, not a general Patch parser.

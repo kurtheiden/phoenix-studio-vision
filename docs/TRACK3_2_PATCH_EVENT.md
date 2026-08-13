@@ -286,3 +286,13 @@ behavior and general field width require a different-length control. See
 Change only the Patch name to a deliberately shorter value to test length,
 padding, relocation, and record-size behavior before implementing a Patch
 decoder.
+
+Experiment 027 completed this recommendation. The name length changes
+`0x31890: 0c -> 07`, `Phoenix` occupies exactly seven following ASCII bytes,
+and all later Patch/Note structure moves by `-5` without padding or musical
+change. A local payload length changes 27->22 and a broader size candidate
+changes 653->648. See `CONTROLLED_TRACK3_2_SHORT_PATCH_NAME.md`.
+
+Implement a bounded diagnostic-only Patch decoder for this known
+representation and validate it across Experiments 007 and 023–027 without
+claiming a general Studio Vision Patch grammar.
