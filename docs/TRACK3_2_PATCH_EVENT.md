@@ -296,3 +296,9 @@ changes 653->648. See `CONTROLLED_TRACK3_2_SHORT_PATCH_NAME.md`.
 Implement a bounded diagnostic-only Patch decoder for this known
 representation and validate it across Experiments 007 and 023–027 without
 claiming a general Studio Vision Patch grammar.
+
+The bounded decoder spike now implements this recommendation in `src/patch.rs`.
+Explicit-offset validation derives position, variable-length name, PC, and the
+`0x90` transition correctly across Experiments 007 and 023–027, including
+Experiment 027 relocation. No discovery, general grammar, or MIDI output was
+added. See `TRACK3_2_PATCH_DECODER_SPIKE.md`.

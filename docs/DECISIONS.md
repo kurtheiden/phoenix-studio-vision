@@ -208,6 +208,20 @@ source offsets and relocation, and validate against Experiments 007 and
 023–027. This does not authorize general Patch discovery, a general Studio
 Vision event grammar, or MIDI emission.
 
+## 2026-08-13: keep the first Patch decoder explicitly bounded
+
+**Status:** Accepted
+
+The Track 3 #2 Patch spike requires an explicit known position-field start and
+exclusive end bound. It decodes only confirmed absolute position,
+one-byte-length-prefixed ASCII name, direct Program Change, and the transition
+to Note status `0x90`. It validates Experiments 007 and 023–027, including the
+short-name relocation, and performs no scanning or recovery.
+
+The spike remains a library/test diagnostic. No CLI was added, existing Track
+7 behavior was not refactored, and no general Patch discovery, event grammar,
+unknown-field interpretation, interval ownership, or MIDI emission is implied.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

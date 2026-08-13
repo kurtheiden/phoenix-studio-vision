@@ -187,3 +187,14 @@ candidate changes 653 to 648. Six downstream offset-like fields also decrease
 by five. These results establish a one-byte-length-prefixed variable-length
 ASCII name with no fixed-width padding and justify a bounded diagnostic parser
 spike for this known representation, not a general Patch parser.
+
+The bounded Track 3 #2 Patch decoder spike accepts an explicit start and end,
+does not scan, and decodes only confirmed absolute position, one-byte-length-
+prefixed ASCII name, direct PC, and the transition to `0x90`. Read-only tests
+derive the expected semantic states from Experiments 007 and 023–027. The
+five 12-character states reach Note status at `0x318b4`; Experiment 027 derives
+the relocated offset `0x318af`. Malformed bounds/VLQs, truncated or non-ASCII
+names, inconsistent payload length, unexpected known context, and missing Note
+transition are rejected without recovery. General Patch discovery/grammar,
+unknown fields, event-type semantics, interval ownership, and MIDI emission
+remain unsupported.

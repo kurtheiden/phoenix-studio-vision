@@ -96,8 +96,10 @@ committed or specified.
       confirms the direct ASCII payload at `0x31891–0x3189c`.
 - [x] Change only the Patch name to a shorter value: Experiment 027 confirms
       `0c -> 07`, variable-length storage, `-5` relocation, and size updates.
-- [ ] Implement a bounded diagnostic-only Patch decoder spike for the known
+- [x] Implement a bounded diagnostic-only Patch decoder spike for the known
       Track 3 #2 representation and validate Experiments 007 and 023–027.
+- [ ] Validate the explicitly bounded representation on an independently
+      identified real Patch event in another track before generalizing.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.
