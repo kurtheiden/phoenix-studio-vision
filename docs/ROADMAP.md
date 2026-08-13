@@ -82,8 +82,8 @@ committed or specified.
 - [x] Reconcile 85 UI events as one Patch plus 84 notes and withdraw the exact
       event-count interpretation because the analogous binary value is 86.
 - [ ] Complete the first Patch event's start/type framing and field ownership
-      before implementing bounded mixed-event decoding; Experiment 025 now
-      identifies its absolute position field and narrows the primary span.
+      before implementing bounded mixed-event decoding; Experiments 025/026
+      now identify its absolute position and editable name fields.
 - [x] Confirm the Track 3 #2 direct Program Change byte with Experiment 023:
       `PC 23 -> PC 24` produces `0x318a5: 17 -> 18` with notes unchanged.
 - [x] Replicate the Program Change field using a deliberately non-adjacent
@@ -92,8 +92,10 @@ committed or specified.
 - [x] Isolate the Patch-event absolute timing representation with a
       position-only change: Experiment 025 confirms `84 12` = 530 to
       `84 13` = 531 at `0x31886–0x31887`.
-- [ ] Change only the Patch name to a same-length value to clarify literal
-      field ownership and narrow the remaining Patch boundary.
+- [x] Change only the Patch name to a same-length value: Experiment 026
+      confirms the direct ASCII payload at `0x31891–0x3189c`.
+- [ ] Change only the Patch name to a shorter value to test the candidate
+      length byte, padding/relocation, and record-size behavior.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

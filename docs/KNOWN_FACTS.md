@@ -152,3 +152,20 @@ rather than a note-to-note interval. The primary Patch span is now strongly
 supported from `0x31886` through `0x318a7`, but unresolved metadata, compound
 interval ownership, complete end framing, and the Patch event-type
 discriminator remain partial.
+
+Experiment 026 changed only the editable Patch name from `Ming Dynasty` to the
+equal-length `Phoenix Test` in a fresh Experiment 007 duplicate. The aligned
+payload at `0x31891–0x3189c` changed directly between the two 12-byte ASCII
+strings without relocation. The preceding byte at `0x31890` remains `0x0c`,
+strongly suggesting a Pascal-style length prefix, but equal-length evidence
+does not establish its behavior or a general fixed/variable field width.
+
+The Patch absolute-position VLQ remains `84 12` = 530, the direct PC field
+remains `0x17`, both Patch-to-first-note timing components remain stable, and
+the complete 84-note stream plus 83 note-to-note timing fields are
+byte-identical. The name payload remained stable in PC-only Experiments 023/024
+and position-only Experiment 025, changing only in Experiment 026. No
+additional literal name copy or name-specific downstream reference was found.
+Position, name, and PC now occupy independently controlled fields in one
+coherent local span, but name-length framing, complete event end ownership,
+compound interval grammar, and the event-type discriminator remain partial.

@@ -233,3 +233,9 @@ name while keeping position, PC, instrument, and notes unchanged. Timing and PC
 are now established; a same-length name control offers the highest information
 gain for determining literal field ownership and narrowing the Patch boundary
 without introducing layout-length ambiguity.
+
+Experiment 026 completed this recommendation. `Ming Dynasty -> Phoenix Test`
+changed exactly the aligned ASCII payload at `0x31891–0x3189c`; the position
+and interval fields remained at their baseline values. The preceding `0x0c`
+is a strong but unconfirmed length byte. See
+`CONTROLLED_TRACK3_2_PATCH_NAME_CHANGE.md`.

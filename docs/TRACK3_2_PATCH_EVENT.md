@@ -275,3 +275,14 @@ See `CONTROLLED_TRACK3_2_PATCH_POSITION_PLUS_ONE.md`.
 Change only the literal Patch name to a deliberately different same-length
 name to clarify field ownership and narrow the Patch boundary without a
 serialization-length change.
+
+Experiment 026 completed this recommendation. The aligned payload at
+`0x31891–0x3189c` changed exactly from 12-byte ASCII `Ming Dynasty` to
+`Phoenix Test`, while position, PC, timing components, and all notes remained
+stable. The preceding `0x0c` is a strong Pascal-length candidate, but its
+behavior and general field width require a different-length control. See
+`CONTROLLED_TRACK3_2_PATCH_NAME_CHANGE.md`.
+
+Change only the Patch name to a deliberately shorter value to test length,
+padding, relocation, and record-size behavior before implementing a Patch
+decoder.

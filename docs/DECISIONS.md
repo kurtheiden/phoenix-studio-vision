@@ -173,6 +173,23 @@ precise, but unresolved metadata, compound interval ownership, complete end
 framing, and the exact Patch event-type discriminator remain incomplete. A
 same-length Patch-name control is the next evidence step.
 
+## 2026-08-13: confirm editable Patch-name payload, defer decoder
+
+**Status:** Accepted
+
+Experiment 026 changes only `Ming Dynasty` to equal-length `Phoenix Test` and
+confirms the editable 12-byte ASCII payload at `0x31891–0x3189c`. The aligned
+position, PC, timing components, note boundary, and complete note stream remain
+stable. A preceding `0x0c` strongly suggests Pascal-style length framing, but
+the equal-length experiment cannot establish variable/fixed width, padding,
+relocation, or record-size behavior.
+
+Phoenix still does not implement a Patch decoder. A hard-bounded diagnostic
+extractor could report the confirmed fields in this known instance, but event
+end ownership, name-length framing, compound interval ownership, and the exact
+event-type discriminator remain incomplete. The next control should use a
+deliberately shorter Patch name.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

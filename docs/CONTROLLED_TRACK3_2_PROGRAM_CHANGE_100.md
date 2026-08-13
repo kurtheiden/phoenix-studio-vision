@@ -214,3 +214,8 @@ Experiment 025 completed this recommendation. The absolute Patch position is
 stored as a 7-bit VLQ at `0x31886–0x31887`, changing `84 12` = 530 to
 `84 13` = 531 for the one-unit-later edit. The PC byte, name, and complete note
 chain stayed unchanged. See `CONTROLLED_TRACK3_2_PATCH_POSITION_PLUS_ONE.md`.
+
+Experiment 026 independently changed only the Patch name. The aligned payload
+at `0x31891–0x3189c` became `Phoenix Test`, while the confirmed PC field stayed
+`0x17`. This directly confirms name/PC independence. See
+`CONTROLLED_TRACK3_2_PATCH_NAME_CHANGE.md`.

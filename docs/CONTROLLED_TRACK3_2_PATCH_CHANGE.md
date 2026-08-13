@@ -168,3 +168,8 @@ Experiment 025 completed this recommendation and identified the absolute Patch
 position VLQ at `0x31886–0x31887`: `84 12` = 530 changed to `84 13` = 531
 for `1·2·50 -> 1·2·51`. The confirmed PC field remained `0x17`. See
 `CONTROLLED_TRACK3_2_PATCH_POSITION_PLUS_ONE.md`.
+
+Experiment 026 subsequently confirmed the editable Patch-name payload at
+`0x31891–0x3189c` with the direct equal-length ASCII replacement
+`Ming Dynasty -> Phoenix Test`. The PC field remained `0x17`. See
+`CONTROLLED_TRACK3_2_PATCH_NAME_CHANGE.md`.
