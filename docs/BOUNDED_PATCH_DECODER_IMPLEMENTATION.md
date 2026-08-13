@@ -181,3 +181,9 @@ Experiment 028 independently changes only Track 2's final opaque post-name
 byte from `01` to `02`. The shared decoder accepts it unchanged and preserves
 `02 33 38 04 ff 51 02` exactly. A read-only regression test records this
 controlled state; bank interpretation remains outside the decoder.
+
+Experiment 029 independently changes only the preceding candidate byte from
+`51` to `52`. The decoder again accepts the representation unchanged and
+preserves `02 33 38 04 ff 52 01` exactly. Controlled evidence now identifies
+the last two tail bytes as CC0 and CC32 values, but production output remains
+opaque until sentinel/optionality behavior is established.

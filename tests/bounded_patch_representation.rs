@@ -7,6 +7,7 @@ use std::ops::Range;
 
 const BASELINE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline";
 const EXPERIMENT_028: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 028 - Track 2 Bank Select LSB Change/newest STUFF baseline EXP28";
+const EXPERIMENT_029: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 029 - Track 2 Bank Select MSB Change/newest STUFF baseline EXP29";
 
 fn decode(path: &str, start: usize, status_offset: usize) -> BoundedPatchRepresentation<'static> {
     let bytes = fs::read(path).unwrap_or_else(|error| panic!("cannot read '{path}': {error}"));
@@ -201,6 +202,34 @@ fn decodes_controlled_track2_bank_lsb_change_as_opaque_context() {
     assert_eq!(
         track2.post_name_context.bytes,
         &[0x02, 0x33, 0x38, 0x04, 0xff, 0x51, 0x02]
+    );
+    assert_eq!(track2.post_name_context.range, 0x2fb6a..0x2fb71);
+    assert!(track2.pre_note_context.bytes.is_empty());
+}
+
+#[test]
+fn decodes_controlled_track2_bank_msb_change_as_opaque_context() {
+    let track2 = decode(EXPERIMENT_029, 0x2fb55, 0x2fb74);
+    assert_common(
+        &track2,
+        ExpectedCommon {
+            position: 0,
+            position_range: 0x2fb55..0x2fb56,
+            payload_length: 25,
+            name: "Stereoww Bs",
+            program: 37,
+            pc_offset: 0x2fb71,
+            timing: 1920,
+            status_offset: 0x2fb74,
+        },
+    );
+    assert_eq!(
+        track2.pre_name_context.bytes,
+        &[0x00, 0x01, 0x25, 0xf8, 0xa5]
+    );
+    assert_eq!(
+        track2.post_name_context.bytes,
+        &[0x02, 0x33, 0x38, 0x04, 0xff, 0x52, 0x01]
     );
     assert_eq!(track2.post_name_context.range, 0x2fb6a..0x2fb71);
     assert!(track2.pre_note_context.bytes.is_empty());

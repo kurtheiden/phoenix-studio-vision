@@ -307,6 +307,19 @@ The shared decoder therefore continues returning the full post-name context
 as opaque provenance. No first-class bank fields are added until CC0 and
 absence semantics have comparable controlled support.
 
+## 2026-08-13: defer semantic bank fields pending optionality evidence
+
+**Status:** Accepted
+
+Experiment 029 complements Experiment 028: independent CC0-only and CC32-only
+changes establish the middle and final bank-tail bytes as direct values for
+Track 2. This is sufficient to design diagnostic bank candidates, but not to
+define optional semantic fields because the leading `ff` and `ff ff ff`
+no-bank representation have not been controlled.
+
+Keep the post-name context opaque in production. Design optional bank fields
+only after a bank-removal experiment establishes presence/sentinel behavior.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

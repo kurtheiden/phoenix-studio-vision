@@ -186,3 +186,7 @@ That experiment is complete. Experiment 028 changed only Track 2 CC32 from 1
 to 2 and confirmed `0x2fb6e..0x2fb70: ff 51 01 -> ff 51 02`; all other bounded
 Patch bytes and the complete Note chain remained stable. See
 `CONTROLLED_TRACK2_BANK_LSB_CHANGE.md`.
+
+Experiment 029 independently changes only Track 2 CC0 from 81 to 82 and
+confirms `ff 51 01 -> ff 52 01`. The last two tail bytes are therefore direct
+CC0/CC32 values for this representation; the leading `ff` remains unknown.

@@ -151,3 +151,8 @@ Run one controlled Track 2 CC0/MSB-only change from a fresh Experiment 007
 duplicate, keeping CC32=1, PC, position, name, and notes unchanged. This is the
 smallest high-information test of the still-partial `51` byte and would decide
 whether both bank bytes are ready for diagnostic semantic exposure.
+
+That experiment is complete. Experiment 029 changes only CC0 `81 -> 82` and
+confirms aligned `ff 51 01 -> ff 52 01`; see
+`CONTROLLED_TRACK2_BANK_MSB_CHANGE.md`. Both value bytes are now independently
+established, while the leading `ff` and no-bank optionality remain unresolved.

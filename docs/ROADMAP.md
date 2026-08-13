@@ -116,8 +116,11 @@ committed or specified.
 - [x] Isolate the bank-correlated post-name tail with a controlled CC32-only
       save: Experiment 028 confirms aligned `ff 51 01 -> ff 51 02` while the
       Patch core and complete Track 2 Note chain remain stable.
-- [ ] Change only Track 2 CC0/MSB in a fresh baseline duplicate to test the
-      still-partial `51` candidate before exposing bank fields semantically.
+- [x] Change only Track 2 CC0/MSB in a fresh baseline duplicate: Experiment
+      029 confirms aligned `ff 51 01 -> ff 52 01`, independently establishing
+      direct CC0 storage alongside Experiment 028's direct CC32 result.
+- [ ] Remove Bank Select from Track 2 in one controlled save to test whether
+      `ff 51 01 -> ff ff ff` before designing optional bank semantics.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

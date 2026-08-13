@@ -255,3 +255,11 @@ inside the bounded Patch representation. Position 0, payload 25, name
 211-note binary stream remained stable. This directly identifies the final
 tail byte with CC32 for this representation; CC0 and `ff` semantics remain
 partial/unknown.
+
+Experiment 029 changed only Track 2 CC0 from 81 to 82 in another fresh
+Experiment 007 duplicate. The locked prediction was uniquely confirmed at the
+same aligned tail: `ff 51 01 -> ff 52 01`, with only `0x2fb6f: 51 -> 52`
+changing inside the bounded representation. The entire 211-note chain and all
+other Patch fields remain stable. Together Experiments 028/029 establish
+direct CC0 and CC32 value storage for this representation; leading `ff` and
+no-bank optionality remain unproven.

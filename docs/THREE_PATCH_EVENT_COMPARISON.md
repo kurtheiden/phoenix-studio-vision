@@ -261,3 +261,8 @@ Experiment 028 now supplies controlled evidence for the final bank-tail byte:
 changing only Track 2 CC32 `1 -> 2` produces aligned `ff 51 01 -> ff 51 02`.
 This confirms the CC32 subfield for that representation while leaving the
 candidate CC0 byte and `ff` sentinel/absence semantics partial or unknown.
+
+Experiment 029 supplies the complementary controlled result: changing only
+Track 2 CC0 `81 -> 82` produces `ff 51 01 -> ff 52 01`. CC0 and CC32 value
+storage are independently established for that representation. Leading `ff`
+and the `ff ff ff` no-bank state still lack a controlled optionality test.
