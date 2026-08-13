@@ -121,6 +121,18 @@ committed or specified.
       direct CC0 storage alongside Experiment 028's direct CC32 result.
 - [ ] Remove Bank Select from Track 2 in one controlled save to test whether
       `ff 51 01 -> ff ff ff` before designing optional bank semantics.
+- [x] Inventory MIDI event families across all seven available Project 001
+      exports using a non-duplicative three-sequence view; document 6,109
+      Notes, 5,112 Controllers across 14 CC numbers, 440 Pitch Bends, 38
+      Program Changes, and two SysEx events.
+- [ ] Investigate one shared Controller-event representation using natural
+      mixed-controller/NRPN sequences and bounded List Window ground truth;
+      do not split the work by CC number.
+- [ ] After Controller, investigate the shared Pitch Bend representation using
+      the two exported `ANALOG.MID #2` curves before authorizing a controlled
+      edit.
+- [ ] Defer the controlled no-bank/sentinel experiment until it outranks
+      Controller, Pitch Bend, Tempo/Meter, or SysEx recovery value.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

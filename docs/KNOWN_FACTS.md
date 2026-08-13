@@ -263,3 +263,12 @@ changing inside the bounded representation. The entire 211-note chain and all
 other Patch fields remain stable. Together Experiments 028/029 establish
 direct CC0 and CC32 value storage for this representation; leading `ff` and
 no-bank optionality remain unproven.
+
+The Project 001 MIDI-export directory contains seven SMFs representing only
+three of the authentic project's 18 sequences. A non-duplicative richest-
+multitrack view contains 6,109 Note starts and endings, 5,112 Control Changes,
+440 Pitch Bends, 38 Program Changes, and two SysEx events. Channel and
+polyphonic pressure are absent from the available exports. Fourteen distinct
+CC numbers occur; 4,812 Controller events are CC6/98/99/100/101 components of
+repeated NRPN/RPN-style streams. This is export evidence, not proof of project
+event serialization or coverage of the unexported sequences.

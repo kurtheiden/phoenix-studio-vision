@@ -320,6 +320,21 @@ no-bank representation have not been controlled.
 Keep the post-name context opaque in production. Design optional bank fields
 only after a bank-removal experiment establishes presence/sentinel behavior.
 
+## 2026-08-13: prioritize MIDI recovery by event family
+
+**Status:** Accepted
+
+Available exports show 5,112 Control Changes across fourteen controller
+numbers, with most traffic belonging to repeated NRPN/RPN sequences. Treat
+Controller as one candidate structural event family containing timing, number,
+value, and channel/instrument context. Do not create parameter-specific CC
+decoders without evidence of distinct project grammars.
+
+Controller-family investigation precedes bank-removal optionality work and
+additional ordinary Patch replication. Pitch Bend follows because 440 natural
+events provide high-value multi-value ground truth. Export meta events remain
+separate from project-event claims.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
