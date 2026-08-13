@@ -198,3 +198,13 @@ names, inconsistent payload length, unexpected known context, and missing Note
 transition are rejected without recovery. General Patch discovery/grammar,
 unknown fields, event-type semantics, interval ownership, and MIDI emission
 remain unsupported.
+
+An independent authentic event is now strongly identified at `0x31300` as
+`Ode to Clarke` / `Track 3` / `JV-1080`: MIDI PC 29 at tick 480, four complete
+following note rows, literal `Wavox`, and the project timing fields agree. It
+repeats a two-byte absolute-position VLQ plus `ff 7c`, one-byte-length-prefixed
+ASCII name, direct PC, two-byte post-PC VLQ, and transition to Note status
+`0x90`. Its payload-length relationship and pre-name, post-name, and pre-Note
+context differ from Track 3 #2. The unchanged bounded decoder therefore fails
+at `0x31305`. This is partial generalization evidence for the semantic fields,
+not evidence for one invariant local Patch layout.

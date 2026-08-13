@@ -142,3 +142,11 @@ Validate the same explicitly bounded Patch representation on one independently
 identified real Patch event in another track. This is the smallest
 highest-information test of whether the confirmed layout generalizes before
 considering any discovery or broader Patch abstraction.
+
+The subsequent independent validation selected authentic `Ode to Clarke` /
+`Track 3` / `JV-1080`, whose MIDI export and note stream identify a `Wavox`, PC
+29 Patch region at `0x31300`. Core position, length-prefixed ASCII name, direct
+PC, post-PC VLQ shape, and Note transition relationships recur, but pre-name,
+post-name, payload-length, and pre-Note context differ. The unchanged decoder
+correctly fails at `0x31305`; no generalization is yet justified. See
+`INDEPENDENT_PATCH_EVENT_VALIDATION.md`.

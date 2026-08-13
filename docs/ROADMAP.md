@@ -98,8 +98,12 @@ committed or specified.
       `0c -> 07`, variable-length storage, `-5` relocation, and size updates.
 - [x] Implement a bounded diagnostic-only Patch decoder spike for the known
       Track 3 #2 representation and validate Experiments 007 and 023–027.
-- [ ] Validate the explicitly bounded representation on an independently
-      identified real Patch event in another track before generalizing.
+- [x] Validate the explicitly bounded representation on an independently
+      identified real Patch event: Track 3 / JV-1080 repeats core semantic
+      fields but differs in local context, so the unchanged decoder rejects it.
+- [ ] Investigate the exact Track 3 versus Track 3 #2 local-context differences
+      with one more independently identified Patch event before changing the
+      bounded decoder.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

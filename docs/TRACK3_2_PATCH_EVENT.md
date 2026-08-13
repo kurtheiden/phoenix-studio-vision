@@ -302,3 +302,11 @@ Explicit-offset validation derives position, variable-length name, PC, and the
 `0x90` transition correctly across Experiments 007 and 023–027, including
 Experiment 027 relocation. No discovery, general grammar, or MIDI output was
 added. See `TRACK3_2_PATCH_DECODER_SPIKE.md`.
+
+Independent authentic validation subsequently identifies the former `Wavox`
+region as `Ode to Clarke` / `Track 3` / `JV-1080`: MIDI PC 29 at tick 480 and
+four complete following notes match the project structure at `0x31300`.
+Position, length-prefixed name, direct PC, post-PC VLQ shape, and Note status
+recur, but several local context fields differ and the Track 3 #2-specific
+decoder rejects the candidate unchanged. See
+`INDEPENDENT_PATCH_EVENT_VALIDATION.md`.

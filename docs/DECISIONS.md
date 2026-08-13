@@ -222,6 +222,21 @@ The spike remains a library/test diagnostic. No CLI was added, existing Track
 7 behavior was not refactored, and no general Patch discovery, event grammar,
 unknown-field interpretation, interval ownership, or MIDI emission is implied.
 
+## 2026-08-13: do not relax Patch context after independent Track 3 validation
+
+**Status:** Accepted
+
+The naturally occurring `Ode to Clarke` / `Track 3` / `JV-1080` event repeats
+the core position, length-prefixed ASCII name, direct PC, post-PC VLQ shape,
+and Note transition relationships. It differs in the local payload-length
+relationship and pre-name, post-name, and pre-Note context. The existing Track
+3 #2 decoder fails unchanged at the first difference, as its contract intends.
+
+This supplies partial cross-track generalization evidence but does not justify
+weakening context validation or renaming the decoder as a shared abstraction.
+Investigate the exact local-context differences with another independently
+identified Patch event before changing code.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
