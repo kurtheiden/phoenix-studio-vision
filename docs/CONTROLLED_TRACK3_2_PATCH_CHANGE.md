@@ -163,3 +163,8 @@ over direct PC coupling. See `CONTROLLED_TRACK3_2_PROGRAM_CHANGE_100.md`.
 Change only the first Patch event's position while keeping name, PC,
 instrument, and notes unchanged. This is now the smallest high-information
 test of the unresolved Patch timing representation.
+
+Experiment 025 completed this recommendation and identified the absolute Patch
+position VLQ at `0x31886–0x31887`: `84 12` = 530 changed to `84 13` = 531
+for `1·2·50 -> 1·2·51`. The confirmed PC field remained `0x17`. See
+`CONTROLLED_TRACK3_2_PATCH_POSITION_PLUS_ONE.md`.

@@ -135,3 +135,20 @@ delta, or monotonic change. Related three-byte marker-family changes occur
 widely across both saves, supporting a save-dependent serialization/reference
 classification but not establishing exact semantics. Patch framing, type, and
 timing remain partial or unknown.
+
+Experiment 025 moved only the same Patch event from `1·2·50` to `1·2·51` in a
+fresh Experiment 007 duplicate. The primary absolute-position field at
+`0x31886–0x31887` changed from 7-bit VLQ `84 12` = 530 to `84 13` = 531,
+exactly matching the established 4/4, 480-units-per-beat coordinate. A local
+interval component at `0x318a6–0x318a7` changed `c5 4c` = 8,908 to `c5 4b`
+= 8,907; with stable `81 25` = 165, the sum changes from the preregistered
+9,073 to 9,072. Six post-chain fixed-width copies also change 530 to 531.
+
+The confirmed PC field remains `0x17`, literal `Ming Dynasty` remains
+unchanged, and the complete 84-note stream plus all 83 note-to-note timing
+fields are byte-identical. Patch timing uses the same numeric unit and 7-bit
+VLQ mechanics as established note timing, while its primary field is absolute
+rather than a note-to-note interval. The primary Patch span is now strongly
+supported from `0x31886` through `0x318a7`, but unresolved metadata, compound
+interval ownership, complete end framing, and the Patch event-type
+discriminator remain partial.

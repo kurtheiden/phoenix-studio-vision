@@ -81,15 +81,19 @@ committed or specified.
       plus 83 note-to-note intervals against complete List Window ground truth.
 - [x] Reconcile 85 UI events as one Patch plus 84 notes and withdraw the exact
       event-count interpretation because the analogous binary value is 86.
-- [ ] Isolate the first Patch event's start/type framing and timing ownership
-      before implementing bounded mixed-event decoding.
+- [ ] Complete the first Patch event's start/type framing and field ownership
+      before implementing bounded mixed-event decoding; Experiment 025 now
+      identifies its absolute position field and narrows the primary span.
 - [x] Confirm the Track 3 #2 direct Program Change byte with Experiment 023:
       `PC 23 -> PC 24` produces `0x318a5: 17 -> 18` with notes unchanged.
 - [x] Replicate the Program Change field using a deliberately non-adjacent
       value: Experiment 024 confirms `PC 23 -> PC 100` as aligned
       `0x17 -> 0x64`, with Patch name and all 84 notes unchanged.
-- [ ] Isolate the Patch-event timing representation with a position-only
-      controlled change before implementing Patch parsing.
+- [x] Isolate the Patch-event absolute timing representation with a
+      position-only change: Experiment 025 confirms `84 12` = 530 to
+      `84 13` = 531 at `0x31886–0x31887`.
+- [ ] Change only the Patch name to a same-length value to clarify literal
+      field ownership and narrow the remaining Patch boundary.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

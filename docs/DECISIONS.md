@@ -157,6 +157,22 @@ Phoenix still does not add Patch parsing. Exact event start/end ownership,
 type discrimination, and timing representation remain insufficiently
 established. The next controlled experiment should change only Patch position.
 
+## 2026-08-13: identify absolute Patch timing, retain incomplete framing
+
+**Status:** Accepted
+
+Experiment 025 changes only Patch position from `1·2·50` to `1·2·51` and
+identifies `0x31886–0x31887` as its absolute-position field: 7-bit VLQ
+`84 12` = 530 becomes `84 13` = 531 in the established Studio Vision timing
+unit. A second component changes 8,908 to 8,907 and, with a stable 165 field,
+supports the preregistered Patch-to-first-note interval change 9,073 to 9,072.
+PC, literal name, and all note data remain stable.
+
+Phoenix still does not implement Patch parsing. The primary Patch span is more
+precise, but unresolved metadata, compound interval ownership, complete end
+framing, and the exact Patch event-type discriminator remain incomplete. A
+same-length Patch-name control is the next evidence step.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

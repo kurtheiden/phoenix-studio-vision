@@ -209,3 +209,8 @@ instrument, and notes unchanged. Program value and name independence are now
 strongly established; a position-only control offers the highest information
 gain by isolating the unresolved Patch timing representation and helping bound
 the event without implementing parsing.
+
+Experiment 025 completed this recommendation. The absolute Patch position is
+stored as a 7-bit VLQ at `0x31886–0x31887`, changing `84 12` = 530 to
+`84 13` = 531 for the one-unit-later edit. The PC byte, name, and complete note
+chain stayed unchanged. See `CONTROLLED_TRACK3_2_PATCH_POSITION_PLUS_ONE.md`.

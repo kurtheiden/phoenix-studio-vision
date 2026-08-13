@@ -263,3 +263,15 @@ unchanged. See `CONTROLLED_TRACK3_2_PROGRAM_CHANGE_100.md`.
 
 Change only the Patch-event position to isolate its timing representation and
 improve the event boundary model.
+
+Experiment 025 completed this recommendation. Moving the Patch from `1·2·50`
+to `1·2·51` changed the absolute-position VLQ at `0x31886–0x31887` from
+`84 12` = 530 to `84 13` = 531. The local interval component at
+`0x318a6–0x318a7` changed `c5 4c` = 8,908 to `c5 4b` = 8,907; together with
+stable `81 25` = 165, this supports the preregistered Patch-to-first-note
+interval change 9,073 to 9,072. PC, name, and all note data remained stable.
+See `CONTROLLED_TRACK3_2_PATCH_POSITION_PLUS_ONE.md`.
+
+Change only the literal Patch name to a deliberately different same-length
+name to clarify field ownership and narrow the Patch boundary without a
+serialization-length change.
