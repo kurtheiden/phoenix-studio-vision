@@ -110,9 +110,11 @@ committed or specified.
 - [x] Implement the bounded representation decoder and authentic, controlled,
       malformed test matrix while preserving the independent strict Track 3
       #2 decoder.
-- [ ] Validate one more naturally occurring Patch representation with
-      independently established explicit bounds, preferably Track 2 /
-      JV-1080 / PC 37.
+- [x] Validate Track 2 / JV-1080 / PC 37 with independently established bounds;
+      it passes unchanged, matches compact Track 3 framing, and strengthens the
+      bank-tail correlation.
+- [ ] Isolate the bank-correlated post-name tail with one controlled
+      bank-select-only save before assigning bank semantics.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

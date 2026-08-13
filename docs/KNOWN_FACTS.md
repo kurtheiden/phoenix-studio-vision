@@ -239,3 +239,10 @@ Opaque bytes are borrowed with absolute ranges; PC is payload-derived and
 post-PC timing remains neutral. The strict Track 3 #2 decoder remains
 independent and retains its previous behavior. No discovery, general parser,
 CLI, or MIDI emission was added.
+
+Authentic Track 2 / JV-1080 is independently identified by its 211-note MIDI
+stream and decodes unchanged with bounds `0x2fb55..0x2fb75`: position 0, name
+`Stereoww Bs`, PC 37 at `0x2fb71`, post-PC 1,920, empty pre-Note context, and
+status `0x2fb74`. Its post-name tail `ff 51 01` matches exported CC0=81 and
+CC32=1, strengthening—but not proving—the bank-field interpretation. It adds
+opaque values but no new framing variant.

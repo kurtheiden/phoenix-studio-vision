@@ -171,3 +171,8 @@ Validate one additional naturally occurring Patch representation using
 independently established caller bounds, preferably Track 2 / JV-1080 / PC 37.
 This tests the shared contract on another channel/device context without
 weakening the explicit-bound requirement or introducing discovery.
+
+That validation is complete: authentic Track 2 / JV-1080 / `Stereoww Bs` / PC
+37 decodes unchanged at `0x2fb55..0x2fb75`. Its 211-note chain independently
+establishes the bounds, and its `ff 51 01` tail matches exported CC0=81/CC32=1.
+See `FOURTH_PATCH_EVENT_VALIDATION.md`.

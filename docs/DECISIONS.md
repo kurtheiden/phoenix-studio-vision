@@ -282,6 +282,17 @@ Existing controlled acceptance remains unchanged, and an explicit regression
 test confirms that the strict API still rejects Track 1 and Track 3. Wrapper
 conversion is deferred to a focused compatibility refactor, not abandoned.
 
+## 2026-08-13: stop ordinary Patch replication after fourth authentic event
+
+**Status:** Accepted
+
+Track 2 / JV-1080 validates the shared bounded decoder unchanged and matches
+the compact Track 3 framing family. Four authentic events now support the
+common semantic core, while Track 2's `ff 51 01` supplies a second exact
+bank-export correlation. Further ordinary Patch-event replication is lower
+value than isolating the remaining bank-tail semantics with a controlled
+single-variable change.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

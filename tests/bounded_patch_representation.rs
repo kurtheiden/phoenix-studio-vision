@@ -46,7 +46,7 @@ fn assert_common(result: &BoundedPatchRepresentation<'_>, expected: ExpectedComm
 }
 
 #[test]
-fn decodes_three_authentic_representations_with_provenance() {
+fn decodes_four_authentic_representations_with_provenance() {
     let track1 = decode(BASELINE, 0x2f833, 0x2f852);
     assert_common(
         &track1,
@@ -110,6 +110,31 @@ fn decodes_three_authentic_representations_with_provenance() {
         &[0xff, 0x60, 0x07, 0x57, 0x7f, 0x00, 0x6c, 0x6c, 0xa3, 0x4a, 0x81, 0x25]
     );
     assert_eq!(track3_2.pre_note_context.range, 0x318a8..0x318b4);
+
+    let track2 = decode(BASELINE, 0x2fb55, 0x2fb74);
+    assert_common(
+        &track2,
+        ExpectedCommon {
+            position: 0,
+            position_range: 0x2fb55..0x2fb56,
+            payload_length: 25,
+            name: "Stereoww Bs",
+            program: 37,
+            pc_offset: 0x2fb71,
+            timing: 1920,
+            status_offset: 0x2fb74,
+        },
+    );
+    assert_eq!(
+        track2.pre_name_context.bytes,
+        &[0x00, 0x01, 0x25, 0xf8, 0xa5]
+    );
+    assert_eq!(
+        track2.post_name_context.bytes,
+        &[0x02, 0x33, 0x38, 0x04, 0xff, 0x51, 0x01]
+    );
+    assert_eq!(track2.post_name_context.range, 0x2fb6a..0x2fb71);
+    assert!(track2.pre_note_context.bytes.is_empty());
 }
 
 #[test]
