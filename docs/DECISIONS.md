@@ -293,6 +293,20 @@ bank-export correlation. Further ordinary Patch-event replication is lower
 value than isolating the remaining bank-tail semantics with a controlled
 single-variable change.
 
+## 2026-08-13: keep bank bytes opaque after controlled CC32 confirmation
+
+**Status:** Accepted
+
+Experiment 028 confirms that changing only Track 2 CC32 from 1 to 2 changes
+only the final bank-tail candidate from `01` to `02` inside the bounded Patch
+representation. This establishes that subfield for this representation, while
+the candidate CC0 byte has not been independently changed and the leading
+`ff`/absent-bank behavior remains unresolved.
+
+The shared decoder therefore continues returning the full post-name context
+as opaque provenance. No first-class bank fields are added until CC0 and
+absence semantics have comparable controlled support.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

@@ -256,3 +256,8 @@ A fourth authentic event, Track 2 / JV-1080 / `Stereoww Bs` / PC 37, now
 validates the same contract unchanged. It uses compact Track 3-like framing
 and supplies stronger bank-tail correlation. See
 `FOURTH_PATCH_EVENT_VALIDATION.md`.
+
+Experiment 028 now supplies controlled evidence for the final bank-tail byte:
+changing only Track 2 CC32 `1 -> 2` produces aligned `ff 51 01 -> ff 51 02`.
+This confirms the CC32 subfield for that representation while leaving the
+candidate CC0 byte and `ff` sentinel/absence semantics partial or unknown.

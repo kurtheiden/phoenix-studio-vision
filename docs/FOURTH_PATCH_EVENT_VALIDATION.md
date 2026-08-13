@@ -181,3 +181,8 @@ Run one controlled bank-select-only experiment on a known compact JV-1080
 Patch event, leaving position, name, PC, and notes unchanged. Four authentic
 events are sufficient for the bounded core; isolating the `ff 51 NN` tail now
 has higher information value than another ordinary Patch validation.
+
+That experiment is complete. Experiment 028 changed only Track 2 CC32 from 1
+to 2 and confirmed `0x2fb6e..0x2fb70: ff 51 01 -> ff 51 02`; all other bounded
+Patch bytes and the complete Note chain remained stable. See
+`CONTROLLED_TRACK2_BANK_LSB_CHANGE.md`.

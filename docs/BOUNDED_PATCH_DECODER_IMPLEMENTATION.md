@@ -176,3 +176,8 @@ That validation is complete: authentic Track 2 / JV-1080 / `Stereoww Bs` / PC
 37 decodes unchanged at `0x2fb55..0x2fb75`. Its 211-note chain independently
 establishes the bounds, and its `ff 51 01` tail matches exported CC0=81/CC32=1.
 See `FOURTH_PATCH_EVENT_VALIDATION.md`.
+
+Experiment 028 independently changes only Track 2's final opaque post-name
+byte from `01` to `02`. The shared decoder accepts it unchanged and preserves
+`02 33 38 04 ff 51 02` exactly. A read-only regression test records this
+controlled state; bank interpretation remains outside the decoder.

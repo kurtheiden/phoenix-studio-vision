@@ -246,3 +246,12 @@ stream and decodes unchanged with bounds `0x2fb55..0x2fb75`: position 0, name
 status `0x2fb74`. Its post-name tail `ff 51 01` matches exported CC0=81 and
 CC32=1, strengthening—but not proving—the bank-field interpretation. It adds
 opaque values but no new framing variant.
+
+Experiment 028 changed only Track 2 CC32 from 1 to 2 in a fresh Experiment 007
+duplicate. At the aligned post-name tail, the locked prediction was uniquely
+confirmed: `0x2fb6e..0x2fb70: ff 51 01 -> ff 51 02`; only `0x2fb70` changed
+inside the bounded Patch representation. Position 0, payload 25, name
+`Stereoww Bs`, PC 37, post-PC timing 1,920, Note boundary, and the entire
+211-note binary stream remained stable. This directly identifies the final
+tail byte with CC32 for this representation; CC0 and `ff` semantics remain
+partial/unknown.
