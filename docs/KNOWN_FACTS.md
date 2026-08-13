@@ -121,3 +121,17 @@ Three adjacent context bytes at `0x31883–0x31885` also changed (`c4 b2 5c ->
 c7 85 24`) and remain unexplained. Consequently `2c c4 b2` is not an invariant
 marker across this controlled save. Complete Patch-event framing, its exact
 type field, and Patch timing representation remain unestablished.
+
+Experiment 024 was independently created from Experiment 007 and changed only
+displayed `PC 23` to `PC 100`. The locked prediction was confirmed at the same
+aligned field: `0x318a5: 17 -> 64`. The unique `Ming Dynasty` literal, complete
+585-byte 84-note stream, all 83 note-to-note timing fields, first-note boundary,
+and post-chain context remain byte-identical. The three aligned displayed and
+stored states are therefore 23/`17`, 24/`18`, and 100/`64` for this event.
+
+The nearby three-byte field is `c7 85 1c` in Experiment 024. Its three-state
+values (`c4 b2 5c`, `c7 85 24`, `c7 85 1c`) do not track PC by equality, fixed
+delta, or monotonic change. Related three-byte marker-family changes occur
+widely across both saves, supporting a save-dependent serialization/reference
+classification but not establishing exact semantics. Patch framing, type, and
+timing remain partial or unknown.

@@ -142,6 +142,21 @@ does not implement Patch parsing because event start/type/timing framing remains
 partial. A non-adjacent-value replication is required before broader field-
 behavior claims.
 
+## 2026-08-13: accept direct Patch Program Change storage, retain parser boundary
+
+**Status:** Accepted
+
+Experiment 024 independently confirms the non-adjacent preregistered change:
+displayed `PC 23 -> PC 100` produces aligned project byte `17 -> 64` at
+`0x318a5`. Together with Experiment 023's `PC 23 -> PC 24` / `17 -> 18`, the
+three controlled states establish that this Patch event's project byte directly
+equals the Vision-displayed PC number. Literal `Ming Dynasty` and all known
+note performance data remain unchanged.
+
+Phoenix still does not add Patch parsing. Exact event start/end ownership,
+type discrimination, and timing representation remain insufficiently
+established. The next controlled experiment should change only Patch position.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

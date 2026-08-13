@@ -153,8 +153,13 @@ remain unknown.
 
 # Single recommended next step
 
-Perform a second controlled Program Change experiment using a deliberately
-non-adjacent value while leaving name, position, and notes unchanged. This is
-the smallest test that can establish direct field behavior beyond a one-step
-correlation and help distinguish the three dependent/header changes from the
-program value.
+Experiment 024 completed this recommendation with displayed `PC 100` from a
+fresh Experiment 007 duplicate. The aligned field changed
+`0x318a5: 17 -> 64`, exactly as preregistered, while the name and complete note
+chain remained unchanged. The nearby three-byte field became `c7 85 1c` and
+remains unexplained; file-wide comparison favors save-dependent serialization
+over direct PC coupling. See `CONTROLLED_TRACK3_2_PROGRAM_CHANGE_100.md`.
+
+Change only the first Patch event's position while keeping name, PC,
+instrument, and notes unchanged. This is now the smallest high-information
+test of the unresolved Patch timing representation.

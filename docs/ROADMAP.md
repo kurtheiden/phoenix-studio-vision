@@ -85,8 +85,11 @@ committed or specified.
       before implementing bounded mixed-event decoding.
 - [x] Confirm the Track 3 #2 direct Program Change byte with Experiment 023:
       `PC 23 -> PC 24` produces `0x318a5: 17 -> 18` with notes unchanged.
-- [ ] Replicate the Program Change field using a deliberately non-adjacent
-      value before investigating Patch position or implementing Patch parsing.
+- [x] Replicate the Program Change field using a deliberately non-adjacent
+      value: Experiment 024 confirms `PC 23 -> PC 100` as aligned
+      `0x17 -> 0x64`, with Patch name and all 84 notes unchanged.
+- [ ] Isolate the Patch-event timing representation with a position-only
+      controlled change before implementing Patch parsing.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

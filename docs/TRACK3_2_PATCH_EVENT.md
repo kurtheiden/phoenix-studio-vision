@@ -255,7 +255,11 @@ unexplained header/dependent/save candidates. The direct Program Change field
 is now identified, while complete Patch framing and timing remain unresolved.
 See `CONTROLLED_TRACK3_2_PATCH_CHANGE.md`.
 
-Perform a second controlled Program Change experiment using a deliberately
-non-adjacent value while leaving name, position, and notes unchanged. This
-tests direct field behavior beyond a one-step correlation and separates the
-program byte from the unexplained three-byte header change.
+Experiment 024 subsequently confirmed the deliberately non-adjacent prediction:
+displayed `PC 23 -> PC 100` produced `0x318a5: 17 -> 64` from a fresh
+Experiment 007 duplicate. Together with Experiment 023, three aligned states
+show direct displayed/stored equality. The name and complete note chain remain
+unchanged. See `CONTROLLED_TRACK3_2_PROGRAM_CHANGE_100.md`.
+
+Change only the Patch-event position to isolate its timing representation and
+improve the event boundary model.
