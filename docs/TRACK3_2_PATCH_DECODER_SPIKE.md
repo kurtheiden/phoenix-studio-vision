@@ -163,3 +163,8 @@ and separates them from the three-event invariants. It proposes preserving the
 current decoder eventually as a strict wrapper over a provenance-rich bounded
 representation decoder; no Rust or test change was made. See
 `BOUNDED_PATCH_DECODER_DESIGN.md`.
+
+The shared bounded implementation now accepts Track 1, Track 3, and Track 3 #2
+through explicit caller bounds while the original strict decoder remains
+unchanged and continues rejecting the other two layouts. See
+`BOUNDED_PATCH_DECODER_IMPLEMENTATION.md`.

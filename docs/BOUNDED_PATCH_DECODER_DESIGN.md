@@ -401,3 +401,8 @@ Implement `decode_bounded_patch_representation` and the complete predefined
 positive/malformed test matrix, then refactor the existing Track 3 #2 decoder
 into a strict wrapper only after equivalence tests demonstrate unchanged
 controlled-file behavior.
+
+The shared decoder and predefined matrix are now implemented. The strict Track
+3 #2 decoder remains independent because exact error/rejection-order
+compatibility needs a separate equivalence-focused refactor. See
+`BOUNDED_PATCH_DECODER_IMPLEMENTATION.md`.

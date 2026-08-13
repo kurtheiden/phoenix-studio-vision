@@ -231,3 +231,11 @@ contexts as borrowed bytes with absolute ranges, and performs no scanning or
 recovery. Variable-width VLQs are returned with raw provenance; post-PC timing
 is not assumed to be the complete interval. This is a design, not implemented
 parser behavior.
+
+`decode_bounded_patch_representation` now implements that contract. It derives
+all three authentic events and Experiments 007/023–027, including variable
+position width, variable post-name width, and zero/12-byte pre-Note context.
+Opaque bytes are borrowed with absolute ranges; PC is payload-derived and
+post-PC timing remains neutral. The strict Track 3 #2 decoder remains
+independent and retains its previous behavior. No discovery, general parser,
+CLI, or MIDI emission was added.

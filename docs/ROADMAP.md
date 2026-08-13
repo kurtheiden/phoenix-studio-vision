@@ -107,9 +107,12 @@ committed or specified.
 - [x] Design a bounded representation-oriented Patch contract with explicit
       start/post-Note bounds, payload-derived PC, preserved opaque context, and
       a predefined authentic/controlled/malformed test matrix.
-- [ ] Implement the designed bounded representation decoder and test matrix;
-      retain the Track 3 #2 decoder as strict behavior until wrapper
-      equivalence is proven.
+- [x] Implement the bounded representation decoder and authentic, controlled,
+      malformed test matrix while preserving the independent strict Track 3
+      #2 decoder.
+- [ ] Validate one more naturally occurring Patch representation with
+      independently established explicit bounds, preferably Track 2 /
+      JV-1080 / PC 37.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

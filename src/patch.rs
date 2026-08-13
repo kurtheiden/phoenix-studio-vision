@@ -6,6 +6,7 @@
 
 use crate::track7::{decode_7bit_be_vlq, VlqError};
 use std::fmt;
+use std::ops::Range;
 
 const PREFIX_AFTER_POSITION: [u8; 2] = [0xff, 0x7c];
 const PREFIX_BEFORE_NAME_LENGTH: [u8; 5] = [0x00, 0x00, 0x17, 0x00, 0x17];
@@ -14,6 +15,420 @@ const CONTEXT_BEFORE_NOTE_STATUS: [u8; 12] = [
     0xff, 0x60, 0x07, 0x57, 0x7f, 0x00, 0x6c, 0x6c, 0xa3, 0x4a, 0x81, 0x25,
 ];
 const EXPECTED_NOTE_STATUS: u8 = 0x90;
+const COMMON_MARKER: [u8; 2] = [0xff, 0x7c];
+const PRE_NAME_CONTEXT_BYTES: usize = 5;
+const MINIMUM_PAYLOAD_LENGTH: u8 = 7;
+
+/// Caller-known boundaries for one evidence-backed Patch representation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PatchRepresentationBounds {
+    pub position_start: usize,
+    /// Exclusive boundary immediately after the expected `0x90` Note status.
+    pub note_status_end: usize,
+}
+
+/// Borrowed bytes paired with their absolute source range.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocatedBytes<'a> {
+    pub bytes: &'a [u8],
+    pub range: Range<usize>,
+}
+
+/// A bounded VLQ paired with its raw bytes and absolute source range.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocatedVlq<'a> {
+    pub value: u32,
+    pub bytes: &'a [u8],
+    pub range: Range<usize>,
+}
+
+/// An ASCII field paired with its raw bytes and absolute source range.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocatedAscii<'a> {
+    pub text: &'a str,
+    pub bytes: &'a [u8],
+    pub range: Range<usize>,
+}
+
+/// One byte paired with its absolute source offset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LocatedByte {
+    pub value: u8,
+    pub offset: usize,
+}
+
+/// Common semantic fields plus byte-exact opaque context and provenance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedPatchRepresentation<'a> {
+    pub representation_range: Range<usize>,
+    pub position: LocatedVlq<'a>,
+    pub marker_range: Range<usize>,
+    pub payload_length: LocatedByte,
+    pub payload_range: Range<usize>,
+    pub pre_name_context: LocatedBytes<'a>,
+    pub name_length: LocatedByte,
+    pub name: LocatedAscii<'a>,
+    pub post_name_context: LocatedBytes<'a>,
+    pub program_change: LocatedByte,
+    pub post_pc_timing_component: LocatedVlq<'a>,
+    pub pre_note_context: LocatedBytes<'a>,
+    pub note_status: LocatedByte,
+}
+
+/// Deterministic failures from the shared bounded representation decoder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BoundedPatchError {
+    InvalidBounds {
+        start: usize,
+        end: usize,
+        size: usize,
+    },
+    PositionVlq(VlqError),
+    MissingMarker {
+        offset: usize,
+        observed: Vec<u8>,
+    },
+    PayloadLengthOverflow {
+        offset: usize,
+        length: u8,
+    },
+    PayloadExceedsBoundary {
+        payload_end: usize,
+        status_offset: usize,
+    },
+    PayloadTooShort {
+        offset: usize,
+        length: u8,
+        minimum: u8,
+    },
+    NameLengthExceedsPayload {
+        offset: usize,
+        length: u8,
+        pc_offset: usize,
+    },
+    InvalidAsciiName {
+        range: Range<usize>,
+    },
+    MissingProgramChange {
+        payload_range: Range<usize>,
+    },
+    PostPcVlq(VlqError),
+    PostPcVlqCrossesStatus {
+        range: Range<usize>,
+        status_offset: usize,
+    },
+    MissingNoteStatus {
+        offset: usize,
+        expected: u8,
+        observed: Option<u8>,
+    },
+}
+
+impl fmt::Display for BoundedPatchError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidBounds { start, end, size } => write!(
+                formatter,
+                "invalid bounded Patch range 0x{start:08x}..0x{end:08x} for {size} bytes"
+            ),
+            Self::PositionVlq(error) => write!(formatter, "Patch position: {error}"),
+            Self::MissingMarker { offset, observed } => write!(
+                formatter,
+                "missing ff 7c Patch marker at 0x{offset:08x}; observed {observed:02x?}"
+            ),
+            Self::PayloadLengthOverflow { offset, length } => write!(
+                formatter,
+                "Patch payload length {length} at 0x{offset:08x} overflows its source offset"
+            ),
+            Self::PayloadExceedsBoundary {
+                payload_end,
+                status_offset,
+            } => write!(
+                formatter,
+                "Patch payload ends at 0x{payload_end:08x}, beyond Note status at 0x{status_offset:08x}"
+            ),
+            Self::PayloadTooShort {
+                offset,
+                length,
+                minimum,
+            } => write!(
+                formatter,
+                "Patch payload length at 0x{offset:08x} is {length}; minimum is {minimum}"
+            ),
+            Self::NameLengthExceedsPayload {
+                offset,
+                length,
+                pc_offset,
+            } => write!(
+                formatter,
+                "Patch name length {length} at 0x{offset:08x} crosses PC at 0x{pc_offset:08x}"
+            ),
+            Self::InvalidAsciiName { range } => write!(
+                formatter,
+                "Patch name at 0x{:08x}..0x{:08x} is not ASCII",
+                range.start, range.end
+            ),
+            Self::MissingProgramChange { payload_range } => write!(
+                formatter,
+                "Patch payload 0x{:08x}..0x{:08x} has no Program Change byte",
+                payload_range.start, payload_range.end
+            ),
+            Self::PostPcVlq(error) => write!(formatter, "post-PC timing component: {error}"),
+            Self::PostPcVlqCrossesStatus {
+                range,
+                status_offset,
+            } => write!(
+                formatter,
+                "post-PC timing component 0x{:08x}..0x{:08x} crosses Note status at 0x{status_offset:08x}",
+                range.start, range.end
+            ),
+            Self::MissingNoteStatus {
+                offset,
+                expected,
+                observed,
+            } => write!(
+                formatter,
+                "expected Note status {expected:02x} at 0x{offset:08x}; observed {observed:02x?}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BoundedPatchError {}
+
+/// Decodes one caller-located Patch representation without scanning or recovery.
+pub fn decode_bounded_patch_representation<'a>(
+    bytes: &'a [u8],
+    bounds: PatchRepresentationBounds,
+) -> Result<BoundedPatchRepresentation<'a>, BoundedPatchError> {
+    let start = bounds.position_start;
+    let end = bounds.note_status_end;
+    if start >= end || end > bytes.len() {
+        return Err(BoundedPatchError::InvalidBounds {
+            start,
+            end,
+            size: bytes.len(),
+        });
+    }
+
+    let status_offset = end - 1;
+    let observed_status = bytes.get(status_offset).copied();
+    if observed_status != Some(EXPECTED_NOTE_STATUS) {
+        return Err(BoundedPatchError::MissingNoteStatus {
+            offset: status_offset,
+            expected: EXPECTED_NOTE_STATUS,
+            observed: observed_status,
+        });
+    }
+
+    let position =
+        decode_7bit_be_vlq(bytes, start, status_offset).map_err(BoundedPatchError::PositionVlq)?;
+    let position_end =
+        start
+            .checked_add(position.bytes_consumed)
+            .ok_or(BoundedPatchError::InvalidBounds {
+                start,
+                end,
+                size: bytes.len(),
+            })?;
+    let position_range = start..position_end;
+    let position_bytes =
+        bytes
+            .get(position_range.clone())
+            .ok_or(BoundedPatchError::PositionVlq(VlqError::Truncated {
+                offset: start,
+            }))?;
+
+    let marker_start = position_end;
+    let marker_end = marker_start.saturating_add(COMMON_MARKER.len());
+    let marker = bytes
+        .get(marker_start..marker_end.min(status_offset))
+        .unwrap_or_default();
+    if marker_end > status_offset || marker != COMMON_MARKER {
+        return Err(BoundedPatchError::MissingMarker {
+            offset: marker_start,
+            observed: marker.to_vec(),
+        });
+    }
+
+    let payload_length_offset = marker_end;
+    let Some(payload_length) = bytes.get(payload_length_offset).copied() else {
+        return Err(BoundedPatchError::PayloadExceedsBoundary {
+            payload_end: payload_length_offset.saturating_add(1),
+            status_offset,
+        });
+    };
+    if payload_length_offset >= status_offset {
+        return Err(BoundedPatchError::PayloadExceedsBoundary {
+            payload_end: payload_length_offset.saturating_add(1),
+            status_offset,
+        });
+    }
+    if payload_length < MINIMUM_PAYLOAD_LENGTH {
+        return Err(BoundedPatchError::PayloadTooShort {
+            offset: payload_length_offset,
+            length: payload_length,
+            minimum: MINIMUM_PAYLOAD_LENGTH,
+        });
+    }
+
+    let payload_start =
+        payload_length_offset
+            .checked_add(1)
+            .ok_or(BoundedPatchError::PayloadLengthOverflow {
+                offset: payload_length_offset,
+                length: payload_length,
+            })?;
+    let payload_end = payload_start
+        .checked_add(usize::from(payload_length))
+        .ok_or(BoundedPatchError::PayloadLengthOverflow {
+            offset: payload_length_offset,
+            length: payload_length,
+        })?;
+    if payload_end > status_offset {
+        return Err(BoundedPatchError::PayloadExceedsBoundary {
+            payload_end,
+            status_offset,
+        });
+    }
+    let payload_range = payload_start..payload_end;
+    let Some(program_change_offset) = payload_end.checked_sub(1) else {
+        return Err(BoundedPatchError::MissingProgramChange {
+            payload_range: payload_range.clone(),
+        });
+    };
+
+    let pre_name_end = payload_start.checked_add(PRE_NAME_CONTEXT_BYTES).ok_or(
+        BoundedPatchError::PayloadLengthOverflow {
+            offset: payload_length_offset,
+            length: payload_length,
+        },
+    )?;
+    let pre_name_range = payload_start..pre_name_end;
+    let pre_name_bytes =
+        bytes
+            .get(pre_name_range.clone())
+            .ok_or(BoundedPatchError::PayloadExceedsBoundary {
+                payload_end,
+                status_offset,
+            })?;
+
+    let name_length_offset = pre_name_end;
+    let name_length = bytes[name_length_offset];
+    let name_start = name_length_offset + 1;
+    let name_end = name_start.checked_add(usize::from(name_length)).ok_or(
+        BoundedPatchError::NameLengthExceedsPayload {
+            offset: name_length_offset,
+            length: name_length,
+            pc_offset: program_change_offset,
+        },
+    )?;
+    if name_end > program_change_offset {
+        return Err(BoundedPatchError::NameLengthExceedsPayload {
+            offset: name_length_offset,
+            length: name_length,
+            pc_offset: program_change_offset,
+        });
+    }
+    let name_range = name_start..name_end;
+    let name_bytes =
+        bytes
+            .get(name_range.clone())
+            .ok_or(BoundedPatchError::NameLengthExceedsPayload {
+                offset: name_length_offset,
+                length: name_length,
+                pc_offset: program_change_offset,
+            })?;
+    if !name_bytes.is_ascii() {
+        return Err(BoundedPatchError::InvalidAsciiName { range: name_range });
+    }
+    let name =
+        std::str::from_utf8(name_bytes).map_err(|_| BoundedPatchError::InvalidAsciiName {
+            range: name_range.clone(),
+        })?;
+
+    let post_name_range = name_end..program_change_offset;
+    let post_name_bytes = &bytes[post_name_range.clone()];
+    let program_change = bytes.get(program_change_offset).copied().ok_or(
+        BoundedPatchError::MissingProgramChange {
+            payload_range: payload_range.clone(),
+        },
+    )?;
+
+    let post_pc_start = payload_end;
+    let post_pc = decode_7bit_be_vlq(bytes, post_pc_start, status_offset)
+        .map_err(BoundedPatchError::PostPcVlq)?;
+    let post_pc_end = post_pc_start.checked_add(post_pc.bytes_consumed).ok_or(
+        BoundedPatchError::PostPcVlqCrossesStatus {
+            range: post_pc_start..usize::MAX,
+            status_offset,
+        },
+    )?;
+    let post_pc_range = post_pc_start..post_pc_end;
+    if post_pc_end > status_offset {
+        return Err(BoundedPatchError::PostPcVlqCrossesStatus {
+            range: post_pc_range,
+            status_offset,
+        });
+    }
+    let post_pc_bytes =
+        bytes
+            .get(post_pc_range.clone())
+            .ok_or(BoundedPatchError::PostPcVlqCrossesStatus {
+                range: post_pc_range.clone(),
+                status_offset,
+            })?;
+    let pre_note_range = post_pc_end..status_offset;
+
+    Ok(BoundedPatchRepresentation {
+        representation_range: start..end,
+        position: LocatedVlq {
+            value: position.value,
+            bytes: position_bytes,
+            range: position_range,
+        },
+        marker_range: marker_start..marker_end,
+        payload_length: LocatedByte {
+            value: payload_length,
+            offset: payload_length_offset,
+        },
+        payload_range,
+        pre_name_context: LocatedBytes {
+            bytes: pre_name_bytes,
+            range: pre_name_range,
+        },
+        name_length: LocatedByte {
+            value: name_length,
+            offset: name_length_offset,
+        },
+        name: LocatedAscii {
+            text: name,
+            bytes: name_bytes,
+            range: name_start..name_end,
+        },
+        post_name_context: LocatedBytes {
+            bytes: post_name_bytes,
+            range: post_name_range,
+        },
+        program_change: LocatedByte {
+            value: program_change,
+            offset: program_change_offset,
+        },
+        post_pc_timing_component: LocatedVlq {
+            value: post_pc.value,
+            bytes: post_pc_bytes,
+            range: post_pc_range,
+        },
+        pre_note_context: LocatedBytes {
+            bytes: &bytes[pre_note_range.clone()],
+            range: pre_note_range,
+        },
+        note_status: LocatedByte {
+            value: EXPECTED_NOTE_STATUS,
+            offset: status_offset,
+        },
+    })
+}
 
 /// Confirmed fields and source offsets from one bounded diagnostic decode.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -303,7 +718,11 @@ fn expect_bytes(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_known_track3_2_patch, PatchError};
+    use super::{
+        decode_bounded_patch_representation, decode_known_track3_2_patch, BoundedPatchError,
+        PatchError, PatchRepresentationBounds,
+    };
+    use crate::track7::VlqError;
 
     fn fixture(name: &[u8], position: [u8; 2], program: u8) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -317,6 +736,177 @@ mod tests {
             0x90,
         ]);
         bytes
+    }
+
+    fn common_fixture(
+        position: &[u8],
+        name: &[u8],
+        post_name: &[u8],
+        program: u8,
+        timing: &[u8],
+        pre_note: &[u8],
+    ) -> Vec<u8> {
+        let payload_length = 5 + 1 + name.len() + post_name.len() + 1;
+        let mut bytes = Vec::new();
+        bytes.extend(position);
+        bytes.extend([0xff, 0x7c, payload_length as u8]);
+        bytes.extend([1, 2, 3, 4, 5, name.len() as u8]);
+        bytes.extend(name);
+        bytes.extend(post_name);
+        bytes.push(program);
+        bytes.extend(timing);
+        bytes.extend(pre_note);
+        bytes.push(0x90);
+        bytes
+    }
+
+    fn common_decode(
+        bytes: &[u8],
+    ) -> Result<super::BoundedPatchRepresentation<'_>, BoundedPatchError> {
+        decode_bounded_patch_representation(
+            bytes,
+            PatchRepresentationBounds {
+                position_start: 0,
+                note_status_end: bytes.len(),
+            },
+        )
+    }
+
+    #[test]
+    fn shared_decoder_preserves_variable_fields_and_opaque_provenance() {
+        let bytes = common_fixture(&[0x00], b"", &[0xaa, 0xbb], 0xfe, &[0x01], &[0x90, 0xcc]);
+        let result = common_decode(&bytes).unwrap();
+        assert_eq!(
+            (result.position.value, result.position.bytes),
+            (0, &[0x00][..])
+        );
+        assert_eq!(result.position.range, 0..1);
+        assert_eq!(result.pre_name_context.bytes, &[1, 2, 3, 4, 5]);
+        assert_eq!(result.name.text, "");
+        assert_eq!(result.post_name_context.bytes, &[0xaa, 0xbb]);
+        assert_eq!(result.program_change.value, 0xfe);
+        assert_eq!(result.post_pc_timing_component.value, 1);
+        assert_eq!(result.pre_note_context.bytes, &[0x90, 0xcc]);
+        assert_eq!(result.note_status.offset, bytes.len() - 1);
+    }
+
+    #[test]
+    fn shared_decoder_rejects_invalid_bounds_and_position_vlqs() {
+        let bytes = common_fixture(&[0x00], b"A", &[], 1, &[0x01], &[]);
+        assert!(matches!(
+            decode_bounded_patch_representation(
+                &bytes,
+                PatchRepresentationBounds {
+                    position_start: 0,
+                    note_status_end: bytes.len() + 1
+                }
+            ),
+            Err(BoundedPatchError::InvalidBounds { .. })
+        ));
+
+        assert_eq!(
+            common_decode(&[0x81, 0x90]),
+            Err(BoundedPatchError::PositionVlq(VlqError::Truncated {
+                offset: 0
+            }))
+        );
+        assert_eq!(
+            common_decode(&[0x81, 0x81, 0x81, 0x81, 0x00, 0x90]),
+            Err(BoundedPatchError::PositionVlq(VlqError::TooLong {
+                offset: 0,
+                maximum: 4
+            }))
+        );
+    }
+
+    #[test]
+    fn shared_decoder_rejects_marker_and_payload_failures() {
+        let mut wrong_marker = common_fixture(&[0x00], b"A", &[], 1, &[0x01], &[]);
+        wrong_marker[1] = 0xfe;
+        assert!(matches!(
+            common_decode(&wrong_marker),
+            Err(BoundedPatchError::MissingMarker { offset: 1, .. })
+        ));
+        assert!(matches!(
+            common_decode(&[0x00, 0xff, 0x90]),
+            Err(BoundedPatchError::MissingMarker { .. })
+        ));
+
+        let mut too_short = common_fixture(&[0x00], b"A", &[], 1, &[0x01], &[]);
+        too_short[3] = 6;
+        assert!(matches!(
+            common_decode(&too_short),
+            Err(BoundedPatchError::PayloadTooShort { length: 6, .. })
+        ));
+
+        let mut beyond = common_fixture(&[0x00], b"A", &[], 1, &[0x01], &[]);
+        beyond[3] = 100;
+        assert!(matches!(
+            common_decode(&beyond),
+            Err(BoundedPatchError::PayloadExceedsBoundary { .. })
+        ));
+    }
+
+    #[test]
+    fn shared_decoder_rejects_name_and_program_failures() {
+        let mut crossing = common_fixture(&[0x00], b"A", &[], 1, &[0x01], &[]);
+        crossing[9] = 2;
+        assert!(matches!(
+            common_decode(&crossing),
+            Err(BoundedPatchError::NameLengthExceedsPayload { .. })
+        ));
+
+        let mut non_ascii = common_fixture(&[0x00], b"A", &[], 1, &[0x01], &[]);
+        non_ascii[10] = 0xff;
+        assert!(matches!(
+            common_decode(&non_ascii),
+            Err(BoundedPatchError::InvalidAsciiName { .. })
+        ));
+
+        let no_pc = [0x00, 0xff, 0x7c, 0x06, 1, 2, 3, 4, 5, 0, 0x01, 0x90];
+        assert!(matches!(
+            common_decode(&no_pc),
+            Err(BoundedPatchError::PayloadTooShort { .. })
+        ));
+    }
+
+    #[test]
+    fn shared_decoder_rejects_post_pc_and_status_failures() {
+        let mut truncated_timing = common_fixture(&[0x00], b"A", &[], 1, &[0x81], &[]);
+        assert_eq!(
+            common_decode(&truncated_timing),
+            Err(BoundedPatchError::PostPcVlq(VlqError::Truncated {
+                offset: 12
+            }))
+        );
+
+        truncated_timing.insert(truncated_timing.len() - 1, 0x81);
+        truncated_timing.insert(truncated_timing.len() - 1, 0x81);
+        truncated_timing.insert(truncated_timing.len() - 1, 0x81);
+        assert!(matches!(
+            common_decode(&truncated_timing),
+            Err(BoundedPatchError::PostPcVlq(VlqError::TooLong { .. }))
+        ));
+
+        let mut wrong_status = common_fixture(&[0x00], b"A", &[], 1, &[0x01], &[]);
+        *wrong_status.last_mut().unwrap() = 0x91;
+        assert!(matches!(
+            common_decode(&wrong_status),
+            Err(BoundedPatchError::MissingNoteStatus {
+                observed: Some(0x91),
+                ..
+            })
+        ));
+        assert!(matches!(
+            decode_bounded_patch_representation(
+                &[],
+                PatchRepresentationBounds {
+                    position_start: 0,
+                    note_status_end: 0
+                }
+            ),
+            Err(BoundedPatchError::InvalidBounds { .. })
+        ));
     }
 
     #[test]

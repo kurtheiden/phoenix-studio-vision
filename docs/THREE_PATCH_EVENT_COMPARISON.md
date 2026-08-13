@@ -247,3 +247,7 @@ explicit position start and post-`90` exclusive bounds, payload-derived PC
 placement, borrowed opaque contexts with absolute ranges, variable-width VLQs,
 deterministic errors, a predefined test matrix, and a future strict-wrapper
 relationship for the existing Track 3 #2 decoder. No implementation was made.
+
+The shared decoder is now implemented and validates all three representations
+with byte-exact opaque provenance. See
+`BOUNDED_PATCH_DECODER_IMPLEMENTATION.md`.

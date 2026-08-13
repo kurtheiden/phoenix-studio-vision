@@ -269,6 +269,19 @@ terminology. After independent implementation tests pass, the current Track 3
 #2 decoder should become a strict wrapper that preserves its controlled-file
 checks and public diagnostic behavior.
 
+## 2026-08-13: retain independent strict decoder after shared implementation
+
+**Status:** Accepted
+
+The shared bounded representation decoder now passes the authentic,
+controlled, and malformed matrix. The Track 3 #2 decoder remains independent
+temporarily: immediate wrapper conversion would require error translation and
+failure-order equivalence work unrelated to the shared semantic result.
+
+Existing controlled acceptance remains unchanged, and an explicit regression
+test confirms that the strict API still rejects Track 1 and Track 3. Wrapper
+conversion is deferred to a focused compatibility refactor, not abandoned.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
