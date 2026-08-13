@@ -241,3 +241,9 @@ contract for the common semantic fields that preserves and returns opaque
 pre-name, post-name, and pre-Note context. It should retain explicit caller
 bounds and length/transition validation while separating Track 3 #2-specific
 constants from the three-event invariants.
+
+That design is now complete in `BOUNDED_PATCH_DECODER_DESIGN.md`. It specifies
+explicit position start and post-`90` exclusive bounds, payload-derived PC
+placement, borrowed opaque contexts with absolute ranges, variable-width VLQs,
+deterministic errors, a predefined test matrix, and a future strict-wrapper
+relationship for the existing Track 3 #2 decoder. No implementation was made.

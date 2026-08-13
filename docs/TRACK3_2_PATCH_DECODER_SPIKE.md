@@ -157,3 +157,9 @@ payload length through PC, length-prefixed ASCII name, direct PC, post-PC VLQ,
 and transition to `0x90` form a common semantic core. Widths and opaque context
 vary, and the unchanged decoder rejects Track 1's one-byte position as its
 Track 3 #2-specific contract requires. See `THREE_PATCH_EVENT_COMPARISON.md`.
+
+The subsequent bounded shared-decoder design audits those strict requirements
+and separates them from the three-event invariants. It proposes preserving the
+current decoder eventually as a strict wrapper over a provenance-rich bounded
+representation decoder; no Rust or test change was made. See
+`BOUNDED_PATCH_DECODER_DESIGN.md`.

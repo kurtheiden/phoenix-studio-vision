@@ -104,9 +104,12 @@ committed or specified.
 - [x] Compare a third independently identified Patch event: Track 1 /
       Juno-106 confirms the common semantic core and distinguishes variable
       framing, bank-tail data, and compound pre-Note timing context.
-- [ ] Design a bounded representation-oriented Patch contract that preserves
-      opaque context and common length/transition checks; do not implement or
-      relax the existing Track 3 #2 decoder yet.
+- [x] Design a bounded representation-oriented Patch contract with explicit
+      start/post-Note bounds, payload-derived PC, preserved opaque context, and
+      a predefined authentic/controlled/malformed test matrix.
+- [ ] Implement the designed bounded representation decoder and test matrix;
+      retain the Track 3 #2 decoder as strict behavior until wrapper
+      equivalence is proven.
 
 This milestone is diagnostic only. It does not establish general Studio Vision
 parsing or emit MIDI.

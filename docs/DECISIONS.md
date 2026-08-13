@@ -253,6 +253,22 @@ preserves opaque context and validates common measured relationships. The
 existing Track 3 #2 decoder must remain strict until such a design is reviewed;
 no checks are relaxed and no generalized parser is authorized here.
 
+## 2026-08-13: bound the shared Patch design at the known Note transition
+
+**Status:** Accepted design; not implemented
+
+The future `decode_bounded_patch_representation` contract requires the caller
+to supply the exact position start and an exclusive boundary immediately after
+the expected `0x90` Note status. Payload length locates PC as the final payload
+byte; all unknown pre-name, post-name, and pre-Note bytes are returned with
+absolute provenance. The decoder performs no discovery or resynchronization.
+
+Bank-correlated bytes remain opaque in v1, payload length is returned as
+diagnostic framing metadata, and post-PC timing retains neutral component
+terminology. After independent implementation tests pass, the current Track 3
+#2 decoder should become a strict wrapper that preserves its controlled-file
+checks and public diagnostic behavior.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

@@ -222,3 +222,12 @@ VLQ, and transition to `0x90` recur. Track 3 exports CC0=81/CC32=2 and stores
 `ff 51 02`; the two no-bank-export events store `ff ff ff`. Position width,
 post-name width, and pre-Note context vary. This supports a common semantic
 core, not a common fixed layout.
+
+The proposed shared Patch contract is explicitly bounded by a caller-supplied
+position start and an exclusive end immediately after the known `0x90` Note
+status. It uses the one-byte payload length to locate PC as the final payload
+byte, preserves five-byte pre-name, variable post-name, and variable pre-Note
+contexts as borrowed bytes with absolute ranges, and performs no scanning or
+recovery. Variable-width VLQs are returned with raw provenance; post-PC timing
+is not assumed to be the complete interval. This is a design, not implemented
+parser behavior.
