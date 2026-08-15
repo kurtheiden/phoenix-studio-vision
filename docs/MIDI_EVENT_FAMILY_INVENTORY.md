@@ -1,10 +1,10 @@
 # Objective
 
-Inventory the MIDI event families actually emitted by the available Studio
-Vision exports for the authentic `newest STUFF` project, assess current Phoenix
-coverage, and prioritize recovery by shared event representation rather than
-by individual parameter number. This is read-only research; no project,
-decoder, source, or test was changed.
+Inventory the MIDI event families emitted by the available Studio Vision MIDI
+exports, assess current Phoenix coverage, and prioritize recovery by shared
+event representation rather than by individual parameter number. Export
+provenance is tracked independently: only the `Ode to Clarke` set is presently
+mapped to the authentic `newest STUFF` project.
 
 # Source scope
 
@@ -16,8 +16,8 @@ It is 211,468 bytes, SHA-256
 `e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132`,
 with Finder type `MID2` and creator `MIDA`.
 
-The export directory contains seven valid SMFs but only three named project
-sequences, not exports for all 18 Studio Vision sequences:
+The export directory contains seven valid SMFs in three filename-based sets.
+Those filenames are not, by themselves, Studio Vision sequence identities:
 
 | Export | Format | Tracks | Size | SHA-256 |
 |---|---:|---:|---:|---|
@@ -29,12 +29,44 @@ sequences, not exports for all 18 Studio Vision sequences:
 | `Ode to Clarke Multi All` | 1 | 10 | 12,141 | `4f63b34ef92204d4bc5eeb78dbbe7b94d005c1f9ceb57ea0f9809533ad590f29` |
 | `Ode to Clarke Multitrack` | 1 | 8 | 10,514 | `9979ed6d5fc58edb85c3c03e5e43b4c7015a353af6075ece8ba94ac49cbf5059` |
 
-All use division 480. Counts below use one richest format-1 export per named
-sequence: `ANALOG.MID #2 Multitrack`, `BATTL2GS.MID Multitrack`, and
-`Ode to Clarke Multi All`. This non-duplicative view avoids counting format-0
-and subset exports as additional project events. For reproducibility, the raw
-seven-file view contains 13,176 positive Note Ons, 13,176 note endings, 10,225
-Control Changes, 76 Program Changes, 880 Pitch Bends, and 4 SysEx events.
+All use division 480. Counts below use one richest format-1 export per export
+set: `ANALOG.MID #2 Multitrack`, `BATTL2GS.MID Multitrack`, and `Ode to Clarke
+Multi All`. This avoids double-counting related format-0/subset files, but it
+does **not** imply that all three sets came from `newest STUFF`. For
+reproducibility, the raw seven-file view contains 13,176 positive Note Ons,
+13,176 note endings, 10,225 Control Changes, 76 Program Changes, 880 Pitch
+Bends, and 4 SysEx events.
+
+## Export provenance correction
+
+Direct Studio Vision UI observation establishes these 18 active sequences in
+the untouched baseline:
+
+| Letter | Active sequence | Letter | Active sequence |
+|---|---|---|---|
+| A | `xForm` | J | `newsong` |
+| B | `Bells for her` | K | `Sequence K` |
+| C | `Situation` | L | `Renaissance` |
+| D | `Sequence D` | M | `Get on up & Dance` |
+| E | `Sequence E` | N | `Jurrasic Park` |
+| F | `Girl-U-Want` | O | `Ode to Clarke` |
+| G | `mission impossibl` | P | `Over the Top` |
+| H | `happyone` | Q | `Sequence Q` |
+| I | `Sequence I` | R | `Sequence R` |
+
+Neither `ANALOG.MID #2` nor `Analog Seq` is an active sequence. A filename,
+SMF track-name event, or readable project string is therefore insufficient to
+identify an active sequence. Identity requires UI ground truth or independent
+musical/structural correlation.
+
+| Export set | Provenance classification | Basis |
+|---|---|---|
+| `Ode to Clarke` (three files) | **PROVEN FROM NEWEST STUFF** | UI sequence/track identity plus extensive exact Note, Patch, timing, instrument-context, and project-binary correlations |
+| `ANALOG.MID #2` (two files) | **UNRESOLVED** | export filename/SMF metadata only; no musical or structural mapping to any of the 18 active sequences |
+| `BATTL2GS.MID` (two files) | **UNRESOLVED** | export filename/SMF metadata only; no musical or structural mapping to any of the 18 active sequences |
+
+The two unresolved sets are compatible with exports from another Studio
+Vision project. Current evidence neither proves nor disproves that origin.
 
 # Important limitations of MIDI export evidence
 
@@ -43,13 +75,15 @@ event object or its project encoding. Export can insert initialization data,
 translate durations into Note Off messages, use zero-velocity Note On as Note
 Off, duplicate metadata across chunks, flatten tracks, and normalize device
 state. Meta events may be generated from sequence, track, instrument, or
-application state rather than serialized event records. Counts cover only
-three of the project's 18 sequences. No raw exported event stream or complete
+application state rather than serialized event records. Only the Ode set is
+known to cover one of the project's 18 active sequences. The aggregate counts
+also include two source-unresolved export sets and therefore must not be
+reported as `newest STUFF` coverage. No raw exported event stream or complete
 SysEx payload was found verbatim in the authentic project.
 
 # Channel-event family inventory
 
-The three-sequence non-duplicative inventory is:
+The three-export-set non-duplicative inventory is:
 
 | Family | Events | Sequences | Tracks | Channels | Representative evidence |
 |---|---:|---:|---:|---|---|
@@ -60,6 +94,14 @@ The three-sequence non-duplicative inventory is:
 | Pitch Bend | 440 | 1 | 2 | 3, 5 | `ANALOG.MID #5` and `ANALOG.MID #2`; values 0–16,383 including center 8,192 |
 | Channel Pressure | 0 | 0 | 0 | — | not present |
 | Polyphonic Key Pressure | 0 | 0 | 0 | — | not present |
+
+These aggregate counts remain useful evidence about event families emitted by
+Studio Vision, but not as an inventory of `newest STUFF`. By export set, the
+Controller counts are: source-unresolved `ANALOG` 4,865;
+source-unresolved `BATTL2GS` 243; and proven `Ode to Clarke` 4. The proven Ode
+events are two CC0/CC32 bank-select pairs already correlated with Patch
+representations; they do not provide a controller-heavy ordinary-Controller
+region.
 
 Positive Note On count is the musical note count. A zero-velocity Note On is
 reported as a note ending, not another Note start. Explicit Note Off release
@@ -143,13 +185,13 @@ Vision record grammar for CC7 versus CC10, CC64, or CC98. However, there is no
 controlled ordinary-Controller project field or strictly aligned Controller
 List Window yet, so a shared project representation is not proved.
 
-Minimum evidence for one shared decoder is: obtain a bounded List Window slice
-from one controller-heavy authentic track (preferably `ANALOG.MID #6` or
-`ANALOG.MID #7`), correlate several consecutive events having different
-controller numbers and values to one recurring binary layout, establish timing
-and record bounds, and validate one value-only change only if natural alignment
-leaves value/number ambiguity. This is family-level evidence; separate CC7,
-CC10, and CC64 decoders would be unjustified.
+Minimum evidence for one shared decoder is a bounded List Window slice from a
+provenance-controlled, controller-heavy `newest STUFF` track, followed by
+correlation of several consecutive events having different controller numbers
+and values to one recurring binary layout. The source-unresolved `ANALOG`
+tracks cannot supply that evidence. A value-only save is needed only if natural
+alignment leaves value/number ambiguity. Separate CC7, CC10, and CC64 decoders
+would remain unjustified.
 
 # Binary candidate visibility
 
@@ -159,8 +201,8 @@ This was intentionally a lightweight survey, not a decoding campaign.
 |---|---|---|
 | Notes | STRONG | multiple long project chains already align exactly with export properties and timing |
 | Patch / Program | STRONG | four authentic events and controlled position/name/PC/bank saves |
-| Controllers | MODERATE | 5,112 natural events, repeated initialization and NRPN/RPN clusters provide strong signatures; event-region identity/List evidence is missing |
-| Pitch Bend | MODERATE | 440 events concentrated in two named `ANALOG` tracks with distinctive 14-bit curves; corresponding project tracks are not yet bounded |
+| Controllers | MODERATE across available exports; WEAK for `newest STUFF` | 5,112 events exist, but 5,108 are in source-unresolved sets; the four proven Ode events are Patch bank-select pairs |
+| Pitch Bend | MODERATE across available exports; NONE for `newest STUFF` | all 440 events are in the source-unresolved `ANALOG` set |
 | SysEx | WEAK | two distinctive Roland payloads; neither full payload nor payload without terminator appears verbatim in the project |
 | Tempo | WEAK | three exported values and one prior controlled tempo save, but no encoding or bounded record |
 | Meter | WEAK | four exported 4/4 events and a literal `Meter Track`; no varying natural value or record mapping |
@@ -191,11 +233,11 @@ one controlled payload edit because export framing may transform raw data.
 
 # Recommended family order
 
-1. **Controller event representation.** It unlocks 5,112 events and fourteen
-   controller numbers through one likely shared grammar. Existing dense
-   natural clusters should support initial correlation; expect zero controlled
-   experiments if strict List Window alignment succeeds, otherwise one
-   value-only discriminating save.
+1. **Controller event representation, after provenance-controlled ground
+   truth.** The available exports contain 5,112 events and fourteen controller
+   numbers, but 5,108 events are not mapped to `newest STUFF`. First obtain a
+   fresh export or direct List Window evidence for one controller-rich active
+   sequence; then test one likely shared grammar.
 2. **Pitch Bend event representation.** It unlocks 440 high-value events on two
    tracks. The natural curves provide excellent timing/value signatures;
    likely zero or one controlled experiment after the track regions are found.
@@ -227,10 +269,11 @@ milestones and may use natural evidence rather than edits.
 # Families likely solvable without controlled edits
 
 - **Controller:** dense NRPN/RPN and initialization sequences may expose one
-  repeated record through natural multi-value alignment once a List Window or
-  track region is bounded.
-- **Pitch Bend:** 440 distinctive 14-bit values across two curves may be enough
-  to identify timing/value fields naturally.
+  repeated record naturally, but only after their source project is established
+  or equivalent provenance-controlled material is exported from `newest STUFF`.
+- **Pitch Bend:** 440 distinctive 14-bit values may expose timing/value fields
+  for their unknown source; they currently establish nothing about a
+  `newest STUFF` event region.
 - **Additional Patch instances:** the shared bounded representation already
   works when caller bounds are known.
 - **Track/instrument names:** exact strings and regular metadata records may be
@@ -265,8 +308,8 @@ performance events and have much higher recovery value.
 |---|---|---:|---:|---:|---|---|---|---|---|---:|
 | Note | yes | 6,109 starts | 3 | 36 | IMPLEMENTED bounded | CRITICAL | high | strong | no for known grammar | covered |
 | Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded | HIGH | high | strong | no for values; optionality deferred | covered |
-| Controller | yes | 5,112 | 3 | 29 | UNINVESTIGATED | HIGH | very high | moderate | maybe 0–1 | 1 |
-| Pitch Bend | yes | 440 | 1 | 2 | UNINVESTIGATED | HIGH | high | moderate | maybe 0–1 | 2 |
+| Controller | yes in available exports; 4 proven for `newest STUFF` | 5,112 aggregate | 3 export sets | 29 | UNINVESTIGATED | HIGH | very high | weak until provenance-controlled target exists | provenance capture first | 1 |
+| Pitch Bend | yes only in source-unresolved export set | 440 aggregate | 1 export set | 2 | UNINVESTIGATED | HIGH | high | unresolved for `newest STUFF` | provenance required | 2 |
 | Tempo | yes | 3 | 3 | 3 | PARTIAL | HIGH | medium | weak | likely 1 | 3 |
 | Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
 | SysEx | yes | 2 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 0–1 | 4 |
@@ -276,7 +319,8 @@ performance events and have much higher recovery value.
 
 # Evidence supported
 
-- Seven exports cover three, not all 18, project sequences.
+- Seven exports form three filename-based sets; only the Ode set is proven to
+  represent one of the 18 active `newest STUFF` sequences.
 - Twelve semantic event families are present; pressure families are absent.
 - The non-duplicative view contains 6,109 Notes, 5,112 Controllers, 440 Pitch
   Bends, 38 Program Changes, and two SysEx events.
@@ -289,7 +333,8 @@ performance events and have much higher recovery value.
 
 # Unknowns
 
-The unexported 15 sequences may contain additional families or values. Export
+The 17 active sequences without proven exports may contain additional families
+or values. Export
 initialization may not correspond one-to-one with project events. Controller,
 Pitch Bend, SysEx, Tempo, and Meter project encodings, event boundaries,
 sequence/track associations, and framing variants remain unknown. No claim is
@@ -297,9 +342,8 @@ made about pressure support in Studio Vision generally.
 
 # Single recommended next step
 
-Begin a **Controller-family investigation** using one controller-heavy
-`ANALOG.MID #2` track. First obtain or identify bounded Studio Vision List
-Window ground truth for several consecutive mixed controller-number events,
-then test whether one timing/controller/value layout explains the sequence.
-Use natural NRPN/RPN clusters before authorizing any controlled edit, and do
-not split the work into separate CC-number decoders.
+Create one provenance-controlled multitrack MIDI export from an existing,
+controller-rich active sequence in the untouched `newest STUFF` baseline,
+recording its Studio Vision sequence and track identity at export time. This is
+the smallest prerequisite to selecting a natural Controller region without
+relying on source-unresolved export metadata.

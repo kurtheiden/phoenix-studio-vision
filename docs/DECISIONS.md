@@ -322,18 +322,36 @@ only after a bank-removal experiment establishes presence/sentinel behavior.
 
 ## 2026-08-13: prioritize MIDI recovery by event family
 
-**Status:** Accepted
+**Status:** Accepted, with provenance scope corrected below
 
 Available exports show 5,112 Control Changes across fourteen controller
-numbers, with most traffic belonging to repeated NRPN/RPN sequences. Treat
-Controller as one candidate structural event family containing timing, number,
-value, and channel/instrument context. Do not create parameter-specific CC
-decoders without evidence of distinct project grammars.
+numbers, with most traffic belonging to repeated NRPN/RPN sequences. This is
+Studio Vision export evidence; it is not `newest STUFF` coverage because 5,108
+events belong to source-unresolved export sets. Treat Controller as one
+candidate structural event family containing timing, number, value, and
+channel/instrument context. Do not create parameter-specific CC decoders
+without evidence of distinct project grammars.
 
-Controller-family investigation precedes bank-removal optionality work and
-additional ordinary Patch replication. Pitch Bend follows because 440 natural
-events provide high-value multi-value ground truth. Export meta events remain
-separate from project-event claims.
+Provenance-controlled Controller ground truth precedes bank-removal optionality
+work and additional ordinary Patch replication. The 440 Pitch Bend events are
+also source-unresolved and cannot be mapped to this project yet. Export meta
+events remain separate from project-event claims.
+
+## 2026-08-13: require provenance before export-to-project correlation
+
+**Status:** Accepted correction
+
+Studio Vision UI ground truth shows that neither `ANALOG.MID #2` nor `Analog
+Seq` is an active sequence in the untouched `newest STUFF` baseline. Withdraw
+all mappings based only on export filenames, SMF track names, or readable
+project strings. Only the `Ode to Clarke` export set is currently proven to
+come from this project through independent musical and binary correlation;
+the `ANALOG` and `BATTL2GS` sets remain source-unresolved.
+
+Aggregate event-family counts remain useful evidence of what Studio Vision
+exports can contain, but must not be presented as `newest STUFF` coverage.
+Controller-region selection is blocked until a controller-rich active sequence
+has provenance-controlled export or direct List Window ground truth.
 
 ## 2026-08-09: keep Track 7 boundary claims conservative
 

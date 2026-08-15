@@ -122,15 +122,21 @@ committed or specified.
 - [ ] Remove Bank Select from Track 2 in one controlled save to test whether
       `ff 51 01 -> ff ff ff` before designing optional bank semantics.
 - [x] Inventory MIDI event families across all seven available Project 001
-      exports using a non-duplicative three-sequence view; document 6,109
+      exports using a non-duplicative three-export-set view; document 6,109
       Notes, 5,112 Controllers across 14 CC numbers, 440 Pitch Bends, 38
-      Program Changes, and two SysEx events.
-- [ ] Investigate one shared Controller-event representation using natural
-      mixed-controller/NRPN sequences and bounded List Window ground truth;
-      do not split the work by CC number.
-- [ ] After Controller, investigate the shared Pitch Bend representation using
-      the two exported `ANALOG.MID #2` curves before authorizing a controlled
-      edit.
+      Program Changes, and two SysEx events, with source provenance tracked
+      separately.
+- [x] Correct export provenance from authoritative Studio Vision UI evidence:
+      only `Ode to Clarke` is mapped to `newest STUFF`; `ANALOG.MID #2` and
+      `BATTL2GS.MID` remain source-unresolved.
+- [ ] Create one provenance-controlled multitrack export from a known,
+      controller-rich active `newest STUFF` sequence, recording sequence and
+      track identity at export time.
+- [ ] Investigate one shared Controller-event representation using that
+      provenance-controlled mixed-controller region; do not split the work by
+      CC number.
+- [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
+      project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
       Controller, Pitch Bend, Tempo/Meter, or SysEx recovery value.
 

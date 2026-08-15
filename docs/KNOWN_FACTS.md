@@ -264,11 +264,23 @@ other Patch fields remain stable. Together Experiments 028/029 establish
 direct CC0 and CC32 value storage for this representation; leading `ff` and
 no-bank optionality remain unproven.
 
-The Project 001 MIDI-export directory contains seven SMFs representing only
-three of the authentic project's 18 sequences. A non-duplicative richest-
-multitrack view contains 6,109 Note starts and endings, 5,112 Control Changes,
-440 Pitch Bends, 38 Program Changes, and two SysEx events. Channel and
-polyphonic pressure are absent from the available exports. Fourteen distinct
-CC numbers occur; 4,812 Controller events are CC6/98/99/100/101 components of
-repeated NRPN/RPN-style streams. This is export evidence, not proof of project
-event serialization or coverage of the unexported sequences.
+Studio Vision UI ground truth establishes the untouched baseline's active
+sequence inventory: A `xForm`; B `Bells for her`; C `Situation`; D `Sequence
+D`; E `Sequence E`; F `Girl-U-Want`; G `mission impossibl`; H `happyone`; I
+`Sequence I`; J `newsong`; K `Sequence K`; L `Renaissance`; M `Get on up &
+Dance`; N `Jurrasic Park`; O `Ode to Clarke`; P `Over the Top`; Q `Sequence
+Q`; R `Sequence R`. Neither `ANALOG.MID #2` nor `Analog Seq` is an active
+sequence. A readable project string, export filename, or SMF track-name event
+does not establish active-sequence identity without UI or independent
+structural evidence.
+
+The Project 001 MIDI-export directory contains seven SMFs in three
+filename-based sets. Only the three-file `Ode to Clarke` set is proven to come
+from `newest STUFF`, through UI identity and extensive Note/Patch/timing/binary
+correlation. The `ANALOG.MID #2` and `BATTL2GS.MID` sets have unresolved source
+project and sequence provenance and may come from another project. The
+non-duplicative aggregate still contains 6,109 Note starts and endings, 5,112
+Control Changes, 440 Pitch Bends, 38 Program Changes, and two SysEx events, but
+those are Studio Vision export-format observations, not `newest STUFF`
+coverage. Of the 5,112 Controllers, 4,865 are in unresolved `ANALOG`, 243 in
+unresolved `BATTL2GS`, and four in proven `Ode to Clarke`.
