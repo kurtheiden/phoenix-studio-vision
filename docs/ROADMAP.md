@@ -140,8 +140,11 @@ committed or specified.
 - [x] Implement the caller-bounded ordinary Controller decoder and authentic
       regression fixtures, with exact consumption, opaque context, and no
       scanning or timeline reconstruction.
-- [ ] Design caller/container integration that supplies established Controller
+- [x] Design caller/container integration that supplies established Controller
       bounds and event-start accumulation without heuristic discovery.
+- [ ] Correlate the already-bounded Track 9 mixed stream event-by-event to
+      identify the first expected Channel Pressure project record and test its
+      current-cursor discriminator/length using natural evidence only.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

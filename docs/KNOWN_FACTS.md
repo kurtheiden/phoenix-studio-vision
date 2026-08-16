@@ -300,3 +300,12 @@ value, and absolute byte provenance. Authentic fixed-offset tests cover Tracks
 3, 4, 6, 9, and 14, both CC1 and CC7, and one- and two-byte timing including
 zero. Malformed bounds/framing fail without scanning. Discovery, absolute time,
 context semantics, and broader grammar generality remain unsupported.
+
+The existing bounded decoders do not yet compose into a generic mixed-event
+walker. Controller records have a current-cursor tag and derivable total length;
+consecutive Notes have derivable ends only inside a caller-asserted Note chain;
+and Patch decoding still requires a caller-known boundary after the first-Note
+status. In Track 9, a track-region-only walker can decode the initial Controller
+at `0x143c8..0x143d1` but must stop at the Patch beginning `0x143d1`; it cannot
+derive the Patch-to-first-Note handoff or reach an identified Channel Pressure
+record without guessing.

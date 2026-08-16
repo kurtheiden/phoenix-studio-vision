@@ -380,6 +380,19 @@ opaque bytes, and returns only the encoded event-start delta. Fixed authentic
 fixtures cover Tracks 3, 4, 6, 9, and 14. Patch bank tails fail structurally;
 no discovery, timeline accumulation, or CLI integration was added.
 
+## 2026-08-16: do not implement a generic mixed-event walker yet
+
+**Status:** Accepted
+
+Keep record decoding separate from stream walking. A walker may advance only
+when the event family and end are justified at its current cursor; unsupported
+bytes leave cursor and absolute-time state unchanged. Controller-only bounded
+walking and explicitly asserted consecutive Note-chain walking are ready as
+separate profiles. Generic mixed Note/Controller walking is blocked by the lack
+of a collision-resistant Note discriminator, while Patch adds an externally
+supplied first-Note boundary and compound timing handoff. Do not implement
+fallback decoder trials, scanning, skipping, or resynchronization.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
