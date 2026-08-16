@@ -166,7 +166,7 @@ level, splitting Note On and Note Off makes 13.
 |---|---|---|
 | Notes | IMPLEMENTED | bounded timing/property/duration decoder and extensive controlled/authentic validation; discovery and general track ownership unresolved |
 | Patch / Program / bank | IMPLEMENTED | caller-bounded shared Patch decoder; PC, CC0, and CC32 values established; bank optionality not exposed |
-| Control Change | UNINVESTIGATED | Patch bank bytes do not establish ordinary Controller event records |
+| Control Change | DESIGNED BOUNDED | 395 provenance-controlled `Bells for her` CC1/CC7 records establish `ff 41 05`; implementation and discovery remain absent |
 | Pitch Bend | UNINVESTIGATED | export inventory only |
 | Channel Pressure | NOT PRESENT | absent in available exports |
 | Poly Pressure | NOT PRESENT | absent in available exports |
@@ -177,21 +177,17 @@ level, splitting Note On and Note Off makes 13.
 
 # Shared Controller-family assessment
 
-**LIKELY.** Every observed Controller message has the same MIDI semantic tuple:
-time, controller number, value, and channel/instrument context. Fourteen
-controller numbers recur across 29 tracks, and thousands form repeated
-NRPN/RPN clusters. Nothing in current evidence suggests a different Studio
-Vision record grammar for CC7 versus CC10, CC64, or CC98. However, there is no
-controlled ordinary-Controller project field or strictly aligned Controller
-List Window yet, so a shared project representation is not proved.
+**ESTABLISHED FOR THE OBSERVED CC1/CC7 SCOPE.** The later
+provenance-controlled `Bells for her` export supplies 395 natural ordinary
+Controllers across Tracks 3, 4, 6, 9, and 14. Every corresponding project
+record uses `timing VLQ | ff 41 | 05 | opaque context[3] | controller number |
+value`; Track 9 matches 120/120 ordered number/value pairs and event-start
+deltas. CC1 and CC7 therefore belong to one generic record family.
 
-Minimum evidence for one shared decoder is a bounded List Window slice from a
-provenance-controlled, controller-heavy `newest STUFF` track, followed by
-correlation of several consecutive events having different controller numbers
-and values to one recurring binary layout. The source-unresolved `ANALOG`
-tracks cannot supply that evidence. A value-only save is needed only if natural
-alignment leaves value/number ambiguity. Separate CC7, CC10, and CC64 decoders
-would remain unjustified.
+This does not establish every CC number or every Studio Vision project,
+version, or device configuration. Source-unresolved export populations remain
+unusable for project correlation, and the context bytes have no assigned
+channel, track, instrument, device, or reference semantics.
 
 # Binary candidate visibility
 
@@ -201,7 +197,7 @@ This was intentionally a lightweight survey, not a decoding campaign.
 |---|---|---|
 | Notes | STRONG | multiple long project chains already align exactly with export properties and timing |
 | Patch / Program | STRONG | four authentic events and controlled position/name/PC/bank saves |
-| Controllers | MODERATE across available exports; WEAK for `newest STUFF` | 5,112 events exist, but 5,108 are in source-unresolved sets; the four proven Ode events are Patch bank-select pairs |
+| Controllers | STRONG for bounded `Bells for her` CC1/CC7; unresolved elsewhere | 395 ordinary events correlate exactly; source-unresolved populations remain out of scope |
 | Pitch Bend | MODERATE across available exports; NONE for `newest STUFF` | all 440 events are in the source-unresolved `ANALOG` set |
 | SysEx | WEAK | two distinctive Roland payloads; neither full payload nor payload without terminator appears verbatim in the project |
 | Tempo | WEAK | three exported values and one prior controlled tempo save, but no encoding or bounded record |
@@ -233,11 +229,10 @@ one controlled payload edit because export framing may transform raw data.
 
 # Recommended family order
 
-1. **Controller event representation, after provenance-controlled ground
-   truth.** The available exports contain 5,112 events and fourteen controller
-   numbers, but 5,108 events are not mapped to `newest STUFF`. First obtain a
-   fresh export or direct List Window evidence for one controller-rich active
-   sequence; then test one likely shared grammar.
+1. **Bounded Controller decoder implementation.** Implement the established
+   `Bells for her` CC1/CC7 grammar with exact caller bounds, opaque context, and
+   authentic fixtures. Do not add discovery or treat Patch bank exports as
+   ordinary Controller records.
 2. **Pitch Bend event representation.** It unlocks 440 high-value events on two
    tracks. The natural curves provide excellent timing/value signatures;
    likely zero or one controlled experiment after the track regions are found.
@@ -296,11 +291,10 @@ milestones and may use natural evidence rather than edits.
 
 # Experiment 030 priority assessment
 
-**DEFER.** Experiments 028 and 029 already establish direct CC0/CC32 values.
-A bank-removal experiment would clarify optionality and the leading `ff`, but
-the decoder already preserves those bytes losslessly and no bank value is
-currently lost. Controller and Pitch Bend families unlock 5,552 unresolved
-performance events and have much higher recovery value.
+**UNNECESSARY FOR THE CONTROLLER GRAMMAR.** The 395 provenance-controlled
+natural records distinguish timing, tag, length, context, number, and value
+across CC1/CC7 and multiple tracks. A value edit would not resolve context or
+container semantics. Bank-removal optionality remains a separate Patch issue.
 
 # MIDI recovery coverage snapshot
 
@@ -308,7 +302,7 @@ performance events and have much higher recovery value.
 |---|---|---:|---:|---:|---|---|---|---|---|---:|
 | Note | yes | 6,109 starts | 3 | 36 | IMPLEMENTED bounded | CRITICAL | high | strong | no for known grammar | covered |
 | Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded | HIGH | high | strong | no for values; optionality deferred | covered |
-| Controller | yes in available exports; 4 proven for `newest STUFF` | 5,112 aggregate | 3 export sets | 29 | UNINVESTIGATED | HIGH | very high | weak until provenance-controlled target exists | provenance capture first | 1 |
+| Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | DESIGNED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | 1 |
 | Pitch Bend | yes only in source-unresolved export set | 440 aggregate | 1 export set | 2 | UNINVESTIGATED | HIGH | high | unresolved for `newest STUFF` | provenance required | 2 |
 | Tempo | yes | 3 | 3 | 3 | PARTIAL | HIGH | medium | weak | likely 1 | 3 |
 | Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
@@ -326,8 +320,8 @@ performance events and have much higher recovery value.
   Bends, 38 Program Changes, and two SysEx events.
 - Fourteen CC numbers share one MIDI family; most traffic is structured
   NRPN/RPN automation.
-- One shared Studio Vision Controller representation is likely but not yet
-  proven.
+- One shared ordinary Controller representation is proven for 395 natural
+  CC1/CC7 records in `Bells for her`; broader generality remains unproven.
 - Notes and bounded Patch semantics are the only implemented musical families.
 - Controller investigation has the highest next recovery value.
 
@@ -342,8 +336,6 @@ made about pressure support in Studio Vision generally.
 
 # Single recommended next step
 
-Create one provenance-controlled multitrack MIDI export from an existing,
-controller-rich active sequence in the untouched `newest STUFF` baseline,
-recording its Studio Vision sequence and track identity at export time. This is
-the smallest prerequisite to selecting a natural Controller region without
-relying on source-unresolved export metadata.
+Implement the exact-bound ordinary Controller decoder and authentic regression
+fixtures for Tracks 3, 4, 6, 9, and 14. Preserve context and field provenance;
+do not add scanning, absolute timeline reconstruction, or Patch bank handling.

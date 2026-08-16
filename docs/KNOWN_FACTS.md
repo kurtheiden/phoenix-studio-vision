@@ -284,3 +284,12 @@ Control Changes, 440 Pitch Bends, 38 Program Changes, and two SysEx events, but
 those are Studio Vision export-format observations, not `newest STUFF`
 coverage. Of the 5,112 Controllers, 4,865 are in unresolved `ANALOG`, 243 in
 unresolved `BATTL2GS`, and four in proven `Ode to Clarke`.
+
+The provenance-controlled full multitrack export of the untouched baseline's
+`Bells for her` sequence contains 405 Control Changes. Ten are CC0/CC32 export
+messages derived from Patch bank state; the remaining 395 ordinary Controllers
+correspond one-for-one to project records of the form `timing VLQ | ff 41 | 05
+| opaque context[3] | controller number | controller value`. Track 9 matches
+120/120 number/value pairs and 120/120 event-start deltas across CC1 and CC7.
+Tracks 3, 4, and 6 independently match CC7=127, and Track 14 supplies 272
+matching CC1 records. Context meanings and broader generality remain unknown.

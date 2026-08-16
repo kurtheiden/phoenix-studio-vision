@@ -129,12 +129,17 @@ committed or specified.
 - [x] Correct export provenance from authoritative Studio Vision UI evidence:
       only `Ode to Clarke` is mapped to `newest STUFF`; `ANALOG.MID #2` and
       `BATTL2GS.MID` remain source-unresolved.
-- [ ] Create one provenance-controlled multitrack export from a known,
+- [x] Create one provenance-controlled multitrack export from a known,
       controller-rich active `newest STUFF` sequence, recording sequence and
-      track identity at export time.
-- [ ] Investigate one shared Controller-event representation using that
-      provenance-controlled mixed-controller region; do not split the work by
-      CC number.
+      track identity at export time: `Bells for her` supplies 395 ordinary
+      Controllers after excluding ten Patch-derived bank messages.
+- [x] Investigate one shared Controller-event representation using that
+      provenance-controlled mixed-controller region: CC1 and CC7 share `timing
+      VLQ | ff 41 | 05 | opaque context[3] | number | value` across all 395
+      natural records.
+- [ ] Implement the caller-bounded ordinary Controller decoder and authentic
+      regression fixtures, with exact consumption, opaque context, and no
+      scanning or timeline reconstruction.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

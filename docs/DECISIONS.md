@@ -353,6 +353,22 @@ exports can contain, but must not be presented as `newest STUFF` coverage.
 Controller-region selection is blocked until a controller-rich active sequence
 has provenance-controlled export or direct List Window ground truth.
 
+## 2026-08-16: implement ordinary Controllers as one bounded record family
+
+**Status:** Accepted
+
+The later provenance-controlled `Bells for her` export satisfies the preceding
+gate. It establishes 395 ordinary records using `timing VLQ | ff 41 | 05 |
+opaque context[3] | number | value`: Track 9 matches all 120 number/value pairs
+and event-start deltas, and Tracks 3, 4, 6, and 14 validate the family
+independently across CC1 and CC7.
+
+Implement one exact-bound, provenance-preserving Controller decoder rather
+than parameter-specific decoders. Keep context opaque, leave absolute timeline
+accumulation to the caller, and do no scanning. Patch-derived CC0/CC32 export
+messages remain Patch state. No Experiment 030 is required; broader CC,
+version, project, and device generality remains unproven.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
