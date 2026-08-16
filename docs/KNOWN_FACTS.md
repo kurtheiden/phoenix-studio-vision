@@ -309,3 +309,11 @@ status. In Track 9, a track-region-only walker can decode the initial Controller
 at `0x143c8..0x143d1` but must stop at the Patch beginning `0x143d1`; it cannot
 derive the Patch-to-first-Note handoff or reach an identified Channel Pressure
 record without guessing.
+
+Independent event-order correlation later bounds the Track 9 Channel Pressure
+run at `0x1478c..0x147ce`. Its entry is `82 20 d0 01` (delta 288, direct value
+1), followed by 31 `timing VLQ | direct value` continuations. Values and
+event-start deltas match the export 32/32. The run begins exactly after the
+known CC1=0 record and ends before `83 56 90 ...`, the aligned following Note.
+This establishes one stateful natural run, not isolated pressure encoding,
+universal `d0` meaning, MIDI channel semantics, or global running status.

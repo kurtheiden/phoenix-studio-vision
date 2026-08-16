@@ -393,6 +393,20 @@ of a collision-resistant Note discriminator, while Patch adds an externally
 supplied first-Note boundary and compound timing handoff. Do not implement
 fallback decoder trials, scanning, skipping, or resynchronization.
 
+## 2026-08-16: design Channel Pressure as an exact-bounded stateful run
+
+**Status:** Accepted
+
+The provenance-controlled Track 9 correlation establishes one 32-event run:
+`timing VLQ | d0 | value` entry followed by 31 `timing VLQ | value`
+continuations, with 32/32 value and timing agreement. A bounded decoder may
+require exact caller run bounds, validate `d0` at entry, and parse compact
+continuations only under state established by that entry. It must not expose a
+stateless continuation decoder, infer MIDI channel, discover the run end, or
+accumulate absolute time. No controlled experiment is needed for this observed
+contract. The following explicit `90` is evidence for that one transition and
+does not authorize a generic mixed walker.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

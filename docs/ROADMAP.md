@@ -142,9 +142,14 @@ committed or specified.
       scanning or timeline reconstruction.
 - [x] Design caller/container integration that supplies established Controller
       bounds and event-start accumulation without heuristic discovery.
-- [ ] Correlate the already-bounded Track 9 mixed stream event-by-event to
+- [x] Correlate the already-bounded Track 9 mixed stream event-by-event to
       identify the first expected Channel Pressure project record and test its
-      current-cursor discriminator/length using natural evidence only.
+      current-cursor discriminator/length using natural evidence only: 32/32
+      timing/value matches establish one `d0`-entered stateful run.
+- [x] Design an exact-bounded, state-aware Channel Pressure run contract that
+      preserves provenance and never classifies continuations statelessly.
+- [ ] Implement the bounded Channel Pressure run decoder and authentic plus
+      malformed fixtures without adding mixed-stream discovery.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

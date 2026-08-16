@@ -97,6 +97,10 @@ immediately following that VLQ. It must not search forward.
 
 - **Controller — SUPPORTED.** Exact following bytes `ff 41 05` identify the
   known ordinary Controller grammar and its fixed remaining width.
+- **Channel Pressure — PARTIAL.** After a timing VLQ, adjacent `d0` identifies
+  the one established run entry. Its later `timing VLQ | value` continuations
+  are classifiable only while explicit Channel Pressure run state is active
+  inside the independently bounded run; they are not stateless records.
 - **Patch — PARTIAL.** Exact following bytes `ff 7c` identify the observed
   Patch family after its absolute-position VLQ, and the payload end is
   derivable. The variable pre-Note tail and complete representation/event end
@@ -148,11 +152,19 @@ Moreover, the bytes between PC and that Note encode a compound timing
 relationship, so the following Note's absolute start cannot be obtained from
 the returned neutral post-PC component alone.
 
-Therefore a walker limited to Patch, Note, and Controller decodes exactly the
-initial Controller and then stops at the Patch start `0x143d1`. It does not
-reach a Channel Pressure event. Current evidence establishes 32 such exported
-events but not the exact project offset or grammar of the first one, so no
-first-pressure offset is recorded.
+Therefore an autonomous walker still decodes exactly the initial Controller and
+then stops at the Patch start `0x143d1`; later research does not repair that
+early Patch-to-first-Note handoff. Independently bounded event-order correlation
+now establishes the Channel Pressure run at `0x1478c..0x147ce`: entry `82 20
+d0 01`, followed by 31 timing/value continuations, with 32/32 timing and value
+matches. A bounded run decoder can safely process that region with active-family
+state even though a generic walker cannot autonomously reach it.
+
+The run exits through `83 56 90 ...`, matching delta 470 to the following Note.
+This proves an explicit `90` at this Pressure-to-Note transition and makes that
+specific boundary strong. It suggests that some family transitions may carry
+status-like markers. It does not prove `90` on every Note transition or on
+consecutive Notes, so the generic Note-discriminator conclusion is unchanged.
 
 # Note boundary assessment
 
@@ -191,10 +203,11 @@ exact Controller-only region.
 | Walker | Readiness | Boundary |
 |---|---|---|
 | Controller-only bounded sequence | **YES** | Exact region and initial timing state required; each record length is derivable. |
+| Exact-bounded Channel Pressure run | **YES** | Entry `d0` establishes state; continuations are safe only inside the caller-known run. |
 | Consecutive Note-chain | **YES** | Only for a caller-asserted evidence-backed Note chain with a known start/end and initial timing basis. |
 | Mixed Note + Controller | **NO** | Controller is tagged, but Note has no proven collision-free current-cursor discriminator in a mixed region. |
 | Mixed Patch + Note + Controller | **NO** | Adds non-derivable Patch-to-first-Note boundary and compound timing ownership. |
-| Full Track 9 including Channel Pressure | **NO** | Patch/Note handoff already blocks progress; Channel Pressure project grammar is also unknown. |
+| Full Track 9 including Channel Pressure | **NO** | The pressure run is now bounded, but the earlier Patch/Note handoff and generic Note classification still block autonomous walking. |
 
 # Highest-value blocker
 
@@ -213,15 +226,18 @@ have:
 2. transactional walker state (`cursor`, `previous_event_start`);
 3. a current-cursor classifier that decodes at most the immediate timing prefix
    and fixed adjacent discriminator bytes;
-4. family-specific boundary derivation before invoking an exact-bound decoder;
-5. a decoded-event enum carrying family result, absolute event start, and the
+4. explicit active-family/run state for justified compact continuations, never
+   inferred from arbitrary untagged bytes;
+5. family-specific boundary derivation before invoking an exact-bound decoder;
+6. a decoded-event enum carrying family result, absolute event start, and the
    source range used to derive that start;
-6. a terminal unsupported-event result preserving the bounded remainder.
+7. a terminal unsupported-event result preserving the bounded remainder.
 
-Initially, only a Controller-only profile and the existing explicitly asserted
-Note-chain profile meet this contract. Do not expose a generic mixed profile
-until the Note discriminator/handoff is established. Patch absolute timing must
-remain a family-specific update, not be coerced into delta accumulation.
+Currently, a Controller-only profile, the existing explicitly asserted
+Note-chain profile, and an exact-bounded state-aware Channel Pressure run meet
+this contract. Do not expose a generic mixed profile until the Note
+discriminator/handoff is established. Patch absolute timing must remain a
+family-specific update, not be coerced into delta accumulation.
 
 # Evidence supported
 
@@ -230,6 +246,10 @@ remain a family-specific update, not be coerced into delta accumulation.
 - Consecutive known Notes have derivable local ends and validated start-to-start
   intervals inside asserted Note chains.
 - `ff 7c` identifies the Patch family locally and Patch position is absolute.
+- The exact Channel Pressure run uses one explicit `d0` entry and 31 compact
+  state-dependent continuations; all 32 timing/value pairs agree.
+- The specific following Note transition contains explicit `90`, without
+  establishing a universal Note-transition rule.
 - Unknown structures can be preserved and reported without moving the cursor.
 - Track 9 demonstrates why record decoders alone do not supply a mixed walker:
   the first Patch-to-Note transition already requires external boundary and
@@ -239,16 +259,13 @@ remain a family-specific update, not be coerced into delta accumulation.
 
 Unknowns include a collision-resistant mixed-stream Note discriminator,
 first-Note ownership after Patch, complete Patch end, compound Patch-to-Note
-timing, Channel Pressure and Pitch Bend project grammars, exact Track 9 first
-pressure offset, and general track-container framing. The event-region bound
-itself remains caller evidence, not something this design discovers.
+timing, isolated/re-entered Channel Pressure forms, universal family-state
+rules, Pitch Bend project grammar, and general track-container framing. The
+event-region and pressure-run bounds remain caller evidence, not discoveries
+performed by a walker.
 
 # Single recommended next step
 
-Perform a read-only, event-by-event correlation of the known Track 9 Note,
-Controller, Patch, and exported Channel Pressure order against the already
-bounded `0x143c8..0x14956` project span, specifically to identify the first
-non-Controller/non-Note record at the exact expected event position and test
-whether its current-cursor bytes provide an explicit discriminator and length.
-This natural mixed-stream evidence is higher-information than a controlled
-edit and may expose the missing boundary convention without Experiment 030.
+Implement the exact-bounded, state-aware Channel Pressure run decoder described
+in `BOUNDED_CHANNEL_PRESSURE_DECODER_DESIGN.md`, without integrating a generic
+mixed walker.

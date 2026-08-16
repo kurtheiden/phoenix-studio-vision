@@ -95,6 +95,12 @@ The three-export-set non-duplicative inventory is:
 | Channel Pressure | 0 | 0 | 0 | — | not present |
 | Polyphonic Key Pressure | 0 | 0 | 0 | — | not present |
 
+This table remains the historical three-export-set snapshot. The later
+provenance-controlled `Bells for her` export adds 32 Channel Pressure events on
+Track 9/channel 12 and no Polyphonic Key Pressure. Those 32 events correlate to
+one exact stateful project run; they do not retroactively change the older
+three-set counts.
+
 These aggregate counts remain useful evidence about event families emitted by
 Studio Vision, but not as an inventory of `newest STUFF`. By export set, the
 Controller counts are: source-unresolved `ANALOG` 4,865;
@@ -155,10 +161,12 @@ be synthesized from Studio Vision's Tempo/Meter tracks rather than direct
 one-to-one project event records. Track/instrument names are useful project
 metadata but are not MIDI performance events. End-of-track is export framing.
 
-Counting semantic families, the material contains **12 distinct families**:
+The original three-set material contains **12 distinct semantic families**:
 Note, Program/Patch, Controller, Pitch Bend, SysEx, tempo, meter, SMPTE offset,
 track name, instrument name, copyright, and end-of-track. At wire-message
-level, splitting Note On and Note Off makes 13.
+level, splitting Note On and Note Off makes 13. The later `Bells for her`
+export adds Channel Pressure as a thirteenth observed semantic family across
+the expanded evidence set.
 
 # Current Phoenix coverage
 
@@ -168,7 +176,7 @@ level, splitting Note On and Note Off makes 13.
 | Patch / Program / bank | IMPLEMENTED | caller-bounded shared Patch decoder; PC, CC0, and CC32 values established; bank optionality not exposed |
 | Control Change | IMPLEMENTED BOUNDED | exact-bound `ff 41 05` decoder with authentic CC1/CC7 fixtures; discovery and container integration remain absent |
 | Pitch Bend | UNINVESTIGATED | export inventory only |
-| Channel Pressure | NOT PRESENT | absent in available exports |
+| Channel Pressure | DESIGNED BOUNDED RUN | later provenance-controlled `Bells for her` export establishes one 32-event `d0`-entered stateful run; implementation/discovery absent |
 | Poly Pressure | NOT PRESENT | absent in available exports |
 | SysEx | UNINVESTIGATED | two export examples; no project encoding |
 | Tempo | PARTIALLY UNDERSTOOD | controlled 120-to-130 save exists, but no bounded encoding/parser |
@@ -202,7 +210,7 @@ This was intentionally a lightweight survey, not a decoding campaign.
 | SysEx | WEAK | two distinctive Roland payloads; neither full payload nor payload without terminator appears verbatim in the project |
 | Tempo | WEAK | three exported values and one prior controlled tempo save, but no encoding or bounded record |
 | Meter | WEAK | four exported 4/4 events and a literal `Meter Track`; no varying natural value or record mapping |
-| Pressure | NONE | absent from exports |
+| Pressure | STRONG for one bounded `Bells for her` run | 32 direct values and event-start deltas match exactly; entry/continuation state is established only for Track 9 |
 
 Controller and Pitch Bend are promising shared-decoder targets because each
 has many repeated natural examples. SysEx likely needs explicit List Window or
@@ -307,7 +315,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 | Tempo | yes | 3 | 3 | 3 | PARTIAL | HIGH | medium | weak | likely 1 | 3 |
 | Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
 | SysEx | yes | 2 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 0–1 | 4 |
-| Channel Pressure | no | 0 | 0 | 0 | NOT PRESENT | conditional | unknown | none | no current need | none |
+| Channel Pressure | yes in later provenance export | 32 | 1 | 1 | DESIGNED BOUNDED RUN | HIGH | medium | strong for one stateful run | no | 1 |
 | Poly Pressure | no | 0 | 0 | 0 | NOT PRESENT | conditional | unknown | none | no current need | none |
 | Names/export metadata | yes | 98 name events | 3 | 42 | PARTIAL | LOW | medium | moderate | not for raw strings | later |
 
@@ -315,7 +323,9 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 
 - Seven exports form three filename-based sets; only the Ode set is proven to
   represent one of the 18 active `newest STUFF` sequences.
-- Twelve semantic event families are present; pressure families are absent.
+- The earlier three-set inventory lacks pressure, but the later
+  provenance-controlled `Bells for her` export adds 32 Channel Pressure events;
+  Polyphonic Key Pressure remains absent.
 - The non-duplicative view contains 6,109 Notes, 5,112 Controllers, 440 Pitch
   Bends, 38 Program Changes, and two SysEx events.
 - Fourteen CC numbers share one MIDI family; most traffic is structured
@@ -325,6 +335,8 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 - Notes, bounded Patch semantics, and bounded ordinary Controller CC1/CC7
   representation decoding are implemented within their documented scopes.
 - Controller discovery and container integration remain unsupported.
+- One exact-bounded Channel Pressure run contract is designed; isolated events,
+  discovery, and universal running-state semantics remain unsupported.
 
 # Unknowns
 
@@ -337,6 +349,6 @@ made about pressure support in Studio Vision generally.
 
 # Single recommended next step
 
-Design caller/container integration that supplies established Controller bounds
-and accumulated event-start state. Do not add heuristic scanning or conflate
-Patch-derived bank state with ordinary Controller records.
+Implement the exact-bounded, state-aware Channel Pressure run decoder with the
+authentic 32-event Track 9 fixture and malformed bounds/data coverage. Do not
+add discovery or generic mixed-stream walking.
