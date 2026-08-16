@@ -156,8 +156,11 @@ committed or specified.
       exact `e0`-entered runs with direct LSB/MSB storage and 102/102 agreement.
 - [x] Design an exact caller-bounded, state-aware Pitch Bend run decoder that
       preserves both value bytes and does not discover run ends.
-- [ ] Implement the bounded Pitch Bend run decoder with all nine authentic
+- [x] Implement the bounded Pitch Bend run decoder with all nine authentic
       ranges and focused malformed fixtures, without mixed-stream discovery.
+- [ ] Correlate the provenance-controlled `Bells for her` Tempo event with the
+      existing bounded controlled tempo-save evidence before designing a
+      bounded Tempo representation.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

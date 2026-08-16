@@ -176,7 +176,7 @@ the expanded evidence set.
 | Notes | IMPLEMENTED | bounded timing/property/duration decoder and extensive controlled/authentic validation; discovery and general track ownership unresolved |
 | Patch / Program / bank | IMPLEMENTED | caller-bounded shared Patch decoder; PC, CC0, and CC32 values established; bank optionality not exposed |
 | Control Change | IMPLEMENTED BOUNDED | exact-bound `ff 41 05` decoder with authentic CC1/CC7 fixtures; discovery and container integration remain absent |
-| Pitch Bend | DESIGNED BOUNDED RUN | nine exact `e0`-entered Track 14 runs establish direct LSB/MSB storage and 102/102 timing/value agreement; implementation/discovery absent |
+| Pitch Bend | IMPLEMENTED BOUNDED RUN | exact-bound decoder and all nine authentic `e0`-entered Track 14 runs; discovery and broader forms absent |
 | Channel Pressure | IMPLEMENTED BOUNDED RUN | exact-bound decoder and authentic 32-event `d0`-entered stateful-run fixture; discovery and broader forms absent |
 | Poly Pressure | NOT PRESENT | absent in available exports |
 | SysEx | UNINVESTIGATED | two export examples; no project encoding |
@@ -312,7 +312,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 | Note | yes | 6,109 starts | 3 | 36 | IMPLEMENTED bounded | CRITICAL | high | strong | no for known grammar | covered |
 | Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded | HIGH | high | strong | no for values; optionality deferred | covered |
 | Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | IMPLEMENTED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | covered |
-| Pitch Bend | yes; 102 proven `Bells for her` events plus older unresolved population | 440 in earlier snapshot plus 102 in later provenance export | 2 export sets | 2 earlier plus identified Track 14 | DESIGNED BOUNDED RUN | HIGH | high | strong for one nine-run population | no for observed contract | 1 |
+| Pitch Bend | yes; 102 proven `Bells for her` events plus older unresolved population | 440 in earlier snapshot plus 102 in later provenance export | 2 export sets | 2 earlier plus identified Track 14 | IMPLEMENTED BOUNDED RUN | HIGH | high | strong for one nine-run population | no for observed contract | covered |
 | Tempo | yes | 3 | 3 | 3 | PARTIAL | HIGH | medium | weak | likely 1 | 3 |
 | Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
 | SysEx | yes | 2 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 0–1 | 4 |
@@ -339,7 +339,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 - One exact-bounded Channel Pressure run decoder is implemented and validates
   all 32 natural entries; isolated events, discovery, and universal
   running-state semantics remain unsupported.
-- Nine exact-bounded Pitch Bend run contracts are established across 102
+- One exact-bounded Pitch Bend run decoder validates all nine ranges and 102
   natural events with direct LSB/MSB storage; isolated events, discovery, and
   universal running-state semantics remain unsupported.
 
@@ -355,6 +355,5 @@ generally.
 
 # Single recommended next step
 
-Implement the exact caller-bounded, state-aware Pitch Bend run decoder with all
-nine fixed authentic runs and malformed bounded fixtures. Do not add discovery
-or generic mixed walking.
+Correlate the provenance-controlled `Bells for her` Tempo event with existing
+bounded controlled tempo-save evidence before designing a decoder.

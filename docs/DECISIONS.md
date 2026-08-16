@@ -433,6 +433,17 @@ expose arbitrary continuation parsing, accumulate absolute time, or generalize
 Channel Pressure and Pitch Bend into universal running status. No controlled
 experiment is required for this observed contract.
 
+## 2026-08-16: implement the exact-bounded Pitch Bend run contract
+
+**Status:** Accepted and implemented
+
+`decode_bounded_pitch_bend_run` implements the observed `e0` entry and
+two-byte continuation state with exact consumption and byte provenance. The
+two located stored bytes remain authoritative; `raw_value()` is derived. All
+nine fixed Track 14 ranges and all 102 timing/value tuples are regression
+fixtures. No channel inference, run discovery, generic running-status
+abstraction, absolute-time accumulation, or mixed-walker integration was added.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

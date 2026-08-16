@@ -240,8 +240,8 @@ have:
 
 Currently, a Controller-only profile, the existing explicitly asserted
 Note-chain profile, the implemented exact-bounded Channel Pressure decoder,
-and a designed exact-bounded Pitch Bend run profile meet this contract. Both
-stateful families require an explicit active-family mode and exact run bounds.
+and the implemented exact-bounded Pitch Bend run decoder meet this contract.
+Both stateful families require an explicit active-family mode and exact run bounds.
 Do not expose a generic mixed profile until the Note discriminator/handoff is
 established. Patch absolute timing must remain a family-specific update, not be
 coerced into delta accumulation.
@@ -275,6 +275,6 @@ discoveries performed by a walker.
 
 # Single recommended next step
 
-Implement the exact caller-bounded, state-aware Pitch Bend run decoder with all
-nine fixed authentic runs and malformed bounded fixtures. Do not integrate a
-generic mixed walker.
+Correlate the provenance-controlled `Bells for her` Tempo event with the
+existing bounded controlled tempo-save evidence before designing its bounded
+representation. Generic mixed walking remains out of scope.

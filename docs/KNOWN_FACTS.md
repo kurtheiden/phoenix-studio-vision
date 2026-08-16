@@ -334,3 +334,10 @@ matched Notes and the ninth at an ordinary Controller. Exact caller run bounds
 remain necessary; `e0` has no assigned MIDI-channel/status semantics, isolated
 forms and broader generality are unknown, and no controlled experiment is
 needed for the observed bounded contract.
+
+The production `pitch_bend` module now decodes one exact caller-bounded run,
+requires `e0` at entry, preserves timing/LSB/MSB/tag provenance, derives raw
+value without replacing stored bytes, and accepts continuations only in
+established run state. Fixed authentic tests cover all nine ranges and all 102
+timing/value tuples plus Note/Controller adjacency and malformed bounds. Run
+discovery and generic mixed-event walking remain unsupported.
