@@ -324,3 +324,13 @@ continuations only in established run state, and consumes the supplied range
 exactly. Authentic fixed-offset tests cover all 32 timing/value pairs and both
 neighbors; malformed and oversized bounds fail without scanning. Run discovery
 and generic mixed-event walking remain unsupported.
+
+Independent Track 14 correlation establishes 102 natural Pitch Bend events in
+nine exact project runs. Every run begins `timing VLQ | e0 | LSB | MSB`; the
+remaining 93 events use `timing VLQ | LSB | MSB`. Project bytes preserve the
+exported seven-bit data bytes directly, with `raw = LSB + (MSB << 7)`, and
+values and event-start deltas match 102/102. Eight runs end at independently
+matched Notes and the ninth at an ordinary Controller. Exact caller run bounds
+remain necessary; `e0` has no assigned MIDI-channel/status semantics, isolated
+forms and broader generality are unknown, and no controlled experiment is
+needed for the observed bounded contract.

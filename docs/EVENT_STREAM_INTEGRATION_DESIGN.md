@@ -101,6 +101,10 @@ immediately following that VLQ. It must not search forward.
   the one established run entry. Its later `timing VLQ | value` continuations
   are classifiable only while explicit Channel Pressure run state is active
   inside the independently bounded run; they are not stateless records.
+- **Pitch Bend — PARTIAL.** After a timing VLQ, adjacent `e0` identifies all
+  nine observed run entries. The 93 `timing VLQ | LSB | MSB` continuations are
+  classifiable only under active Pitch Bend state inside one of the nine exact
+  caller-known run bounds. No continuation identifies the run end.
 - **Patch — PARTIAL.** Exact following bytes `ff 7c` identify the observed
   Patch family after its absolute-position VLQ, and the payload end is
   derivable. The variable pre-Note tail and complete representation/event end
@@ -204,6 +208,7 @@ exact Controller-only region.
 |---|---|---|
 | Controller-only bounded sequence | **YES** | Exact region and initial timing state required; each record length is derivable. |
 | Exact-bounded Channel Pressure run | **YES** | Entry `d0` establishes state; continuations are safe only inside the caller-known run. |
+| Exact-bounded Pitch Bend run | **YES** | Entry `e0` establishes state; two-byte continuations are safe only inside the caller-known run. |
 | Consecutive Note-chain | **YES** | Only for a caller-asserted evidence-backed Note chain with a known start/end and initial timing basis. |
 | Mixed Note + Controller | **NO** | Controller is tagged, but Note has no proven collision-free current-cursor discriminator in a mixed region. |
 | Mixed Patch + Note + Controller | **NO** | Adds non-derivable Patch-to-first-Note boundary and compound timing ownership. |
@@ -234,10 +239,12 @@ have:
 7. a terminal unsupported-event result preserving the bounded remainder.
 
 Currently, a Controller-only profile, the existing explicitly asserted
-Note-chain profile, and the implemented exact-bounded state-aware Channel
-Pressure run decoder meet this contract. Do not expose a generic mixed profile until the Note
-discriminator/handoff is established. Patch absolute timing must remain a
-family-specific update, not be coerced into delta accumulation.
+Note-chain profile, the implemented exact-bounded Channel Pressure decoder,
+and a designed exact-bounded Pitch Bend run profile meet this contract. Both
+stateful families require an explicit active-family mode and exact run bounds.
+Do not expose a generic mixed profile until the Note discriminator/handoff is
+established. Patch absolute timing must remain a family-specific update, not be
+coerced into delta accumulation.
 
 # Evidence supported
 
@@ -248,6 +255,8 @@ family-specific update, not be coerced into delta accumulation.
 - `ff 7c` identifies the Patch family locally and Patch position is absolute.
 - The exact Channel Pressure run uses one explicit `d0` entry and 31 compact
   state-dependent continuations; all 32 timing/value pairs agree.
+- Nine exact Pitch Bend runs use explicit `e0` entries and 93 compact
+  state-dependent continuations; all 102 timing/LSB/MSB tuples agree.
 - The specific following Note transition contains explicit `90`, without
   establishing a universal Note-transition rule.
 - Unknown structures can be preserved and reported without moving the cursor.
@@ -259,13 +268,13 @@ family-specific update, not be coerced into delta accumulation.
 
 Unknowns include a collision-resistant mixed-stream Note discriminator,
 first-Note ownership after Patch, complete Patch end, compound Patch-to-Note
-timing, isolated/re-entered Channel Pressure forms, universal family-state
-rules, Pitch Bend project grammar, and general track-container framing. The
-event-region and pressure-run bounds remain caller evidence, not discoveries
-performed by a walker.
+timing, isolated/re-entered Channel Pressure or Pitch Bend forms, universal
+family-state rules, internal run-end discovery, and general track-container
+framing. Event-region and stateful-run bounds remain caller evidence, not
+discoveries performed by a walker.
 
 # Single recommended next step
 
-Perform a read-only natural correlation of the provenance-controlled `Bells for
-her` Pitch Bend population, prioritizing a bounded region with independently
-aligned neighbors before considering further mixed-stream integration.
+Implement the exact caller-bounded, state-aware Pitch Bend run decoder with all
+nine fixed authentic runs and malformed bounded fixtures. Do not integrate a
+generic mixed walker.

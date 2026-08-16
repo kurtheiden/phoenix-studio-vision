@@ -419,6 +419,20 @@ absolute time, discover bounds, scan, or integrate with mixed-event walking.
 The authentic 32-entry Track 9 fixture and malformed bounds/data tests enforce
 those limits.
 
+## 2026-08-16: design Pitch Bend as an exact-bounded stateful run
+
+**Status:** Accepted
+
+The provenance-controlled Track 14 correlation establishes 102 Pitch Bend
+events in nine exact runs with 102/102 timing and direct LSB/MSB value matches.
+Each run uses `timing VLQ | e0 | LSB | MSB` at entry and `timing VLQ | LSB |
+MSB` for continuations. Design one caller-bounded, provenance-preserving run
+decoder that requires `e0`, consumes the supplied bound exactly, and keeps the
+two stored bytes authoritative. Do not infer MIDI channel, discover run ends,
+expose arbitrary continuation parsing, accumulate absolute time, or generalize
+Channel Pressure and Pitch Bend into universal running status. No controlled
+experiment is required for this observed contract.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
