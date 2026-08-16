@@ -161,7 +161,7 @@ Fixed-offset tests should read the untouched baseline without scanning:
 - first entry: `82 20 d0 01`, delta 288, value 1, exact timing/tag/value ranges;
 - representative one-byte continuations, including deltas 8, 7, 27, and 42;
 - final continuation `0a 00`, delta 10, value 0, ending exactly at `0x147ce`;
-- preceding Controller `0x14782..0x1478c`, CC1=0, proving adjacency;
+- preceding Controller `0x14783..0x1478c`, CC1=0, proving adjacency;
 - following Note beginning `0x147ce` with delta `83 56` = 470, `90`, and
   matching properties, proving the exclusive run end.
 

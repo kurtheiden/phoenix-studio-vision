@@ -81,7 +81,7 @@ family.
 
 # Preceding Controller boundary
 
-The exact preceding record is `0x14782..0x1478c`:
+The exact preceding record is `0x14783..0x1478c`:
 
 ```text
 11 ff 41 05 00 1f 00 01 00

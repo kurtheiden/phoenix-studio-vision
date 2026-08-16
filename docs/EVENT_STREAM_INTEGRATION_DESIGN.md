@@ -234,8 +234,8 @@ have:
 7. a terminal unsupported-event result preserving the bounded remainder.
 
 Currently, a Controller-only profile, the existing explicitly asserted
-Note-chain profile, and an exact-bounded state-aware Channel Pressure run meet
-this contract. Do not expose a generic mixed profile until the Note
+Note-chain profile, and the implemented exact-bounded state-aware Channel
+Pressure run decoder meet this contract. Do not expose a generic mixed profile until the Note
 discriminator/handoff is established. Patch absolute timing must remain a
 family-specific update, not be coerced into delta accumulation.
 
@@ -266,6 +266,6 @@ performed by a walker.
 
 # Single recommended next step
 
-Implement the exact-bounded, state-aware Channel Pressure run decoder described
-in `BOUNDED_CHANNEL_PRESSURE_DECODER_DESIGN.md`, without integrating a generic
-mixed walker.
+Perform a read-only natural correlation of the provenance-controlled `Bells for
+her` Pitch Bend population, prioritizing a bounded region with independently
+aligned neighbors before considering further mixed-stream integration.

@@ -317,3 +317,10 @@ event-start deltas match the export 32/32. The run begins exactly after the
 known CC1=0 record and ends before `83 56 90 ...`, the aligned following Note.
 This establishes one stateful natural run, not isolated pressure encoding,
 universal `d0` meaning, MIDI channel semantics, or global running status.
+
+The production `channel_pressure` module now decodes one exact caller-bounded
+run. It requires the `d0` entry, preserves tag/timing/value provenance, parses
+continuations only in established run state, and consumes the supplied range
+exactly. Authentic fixed-offset tests cover all 32 timing/value pairs and both
+neighbors; malformed and oversized bounds fail without scanning. Run discovery
+and generic mixed-event walking remain unsupported.

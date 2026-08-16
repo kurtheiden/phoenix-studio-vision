@@ -407,6 +407,18 @@ accumulate absolute time. No controlled experiment is needed for this observed
 contract. The following explicit `90` is evidence for that one transition and
 does not authorize a generic mixed walker.
 
+## 2026-08-16: implement the exact-bounded Channel Pressure run contract
+
+**Status:** Accepted and implemented
+
+`decode_bounded_channel_pressure_run` implements the observed stateful contract
+with exact consumption and byte provenance. It requires `d0` on entry and
+allows timing/value continuations only after that state is established. It
+does not restrict pressure bytes at the binary layer, infer MIDI channel or
+absolute time, discover bounds, scan, or integrate with mixed-event walking.
+The authentic 32-entry Track 9 fixture and malformed bounds/data tests enforce
+those limits.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

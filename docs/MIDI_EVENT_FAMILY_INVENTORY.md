@@ -176,7 +176,7 @@ the expanded evidence set.
 | Patch / Program / bank | IMPLEMENTED | caller-bounded shared Patch decoder; PC, CC0, and CC32 values established; bank optionality not exposed |
 | Control Change | IMPLEMENTED BOUNDED | exact-bound `ff 41 05` decoder with authentic CC1/CC7 fixtures; discovery and container integration remain absent |
 | Pitch Bend | UNINVESTIGATED | export inventory only |
-| Channel Pressure | DESIGNED BOUNDED RUN | later provenance-controlled `Bells for her` export establishes one 32-event `d0`-entered stateful run; implementation/discovery absent |
+| Channel Pressure | IMPLEMENTED BOUNDED RUN | exact-bound decoder and authentic 32-event `d0`-entered stateful-run fixture; discovery and broader forms absent |
 | Poly Pressure | NOT PRESENT | absent in available exports |
 | SysEx | UNINVESTIGATED | two export examples; no project encoding |
 | Tempo | PARTIALLY UNDERSTOOD | controlled 120-to-130 save exists, but no bounded encoding/parser |
@@ -315,7 +315,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 | Tempo | yes | 3 | 3 | 3 | PARTIAL | HIGH | medium | weak | likely 1 | 3 |
 | Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
 | SysEx | yes | 2 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 0–1 | 4 |
-| Channel Pressure | yes in later provenance export | 32 | 1 | 1 | DESIGNED BOUNDED RUN | HIGH | medium | strong for one stateful run | no | 1 |
+| Channel Pressure | yes in later provenance export | 32 | 1 | 1 | IMPLEMENTED BOUNDED RUN | HIGH | medium | strong for one stateful run | no | covered |
 | Poly Pressure | no | 0 | 0 | 0 | NOT PRESENT | conditional | unknown | none | no current need | none |
 | Names/export metadata | yes | 98 name events | 3 | 42 | PARTIAL | LOW | medium | moderate | not for raw strings | later |
 
@@ -335,8 +335,9 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 - Notes, bounded Patch semantics, and bounded ordinary Controller CC1/CC7
   representation decoding are implemented within their documented scopes.
 - Controller discovery and container integration remain unsupported.
-- One exact-bounded Channel Pressure run contract is designed; isolated events,
-  discovery, and universal running-state semantics remain unsupported.
+- One exact-bounded Channel Pressure run decoder is implemented and validates
+  all 32 natural entries; isolated events, discovery, and universal
+  running-state semantics remain unsupported.
 
 # Unknowns
 
@@ -349,6 +350,5 @@ made about pressure support in Studio Vision generally.
 
 # Single recommended next step
 
-Implement the exact-bounded, state-aware Channel Pressure run decoder with the
-authentic 32-event Track 9 fixture and malformed bounds/data coverage. Do not
-add discovery or generic mixed-stream walking.
+Perform a read-only natural correlation of the provenance-controlled `Bells for
+her` Pitch Bend population in an independently bounded/aligned project region.

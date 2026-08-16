@@ -148,8 +148,11 @@ committed or specified.
       timing/value matches establish one `d0`-entered stateful run.
 - [x] Design an exact-bounded, state-aware Channel Pressure run contract that
       preserves provenance and never classifies continuations statelessly.
-- [ ] Implement the bounded Channel Pressure run decoder and authentic plus
+- [x] Implement the bounded Channel Pressure run decoder and authentic plus
       malformed fixtures without adding mixed-stream discovery.
+- [ ] Correlate the provenance-controlled `Bells for her` Pitch Bend population
+      in a naturally bounded/aligned project region before designing another
+      stateful family decoder or revisiting mixed walking.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
