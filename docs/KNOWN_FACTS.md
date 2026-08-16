@@ -293,3 +293,10 @@ correspond one-for-one to project records of the form `timing VLQ | ff 41 | 05
 120/120 number/value pairs and 120/120 event-start deltas across CC1 and CC7.
 Tracks 3, 4, and 6 independently match CC7=127, and Track 14 supplies 272
 matching CC1 records. Context meanings and broader generality remain unknown.
+
+The production `controller` module now decodes one exact caller-bounded
+ordinary Controller record and returns timing, tag, payload, context, number,
+value, and absolute byte provenance. Authentic fixed-offset tests cover Tracks
+3, 4, 6, 9, and 14, both CC1 and CC7, and one- and two-byte timing including
+zero. Malformed bounds/framing fail without scanning. Discovery, absolute time,
+context semantics, and broader grammar generality remain unsupported.

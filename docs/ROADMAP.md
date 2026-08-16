@@ -137,9 +137,11 @@ committed or specified.
       provenance-controlled mixed-controller region: CC1 and CC7 share `timing
       VLQ | ff 41 | 05 | opaque context[3] | number | value` across all 395
       natural records.
-- [ ] Implement the caller-bounded ordinary Controller decoder and authentic
+- [x] Implement the caller-bounded ordinary Controller decoder and authentic
       regression fixtures, with exact consumption, opaque context, and no
       scanning or timeline reconstruction.
+- [ ] Design caller/container integration that supplies established Controller
+      bounds and event-start accumulation without heuristic discovery.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

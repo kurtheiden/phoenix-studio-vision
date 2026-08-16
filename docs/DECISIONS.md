@@ -369,6 +369,17 @@ accumulation to the caller, and do no scanning. Patch-derived CC0/CC32 export
 messages remain Patch state. No Experiment 030 is required; broader CC,
 version, project, and device generality remains unproven.
 
+## 2026-08-16: keep Controller implementation exact-bound and structural
+
+**Status:** Accepted and implemented
+
+`decode_bounded_controller_record` implements the preceding decision with
+exact consumption and byte provenance. The binary layer accepts `u8` number
+and value fields without inventing MIDI-range validity, preserves context as
+opaque bytes, and returns only the encoded event-start delta. Fixed authentic
+fixtures cover Tracks 3, 4, 6, 9, and 14. Patch bank tails fail structurally;
+no discovery, timeline accumulation, or CLI integration was added.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

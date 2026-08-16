@@ -166,7 +166,7 @@ level, splitting Note On and Note Off makes 13.
 |---|---|---|
 | Notes | IMPLEMENTED | bounded timing/property/duration decoder and extensive controlled/authentic validation; discovery and general track ownership unresolved |
 | Patch / Program / bank | IMPLEMENTED | caller-bounded shared Patch decoder; PC, CC0, and CC32 values established; bank optionality not exposed |
-| Control Change | DESIGNED BOUNDED | 395 provenance-controlled `Bells for her` CC1/CC7 records establish `ff 41 05`; implementation and discovery remain absent |
+| Control Change | IMPLEMENTED BOUNDED | exact-bound `ff 41 05` decoder with authentic CC1/CC7 fixtures; discovery and container integration remain absent |
 | Pitch Bend | UNINVESTIGATED | export inventory only |
 | Channel Pressure | NOT PRESENT | absent in available exports |
 | Poly Pressure | NOT PRESENT | absent in available exports |
@@ -302,7 +302,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 |---|---|---:|---:|---:|---|---|---|---|---|---:|
 | Note | yes | 6,109 starts | 3 | 36 | IMPLEMENTED bounded | CRITICAL | high | strong | no for known grammar | covered |
 | Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded | HIGH | high | strong | no for values; optionality deferred | covered |
-| Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | DESIGNED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | 1 |
+| Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | IMPLEMENTED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | covered |
 | Pitch Bend | yes only in source-unresolved export set | 440 aggregate | 1 export set | 2 | UNINVESTIGATED | HIGH | high | unresolved for `newest STUFF` | provenance required | 2 |
 | Tempo | yes | 3 | 3 | 3 | PARTIAL | HIGH | medium | weak | likely 1 | 3 |
 | Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
@@ -322,8 +322,9 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
   NRPN/RPN automation.
 - One shared ordinary Controller representation is proven for 395 natural
   CC1/CC7 records in `Bells for her`; broader generality remains unproven.
-- Notes and bounded Patch semantics are the only implemented musical families.
-- Controller investigation has the highest next recovery value.
+- Notes, bounded Patch semantics, and bounded ordinary Controller CC1/CC7
+  representation decoding are implemented within their documented scopes.
+- Controller discovery and container integration remain unsupported.
 
 # Unknowns
 
@@ -336,6 +337,6 @@ made about pressure support in Studio Vision generally.
 
 # Single recommended next step
 
-Implement the exact-bound ordinary Controller decoder and authentic regression
-fixtures for Tracks 3, 4, 6, 9, and 14. Preserve context and field provenance;
-do not add scanning, absolute timeline reconstruction, or Patch bank handling.
+Design caller/container integration that supplies established Controller bounds
+and accumulated event-start state. Do not add heuristic scanning or conflate
+Patch-derived bank state with ordinary Controller records.
