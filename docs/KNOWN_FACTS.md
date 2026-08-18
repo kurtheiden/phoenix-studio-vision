@@ -356,3 +356,12 @@ position or delta. The primary lies in a sequence-level Meter/Tempo structural
 area, outside the known performance-event streams. The correlated secondary
 `51 | MPQN` copy has no established containing-record boundary. General Tempo
 map discovery and mid-sequence positioning remain unknown.
+
+The production `tempo` module now decodes only an exact caller-bounded
+seven-byte initial form. It requires `00 ff 51 03`, preserves all seven bytes
+as `LocatedByte` values with absolute offsets, derives unsigned 24-bit
+big-endian MPQN, and returns no BPM for MPQN zero. Fixed authentic tests cover
+the natural 594,059 MPQN and controlled 500,000/461,538 MPQN states. Synthetic
+tests cover the full 24-bit endpoints, exact-bound failures, every fixed
+structural byte, nonzero slice provenance, and no scanning. Position semantics
+remain partial; secondary-copy and general Tempo-map parsing remain absent.

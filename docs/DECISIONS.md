@@ -461,6 +461,21 @@ Meter/Tempo structural layer, outside mixed performance-event walking. Do not
 parse the correlated secondary copy, discover records, or imply general Tempo
 map support. No controlled experiment is needed for this bounded initial form.
 
+## 2026-08-18: implement the exact-bounded initial Tempo contract
+
+**Status:** Accepted and implemented
+
+`decode_bounded_initial_tempo` accepts only an exact caller-supplied seven-byte
+range matching `00 ff 51 03 tt tt tt`. It returns every byte with absolute
+provenance, derives unsigned 24-bit big-endian MPQN, and derives optional BPM
+without dividing by zero. Length and structure failures are deterministic and
+the decoder never scans.
+
+Keep `initial_position_byte` restricted to zero without assigning absolute or
+delta semantics. Do not parse the secondary copy, discover sequence structure,
+construct Tempo maps, enter the performance-event walker, or emit MIDI. Fixed
+natural and controlled fixtures establish only the bounded initial form.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

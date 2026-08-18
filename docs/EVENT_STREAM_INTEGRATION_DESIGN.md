@@ -251,9 +251,10 @@ coerced into delta accumulation.
 The established initial Tempo representation belongs to a sequence-level
 Meter/Tempo structural area, not this performance-event stream. A future
 sequence parser may supply its exact seven-byte bound to the bounded initial
-Tempo decoder. The mixed walker must not search for `ff 51`, treat the leading
-zero as a performance-event delta, parse the unresolved secondary copy, or
-fold Tempo into Note, Controller, Channel Pressure, or Pitch Bend state.
+Tempo decoder, which is now implemented independently. The mixed walker must
+not search for `ff 51`, treat the leading zero as a performance-event delta,
+parse the unresolved secondary copy, or fold Tempo into Note, Controller,
+Channel Pressure, or Pitch Bend state.
 
 # Evidence supported
 
@@ -284,6 +285,5 @@ discoveries performed by a walker.
 
 # Single recommended next step
 
-Implement the separately designed exact-bounded initial Tempo decoder, then
-correlate the adjacent Meter structure read-only. Generic mixed walking remains
+Correlate the adjacent Meter structure read-only. Generic mixed walking remains
 out of scope.

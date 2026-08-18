@@ -163,8 +163,9 @@ committed or specified.
       `00 ff 51 03 | unsigned 24-bit big-endian MPQN`.
 - [x] Design an exact caller-bounded seven-byte initial Tempo decoder with
       byte provenance, no scanning, and no general position or Tempo-map claim.
-- [ ] Implement the bounded initial Tempo decoder with fixed natural and
-      controlled fixtures plus focused malformed cases.
+- [x] Implement the bounded initial Tempo decoder with fixed natural and
+      controlled fixtures, absolute provenance for all seven bytes, derived
+      MPQN/optional BPM, exact-bound failures, and no scanning.
 - [ ] Correlate the adjacent Meter structure read-only; decide from that
       evidence whether one controlled non-4/4 Meter change is necessary.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their

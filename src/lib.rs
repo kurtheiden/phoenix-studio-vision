@@ -8,4 +8,5 @@ pub mod opening;
 pub mod patch;
 pub mod pitch_bend;
 pub mod smf;
+pub mod tempo;
 pub mod track7;
