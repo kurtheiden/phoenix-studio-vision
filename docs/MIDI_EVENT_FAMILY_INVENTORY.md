@@ -180,7 +180,7 @@ the expanded evidence set.
 | Channel Pressure | IMPLEMENTED BOUNDED RUN | exact-bound decoder and authentic 32-event `d0`-entered stateful-run fixture; discovery and broader forms absent |
 | Poly Pressure | NOT PRESENT | absent in available exports |
 | SysEx | UNINVESTIGATED | two export examples; no project encoding |
-| Tempo | PARTIALLY UNDERSTOOD | controlled 120-to-130 save exists, but no bounded encoding/parser |
+| Tempo | DESIGN-READY BOUNDED INITIAL | exact seven-byte initial form and direct MPQN established; decoder not implemented; general map unknown |
 | Meter / time signature | UNINVESTIGATED | export evidence and named Meter Track only |
 | Export metadata | PARTIALLY UNDERSTOOD | strings and metadata tables observed; no general semantic parser |
 
@@ -209,7 +209,7 @@ This was intentionally a lightweight survey, not a decoding campaign.
 | Controllers | STRONG for bounded `Bells for her` CC1/CC7; unresolved elsewhere | 395 ordinary events correlate exactly; source-unresolved populations remain out of scope |
 | Pitch Bend | STRONG for bounded `Bells for her`; unresolved for older `ANALOG` set | 102 events form nine exact stateful Track 14 runs with direct LSB/MSB and timing agreement |
 | SysEx | WEAK | two distinctive Roland payloads; neither full payload nor payload without terminator appears verbatim in the project |
-| Tempo | WEAK | three exported values and one prior controlled tempo save, but no encoding or bounded record |
+| Tempo | STRONG for bounded initial `Bells for her` form | natural and controlled seven-byte forms agree; direct MPQN and exact primary boundary established |
 | Meter | WEAK | four exported 4/4 events and a literal `Meter Track`; no varying natural value or record mapping |
 | Pressure | STRONG for one bounded `Bells for her` run | 32 direct values and event-start deltas match exactly; entry/continuation state is established only for Track 9 |
 
@@ -238,17 +238,12 @@ because export framing may transform raw data.
 
 # Recommended family order
 
-1. **Bounded Controller decoder implementation.** Implement the established
-   `Bells for her` CC1/CC7 grammar with exact caller bounds, opaque context, and
-   authentic fixtures. Do not add discovery or treat Patch bank exports as
-   ordinary Controller records.
-2. **Pitch Bend event representation.** It unlocks 440 high-value events on two
-   tracks. The natural curves provide excellent timing/value signatures;
-   likely zero or one controlled experiment after the track regions are found.
-3. **Tempo/Meter structural tracks.** Tempo is playback-critical and meter is
-   structurally important. Prior tempo-save evidence exists, but one bounded
-   tempo comparison and possibly one meter change may be required.
-4. **SysEx representation.** Only two events occur. Preserve raw bytes and
+1. **Bounded initial Tempo implementation.** Implement only the proven exact
+   seven-byte form; do not add discovery or general Tempo-map semantics.
+2. **Meter structural correlation.** Inspect the adjacent sequence-level form
+   read-only first. All natural values are 4/4, so one later controlled change
+   may be required before decoder design.
+3. **SysEx representation.** Only two events occur. Preserve raw bytes and
    timing; expect one targeted List Window capture or controlled payload edit.
 
 Patch bank-removal is not ahead of these families because CC0/CC32 values are
@@ -256,15 +251,14 @@ already established and opaque preservation loses no bytes.
 
 # Estimated remaining controlled experiments
 
-- **Likely minimum: 2.** One Controller-family discriminator and one bounded
-  tempo/meter or SysEx discriminator, assuming natural Pitch Bend and
-  Controller clusters reveal framing.
-- **Plausible: 4–6.** One each for Controller and Pitch Bend if needed, one or
-  two for Tempo/Meter, and one for SysEx; an extra framing variant check may be
-  needed.
-- **Pessimistic: 8–10.** Multiple device/track framing variants, transformed
-  SysEx storage, or separate Tempo/Meter container grammars could require a
-  second carefully chosen experiment per family.
+- **Likely minimum: 1.** One non-4/4 Meter change if read-only structural
+  correlation cannot distinguish its value fields. Controller, Channel
+  Pressure, Pitch Bend, and bounded initial Tempo need no further edit for
+  their established contracts.
+- **Additional conditional experiment: 0–1 for SysEx.** Use one payload-byte
+  change only if natural/List Window evidence cannot map its representation.
+- Broader generality, optional Patch bank state, or Tempo-map positioning may
+  justify later experiments only when those scopes become current priorities.
 
 These are family-level experiments, not one experiment per controller number
 or parameter. Discovery and whole-project association are separate structural
@@ -286,9 +280,9 @@ milestones and may use natural evidence rather than edits.
 
 # Families requiring controlled edits
 
-- **Tempo:** natural exports provide only one tempo per sequence and prior
-  save diffs remain unbounded; a single bounded tempo change may be needed to
-  isolate encoding from save noise.
+- **Tempo:** no edit is needed for the bounded initial form. General
+  mid-sequence Tempo-map positioning remains unsupported and is a separate
+  question.
 - **Meter:** all observed values are 4/4, so natural evidence cannot separate
   numerator, denominator, or event framing. One deliberately different meter
   is the minimum discriminator if meter recovery becomes current priority.
@@ -313,7 +307,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 | Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded | HIGH | high | strong | no for values; optionality deferred | covered |
 | Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | IMPLEMENTED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | covered |
 | Pitch Bend | yes; 102 proven `Bells for her` events plus older unresolved population | 440 in earlier snapshot plus 102 in later provenance export | 2 export sets | 2 earlier plus identified Track 14 | IMPLEMENTED BOUNDED RUN | HIGH | high | strong for one nine-run population | no for observed contract | covered |
-| Tempo | yes | 3 | 3 | 3 | PARTIAL | HIGH | medium | weak | likely 1 | 3 |
+| Tempo | yes; bounded initial `Bells for her` form proven | 3 in earlier snapshot plus 1 later provenance export | 4 export sets | 4 conductor tracks | DESIGN-READY BOUNDED INITIAL | HIGH | medium | strong for initial form | no for bounded initial form | next implementation |
 | Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
 | SysEx | yes | 2 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 0–1 | 4 |
 | Channel Pressure | yes in later provenance export | 32 | 1 | 1 | IMPLEMENTED BOUNDED RUN | HIGH | medium | strong for one stateful run | no | covered |
@@ -342,18 +336,21 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 - One exact-bounded Pitch Bend run decoder validates all nine ranges and 102
   natural events with direct LSB/MSB storage; isolated events, discovery, and
   universal running-state semantics remain unsupported.
+- The bounded initial Tempo representation is design-ready: natural and
+  controlled evidence agree on `00 ff 51 03 | MPQN[3]`, with exact boundaries
+  and direct unsigned 24-bit big-endian MPQN. General Tempo maps remain unknown.
 
 # Unknowns
 
 The 17 active sequences without proven exports may contain additional families
 or values. Export
 initialization may not correspond one-to-one with project events. Broader
-Controller/Pitch Bend forms plus SysEx, Tempo, and Meter project encodings,
-event boundaries, sequence/track associations, and framing variants remain
-unknown. No claim is made about pressure or bend support in Studio Vision
-generally.
+Controller/Pitch Bend forms plus SysEx and Meter project encodings, broader
+Tempo framing/map variants, event boundaries, sequence/track associations, and
+framing variants remain unknown. No claim is made about pressure or bend
+support in Studio Vision generally.
 
 # Single recommended next step
 
-Correlate the provenance-controlled `Bells for her` Tempo event with existing
-bounded controlled tempo-save evidence before designing a decoder.
+Implement the exact caller-bounded initial Tempo decoder with fixed natural and
+controlled fixtures. Then correlate the adjacent Meter structure read-only.

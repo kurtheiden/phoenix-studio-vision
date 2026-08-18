@@ -246,6 +246,15 @@ Do not expose a generic mixed profile until the Note discriminator/handoff is
 established. Patch absolute timing must remain a family-specific update, not be
 coerced into delta accumulation.
 
+# Sequence-level Tempo separation
+
+The established initial Tempo representation belongs to a sequence-level
+Meter/Tempo structural area, not this performance-event stream. A future
+sequence parser may supply its exact seven-byte bound to the bounded initial
+Tempo decoder. The mixed walker must not search for `ff 51`, treat the leading
+zero as a performance-event delta, parse the unresolved secondary copy, or
+fold Tempo into Note, Controller, Channel Pressure, or Pitch Bend state.
+
 # Evidence supported
 
 - Controller classification, length derivation, and event-start delta
@@ -275,6 +284,6 @@ discoveries performed by a walker.
 
 # Single recommended next step
 
-Correlate the provenance-controlled `Bells for her` Tempo event with the
-existing bounded controlled tempo-save evidence before designing its bounded
-representation. Generic mixed walking remains out of scope.
+Implement the separately designed exact-bounded initial Tempo decoder, then
+correlate the adjacent Meter structure read-only. Generic mixed walking remains
+out of scope.

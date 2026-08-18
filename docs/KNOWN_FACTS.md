@@ -341,3 +341,18 @@ value without replacing stored bytes, and accepts continuations only in
 established run state. Fixed authentic tests cover all nine ranges and all 102
 timing/value tuples plus Note/Controller adjacency and malformed bounds. Run
 discovery and generic mixed-event walking remain unsupported.
+
+The provenance-controlled `Bells for her` export contains one Tempo meta-event
+at tick 0 with payload `09 10 8b` = 594,059 microseconds per quarter note. The
+authentic project range `0xebd8..0xebdf` is exactly
+`00 ff 51 03 09 10 8b`. Controlled Experiment 002/004 range
+`0x2f7dc..0x2f7e3` is respectively `00 ff 51 03 07 a1 20` at 120 BPM and
+`00 ff 51 03 07 0a e2` at 130 BPM. The three-byte payload is direct unsigned
+24-bit big-endian MPQN; natural and controlled primary framing agrees.
+
+All established primary examples have a leading zero and represent initial
+Tempo at sequence start. The byte is not established generally as absolute
+position or delta. The primary lies in a sequence-level Meter/Tempo structural
+area, outside the known performance-event streams. The correlated secondary
+`51 | MPQN` copy has no established containing-record boundary. General Tempo
+map discovery and mid-sequence positioning remain unknown.

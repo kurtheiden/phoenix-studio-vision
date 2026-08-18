@@ -444,6 +444,23 @@ nine fixed Track 14 ranges and all 102 timing/value tuples are regression
 fixtures. No channel inference, run discovery, generic running-status
 abstraction, absolute-time accumulation, or mixed-walker integration was added.
 
+## 2026-08-18: design Tempo only as an exact-bounded initial representation
+
+**Status:** Accepted
+
+Natural `Bells for her` evidence and the corrected Experiment 002/004
+comparison establish one seven-byte form: `00 ff 51 03` followed by unsigned
+24-bit big-endian MPQN. Design a decoder that requires an exact caller-supplied
+seven-byte bound, preserves every located byte, requires the leading zero and
+fixed tag/length, and derives MPQN without replacing its source bytes.
+
+Keep the leading field semantically neutral as `initial_position_byte`; all
+known examples are initial Tempo at sequence start, but absolute-versus-delta
+meaning and nonzero forms are unproven. Keep Tempo in the sequence-level
+Meter/Tempo structural layer, outside mixed performance-event walking. Do not
+parse the correlated secondary copy, discover records, or imply general Tempo
+map support. No controlled experiment is needed for this bounded initial form.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
