@@ -188,8 +188,14 @@ committed or specified.
 - [x] Implement that bounded design with generic exact-EOF framing, strict
       166-byte sequence validation, authentic 527/18 and older 495-record
       fixtures, mismatch-safe Sequence I handling, and no scanning.
-- [ ] Correlate exact track-local event termination and family transitions
-      inside structurally located track-primary containers before designing a
+- [x] Correlate exact track-local event termination and family transitions:
+      establish the validated seven-byte tail and exact 166-profile event end,
+      while retaining partial Note and Pressure/Bend state exits.
+- [x] Resolve the Patch-to-first-Note handoff with Experiment 031: confirm
+      `81 25 -> 81 26`, separate the length-framed `ff 60 07` context from the
+      final timing VLQ, and establish direct/extended bounded navigation.
+- [ ] Correlate current-cursor state exit after timing VLQs across Note,
+      Channel Pressure, and Pitch Bend transitions before designing a
       mixed-event walker.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.

@@ -301,7 +301,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 | event_family | present_in_exports | occurrence_count | sequences | tracks | current_status | musical_importance | shared_decoder_leverage | natural_ground_truth_quality | controlled_experiment_needed | priority |
 |---|---|---:|---:|---:|---|---|---|---|---|---:|
 | Note | yes | 6,109 starts | 3 | 36 | IMPLEMENTED bounded | CRITICAL | high | strong | no for known grammar | covered |
-| Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded | HIGH | high | strong | no for values; optionality deferred | covered |
+| Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded; transition grammar correlated | HIGH | high | strong | no further Patch experiment | covered |
 | Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | IMPLEMENTED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | covered |
 | Pitch Bend | yes; 102 proven `Bells for her` events plus older unresolved population | 440 in earlier snapshot plus 102 in later provenance export | 2 export sets | 2 earlier plus identified Track 14 | IMPLEMENTED BOUNDED RUN | HIGH | high | strong for one nine-run population | no for observed contract | covered |
 | Tempo | yes; bounded initial `Bells for her` form proven | 3 in earlier snapshot plus 1 later provenance export | 4 export sets | 4 conductor tracks | IMPLEMENTED BOUNDED INITIAL | HIGH | medium | strong for initial form | no for bounded initial form | covered |
@@ -326,6 +326,10 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
   CC1/CC7 records in `Bells for her`; broader generality remains unproven.
 - Notes, bounded Patch semantics, and bounded ordinary Controller CC1/CC7
   representation decoding are implemented within their documented scopes.
+- Experiment 031 establishes direct Patch-to-Note transition after the post-PC
+  VLQ and an extended form using one length-framed `ff 60` payload plus final
+  timing VLQ. Navigation is deterministic for the established corpus; `ff 60`
+  semantics and unsupported optional forms remain unknown.
 - Controller discovery and container integration remain unsupported.
 - One exact-bounded Channel Pressure run decoder is implemented and validates
   all 32 natural entries; isolated events, discovery, and universal
@@ -348,13 +352,13 @@ The 15 active sequences without proven project-correlated exports may contain ad
 or values. Export
 initialization may not correspond one-to-one with project events. Broader
 Controller/Pitch Bend forms plus SysEx project encoding, broader Meter/Tempo
-map variants, event boundaries, sequence/track associations, and framing
-variants remain unknown. No claim is made about pressure or bend support in
-Studio Vision generally.
+map variants, state-exit/current-cursor classification, sequence/track
+associations, and framing variants remain unknown. No claim is made about
+pressure or bend support in Studio Vision generally.
 
 # Single recommended next step
 
-Correlate exact track-local event termination and family transitions inside the
-track-primary containers now exposed by the implemented root/sequence parser.
-Mixed-event and stateful-run subdivision remain separate blockers; do not fold
-heuristic event scanning into container navigation.
+Correlate current-cursor state exit after timing VLQs across established Note,
+Channel Pressure, and Pitch Bend transitions. Track-local end and bounded
+Patch-to-first-Note navigation are established, but stateful run subdivision
+remains unresolved; do not fold heuristic scanning into container navigation.

@@ -544,6 +544,42 @@ initial Meter/Tempo bounds and track-primary containing ranges, but it must not
 promote those containing ranges to exact event ranges or absorb mixed-event
 walking.
 
+## 2026-08-18: terminate 166-profile track events at the validated seven-byte tail
+
+**Status:** Accepted as read-only structural evidence
+
+For an exact track-primary payload supplied by the sequence-container parser,
+validate the repeated final grammar `ff aa bb cc ff 2f 00`. In the established
+166-byte profile, define performance-event bytes as payload `+14` through
+payload end minus seven. This is supported by all 132 authenticated track
+primaries and by 15 zero-count tracks whose post-header region contains only
+the tail. Preserve `aa bb cc` without semantic interpretation and do not apply
+the rule to the unsupported 120-byte profile without evidence.
+
+Keep family/run termination separate. A Controller has an exact next cursor,
+but internal Note-run exit and Channel Pressure/Pitch Bend state exits remain
+partial. Experiment 031 subsequently resolves Patch-to-first-Note navigation
+for the established bounded grammar.
+
+## 2026-08-18: admit only the validated direct or extended Patch transition
+
+**Status:** Accepted as read-only structural evidence
+
+A future bounded mixed walker may advance from an established Patch start by
+validating `position VLQ | ff 7c | payload length | payload ending in PC |
+post-PC timing VLQ`, then accepting either immediate `90` or exactly one
+established `ff 60 | one-byte length | payload | final timing VLQ | 90`
+extension. It must derive every boundary at the current cursor and reject
+unknown tags, malformed lengths, repeated optional records, or missing status;
+it must not scan for `90`.
+
+For direct forms, the post-PC value owns the complete Patch-to-first-Note
+interval. For established extended forms, add the post-PC and final timing
+values. Experiment 031 proves final timing `81 25 -> 81 26` owns a +1 first-Note
+edit while `c5 4c` and the framed context remain unchanged. This decision does
+not authorize the mixed walker: current-cursor Note/Pressure/Bend state exit is
+still unresolved.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

@@ -418,8 +418,10 @@ Track primary records now have exact length-derived containing ranges and
 their order strongly matches local descriptor order across independently
 identified Bells and Ode tracks. `Sequence I` has eleven track descriptors but
 only ten record pairs, so inactive/blank descriptor handling remains partial.
-Inner performance-event ends and Pressure/Bend run bounds are not generally
-derived from the track-primary length.
+The primary length alone does not derive inner performance-event ends or
+Pressure/Bend run bounds. Later tail correlation establishes the 166-profile
+event end only after separately validating the final seven-byte structure;
+Pressure/Bend run bounds remain partial.
 
 Project-root correlation establishes an eight-byte opaque root header followed
 at `0x00000008` by the same checked `type:u8 | big-endian u32 length | payload`
@@ -452,3 +454,37 @@ Bells and Ode bounds, and the Sequence I mismatch. The older sample's 495
 records frame generically while semantic 166-profile parsing rejects its first
 candidate. No scanning, 120-byte fallback, mixed-event parsing, or exact inner
 event-end inference is present.
+
+Read-only follow-up correlation now establishes the exact inner event end for
+the authenticated 166-byte profile without changing that production parser.
+All 132 track-primary payloads end with a seven-byte structural form
+`ff aa bb cc ff 2f 00`; all 15 zero-count tracks contain only this form after
+payload `+14`. Independently bounded Ode Note chains and the last Bells Track
+14 Controller end exactly where it begins. The performance-event region is
+therefore payload `+14 .. payload.end - 7` after validating the tail grammar.
+The three middle bytes remain opaque, and the result is not generalized to the
+older 120-byte profile.
+
+Byte-exact inspection corrects Bells Track 9's event end to `0x014957`, not
+the earlier `0x014956`: byte `0x014956 = 2f` is the last property byte of the
+final Note, followed by tail `ff f6 fd 6b ff 2f 00`. Exact track termination
+does not by itself solve internal family transitions. Controller records have
+exact next cursors; internal Note-run exit and stateful Channel Pressure/Pitch
+Bend run exit remain partial.
+
+Controlled Experiment 031 moved only Ode Track 3 #2's first Note from `6·1·3`
+to `6·1·4`; its primary range and length remained unchanged. Final timing
+`81 25` (165) became `81 26` (166), while post-PC `c5 4c` (8,908) and the
+first `90` offset were unchanged. The following Note interval independently
+became `81 63 -> 81 62` (227 -> 226), confirming a one-unit-later first Note
+with the next Note fixed.
+
+The intervening bytes are an explicit `ff 60 07` record with seven payload
+bytes, followed by the separate final timing VLQ. Ode Tracks 1/2/3 establish a
+direct Patch form whose post-PC VLQ is followed by `90`; Ode Track 3 #2 and
+Bells Track 9 establish an extended form with the length-framed `ff 60` record,
+final timing VLQ, then `90`. The direct timing is the complete interval; the
+extended interval is the sum of post-PC and final timing. Navigation is exact
+for this bounded corpus without scanning. The semantic purpose of `ff 60`,
+other optional forms, broader-version generality, and current-cursor state-exit
+grammar remain unknown.
