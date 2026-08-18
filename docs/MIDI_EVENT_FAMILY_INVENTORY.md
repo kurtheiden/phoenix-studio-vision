@@ -1,5 +1,11 @@
 # Objective
 
+The first exact-bounded mixed walker is implemented for the authenticated
+166-profile Note, Patch, ordinary Controller, Channel Pressure, and Pitch Bend
+population. It derives compact Pressure/Bend exits dynamically and validates
+exact Track 9/14 consumption. This does not add SysEx, Poly Pressure, unknown
+tags/statuses, other Patch contexts, or MIDI export support.
+
 Inventory the MIDI event families emitted by the available Studio Vision MIDI
 exports, assess current Phoenix coverage, and prioritize recovery by shared
 event representation rather than by individual parameter number. Export
@@ -330,6 +336,10 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
   VLQ and an extended form using one length-framed `ff 60` payload plus final
   timing VLQ. Navigation is deterministic for the established corpus; `ff 60`
   semantics and unsupported optional forms remain unknown.
+- Current-cursor correlation across 785 Track 9/14 transitions establishes
+  data-byte continuation under active Note/Pressure/Bend state and high-bit
+  exit to strict tagged/status branches. It reproduces both complete tracks and
+  derives Pressure/Bend run ends without caller-supplied run tables.
 - Controller discovery and container integration remain unsupported.
 - One exact-bounded Channel Pressure run decoder is implemented and validates
   all 32 natural entries; isolated events, discovery, and universal
@@ -352,13 +362,12 @@ The 15 active sequences without proven project-correlated exports may contain ad
 or values. Export
 initialization may not correspond one-to-one with project events. Broader
 Controller/Pitch Bend forms plus SysEx project encoding, broader Meter/Tempo
-map variants, state-exit/current-cursor classification, sequence/track
+map variants, unobserved tags/statuses and transition pairs, sequence/track
 associations, and framing variants remain unknown. No claim is made about
 pressure or bend support in Studio Vision generally.
 
 # Single recommended next step
 
-Correlate current-cursor state exit after timing VLQs across established Note,
-Channel Pressure, and Pitch Bend transitions. Track-local end and bounded
-Patch-to-first-Note navigation are established, but stateful run subdivision
-remains unresolved; do not fold heuristic scanning into container navigation.
+Design the first exact-bounded mixed-event walker for the established Note,
+Patch, Controller, Channel Pressure, and Pitch Bend grammar. Keep unknown
+branches and unsupported profiles as deterministic errors; do not scan.

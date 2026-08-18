@@ -5,6 +5,7 @@ pub mod channel_pressure;
 pub mod comparison;
 pub mod controller;
 pub mod meter;
+pub mod mixed_event;
 pub mod opening;
 pub mod patch;
 pub mod pitch_bend;

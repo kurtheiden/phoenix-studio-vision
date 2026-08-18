@@ -3,6 +3,21 @@
 This document records direct observations from local samples. Observations do
 not establish a file signature, structure, or parser behavior.
 
+## Exact-bounded mixed-event walker validation
+
+- The implemented 166-profile walker consumes Bells Track 9
+  `0x0143c8..0x014957` as exactly 184 logical events: 31 Notes, one Patch, 120
+  Controllers, and 32 Channel Pressure events.
+- It consumes Bells Track 14 `0x014e26..0x015ed4` as exactly 601 events: 227
+  Notes, 272 Controllers, and 102 Pitch Bend events.
+- One explicit `d0` entry derives the Track 9 Pressure run; nine explicit `e0`
+  entries derive all Track 14 Bend runs. No run-end table or scan is used.
+- The walker returns output only after exact event-range consumption and
+  rejects unknown branches at the current cursor.
+
+Unknown families, other context forms, the 120-byte profile, and MIDI export
+remain outside this implemented contract.
+
 ## `newest-stuff-001`
 
 - The local sample identifier is `newest-stuff-001`.
@@ -488,3 +503,21 @@ extended interval is the sum of post-PC and final timing. Navigation is exact
 for this bounded corpus without scanning. The semantic purpose of `ff 60`,
 other optional forms, broader-version generality, and current-cursor state-exit
 grammar remain unknown.
+
+Current-cursor correlation across the complete Bells Track 9 and Track 14
+event regions analyzes 785 event-to-next/termination transitions. After a
+timing VLQ, all 356 same-family Note/Channel Pressure/Pitch Bend continuations
+begin with a data byte below `0x80`; all 393 `ff` cases are tagged Controller,
+Patch, or length-framed Note-entry context branches; and all 34 other high-bit
+cases are explicit `90`, `d0`, or `e0` entries. Two final events stop at exact
+`event_end` before the seven-byte tail.
+
+Under active family state, a first post-VLQ data byte continues the family with
+its known payload width, while a high-bit byte exits to strict tagged/status
+classification. This rule mechanically reproduces all 184 Track 9 events and
+all 601 Track 14 events, including the 31 Pressure continuations and all nine
+Pitch Bend run boundaries, without run bounds, scanning, backtracking, or
+musical plausibility. It establishes the first bounded mixed-walker design gate
+for the supported families only. Unknown tags/statuses, unobserved families,
+other profiles, and malformed high-bit data remain unsupported rather than
+guessed.

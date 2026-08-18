@@ -97,29 +97,25 @@ immediately following that VLQ. It must not search forward.
 
 - **Controller — SUPPORTED.** Exact following bytes `ff 41 05` identify the
   known ordinary Controller grammar and its fixed remaining width.
-- **Channel Pressure — PARTIAL.** After a timing VLQ, adjacent `d0` identifies
-  the one established run entry. Its later `timing VLQ | value` continuations
-  are classifiable only while explicit Channel Pressure run state is active
-  inside the independently bounded run; they are not stateless records.
-- **Pitch Bend — PARTIAL.** After a timing VLQ, adjacent `e0` identifies all
-  nine observed run entries. The 93 `timing VLQ | LSB | MSB` continuations are
-  classifiable only under active Pitch Bend state inside one of the nine exact
-  caller-known run bounds. No continuation identifies the run end.
+- **Channel Pressure — SUPPORTED.** After a timing VLQ, adjacent `d0`
+  establishes entry. Under active Pressure state, a first byte below `80`
+  selects the one-byte continuation; a high-bit byte exits state. This derives
+  the complete 32-event run and its Note exit without a supplied run bound.
+- **Pitch Bend — SUPPORTED.** After a timing VLQ, adjacent `e0` establishes
+  entry. Under active Bend state, a first byte below `80` selects the two-byte
+  continuation; a high-bit byte exits state. This derives all nine run bounds.
 - **Patch — SUPPORTED FOR THE ESTABLISHED TRANSITION GRAMMAR.** Exact following
   bytes `ff 7c` identify Patch after its absolute-position VLQ. Payload length,
   post-PC VLQ, immediate `90` or one validated length-framed `ff 60` extension,
   final VLQ, and `90` derive the next cursor without scanning. Other optional
   forms remain unsupported.
-- **Note — UNRESOLVED.** After the timing VLQ, the next byte is pitch/property
-  data, not a dedicated `ff` marker. Range plausibility for pitch, velocities,
-  and duration is validation inside a known Note chain, not a collision-free
-  event-type discriminator in a mixed stream. A leading `90` exists at some
-  Patch-to-first-Note transitions, but ordinary consecutive Notes omit it and
-  its ownership does not define a generic Note record.
+- **Note — SUPPORTED WITH ACTIVE STATE.** After the timing VLQ, a first byte
+  below `80` selects Note continuation: three property bytes plus duration VLQ.
+  A high-bit byte exits state. Explicit `90` establishes Note entry/re-entry.
 
-Trying each decoder at one cursor would still be heuristic classification when
-grammars can accept overlapping byte shapes; therefore fallback dispatch is
-not permitted.
+Across 783 internal Track 9/14 transitions, the classes are disjoint: 356 data
+continuations, 393 `ff` tagged/context branches, and 34 explicit statuses.
+Fallback dispatch remains prohibited; unknown branches are errors.
 
 # Unknown-event behavior
 
@@ -161,25 +157,20 @@ without scanning. Independently bounded event-order correlation establishes
 the Channel Pressure run at `0x1478c..0x147ce`: entry `82 20
 d0 01`, followed by 31 timing/value continuations, with 32/32 timing and value
 matches. A bounded run decoder can safely process that region with active-family
-state even though a generic walker cannot autonomously reach it.
+state; the correlated byte-class rule now derives the same run end dynamically.
 
 The run exits through `83 56 90 ...`, matching delta 470 to the following Note.
 This proves an explicit `90` at this Pressure-to-Note transition and makes that
-specific boundary strong. It suggests that some family transitions may carry
-status-like markers. It does not prove `90` on every Note transition or on
-consecutive Notes, so the generic Note-discriminator conclusion is unchanged.
+specific boundary strong. Together with all Track 9/14 transitions, it
+confirms the high-bit exit branch for the supported state machine.
 
 # Note boundary assessment
 
-**PARTIAL.** Within an explicitly asserted consecutive Note-chain range,
-timing/property/duration widths derive the next cursor exactly, and the existing
-walker has extensive sequential validation. A generic mixed-event walker
-cannot safely decide that the bytes after a timing VLQ are a Note rather than
-another untagged or unknown family. Experiment 031 resolves the special first
-Note after the established Patch forms, but not ordinary Note-state exit.
-
-Mixed walking still requires a collision-resistant state-exit/current-family
-rule after the timing prefix. Property plausibility is insufficient.
+**SUPPORTED FOR THE ESTABLISHED FAMILY SET.** Under active Note state, all 232
+continuations begin with a data byte below `80`; all 25 internal exits begin
+with tagged `ff` or explicit `e0`. Decode three Note properties plus duration
+VLQ only on the data branch. This is byte-class dispatch, not property
+plausibility.
 
 # Patch boundary assessment
 
@@ -204,23 +195,22 @@ exact Controller-only region.
 | Walker | Readiness | Boundary |
 |---|---|---|
 | Controller-only bounded sequence | **YES** | Exact region and initial timing state required; each record length is derivable. |
-| Exact-bounded Channel Pressure run | **YES** | Entry `d0` establishes state; continuations are safe only inside the caller-known run. |
-| Exact-bounded Pitch Bend run | **YES** | Entry `e0` establishes state; two-byte continuations are safe only inside the caller-known run. |
-| Consecutive Note-chain | **YES** | Only for a caller-asserted evidence-backed Note chain with a known start/end and initial timing basis. |
-| Mixed Note + Controller | **NO** | Controller is tagged, but Note has no proven collision-free current-cursor discriminator in a mixed region. |
-| Mixed Patch + Note + Controller | **PARTIAL** | Patch handoff is derivable for the established grammar; generic Note/state exit remains unresolved. |
-| Full Track 9 including Channel Pressure | **PARTIAL** | Patch handoff and outer bounds are known; Pressure exit and generic current-cursor state classification remain unresolved. |
+| Exact-bounded Channel Pressure run | **YES** | Entry `d0`, data continuation, and high-bit exit derive the run dynamically. |
+| Exact-bounded Pitch Bend run | **YES** | Entry `e0`, two-data-byte continuation, and high-bit exit derive all nine runs. |
+| Consecutive Note-chain | **YES** | Active Note state plus data/high-bit branch derives continuation and exit. |
+| Mixed Note + Controller | **YES** | Data continues Note; `ff 41 05` exits to exact Controller. |
+| Mixed Patch + Note + Controller | **YES** | Established Patch handoff plus the same state-exit rule. |
+| Full Track 9 including Channel Pressure | **YES** | Reproduces all 184 events and stops at exact event end. |
+| Full Track 14 including Pitch Bend | **YES** | Reproduces all 601 events and all nine Bend run bounds. |
 
-The bounded mixed-event walker remains **PARTIAL and not implementation-ready**
-until current-cursor state exit is established.
+The first bounded mixed-event walker is **design-ready** for only this explicit
+family/profile scope and strict unsupported-branch behavior.
 
 # Highest-value blocker
 
-The single broadest blocker is current-cursor state-exit classification after a
-timing VLQ. Patch-to-first-Note is no longer part of this blocker. Evidence is
-still needed to distinguish established Note, Channel Pressure, and Pitch Bend
-continuations from a new tagged/status-bearing family without heuristic
-fallback.
+The state-exit blocker is resolved for the authenticated family set. The next
+step is a deliberately bounded walker design, not another event-family
+experiment or broader parser generalization.
 
 # Proposed architecture
 
@@ -276,11 +266,10 @@ the event region is payload `+14 .. payload.end - 7`. The variable middle
 bytes remain opaque, and this rule is not established for the older 120-byte
 profile.
 
-This outer boundary does not solve internal dispatch. Experiment 031 resolves
-Patch-to-first-Note for the established grammar, but stateful Pressure/Bend run
-ends and generic current-cursor state exit remain partial. A future integration
-layer must not treat successful container walking as permission to scan or
-heuristically dispatch inside a track.
+Container bounds, Experiment 031 Patch navigation, and current-cursor
+correlation now jointly support internal dispatch for the established family
+set. Unknown branches remain errors; successful container walking never permits
+scan-ahead or heuristic fallback.
 
 # Evidence supported
 
@@ -295,25 +284,27 @@ heuristically dispatch inside a track.
   state-dependent continuations; all 32 timing/value pairs agree.
 - Nine exact Pitch Bend runs use explicit `e0` entries and 93 compact
   state-dependent continuations; all 102 timing/LSB/MSB tuples agree.
-- The specific following Note transition contains explicit `90`, without
-  establishing a universal Note-transition rule.
+- All authenticated Note/Pressure/Bend continuations begin with a data byte;
+  all observed exits begin with `ff`, `90`, `d0`, or `e0`.
 - Unknown structures can be preserved and reported without moving the cursor.
-- Track 9 demonstrates that resolving Patch handoff still does not supply a
-  mixed walker: later state exits require their own current-cursor grammar.
+- Exact cursor walking reproduces Track 9's 184 and Track 14's 601 events.
 
 # Unknowns
 
-Unknowns include current-cursor Note/Pressure/Bend state exit, isolated or
-re-entered Channel Pressure and Pitch Bend forms, universal family-state rules,
-internal run-end discovery, `ff 60` semantics, other optional Patch context
-forms, and broader-version generality. The outer event-region end and
-established Patch handoff are resolved; stateful-run bounds are not.
+Unknowns include unobserved transition pairs, other statuses/tags/families,
+`ff 60` semantics, other optional Patch context forms, malformed high-bit data,
+and broader-version generality. These remain explicit exclusions from the
+bounded design.
 
 # Single recommended next step
 
-Perform read-only current-cursor state-exit correlation after timing VLQs
-across established Note, Channel Pressure, and Pitch Bend transitions. Generic
-mixed walking remains out of scope until that shared boundary is resolved. The
-implementation profile remains
-limited to the established 166-byte descriptor form; the older 120-byte form
-is not selected from an opaque root word.
+The exact-bounded design in `BOUNDED_MIXED_EVENT_WALKER_DESIGN.md` is now
+implemented. Track 9 consumes exactly with 184 logical events and Track 14
+with 601; Pressure and all nine Bend runs are derived dynamically. The walker
+uses a four-state compact-family machine, returns results only on complete
+exact-range success, and preserves Patch/context transitions as coupled
+lossless structures.
+
+The next step is a separate MIDI writer/export integration design. It must
+consume these proven representations without expanding the strict family set
+or moving export policy into binary decoding.

@@ -5,7 +5,9 @@
 //! pitch, attack velocity, release velocity, and a duration VLQ. It does not
 //! identify arbitrary bytes, decode channels/status, or emit MIDI.
 
-use std::fmt;
+use std::{fmt, ops::Range};
+
+use crate::patch::{LocatedByte, LocatedVlq};
 
 /// Maximum number of bytes accepted for one observed 7-bit big-endian VLQ.
 pub const MAX_VLQ_BYTES: usize = 4;
@@ -104,6 +106,168 @@ pub enum EventError {
     Timing(VlqError),
     MissingPropertyBytes { offset: usize, end: usize },
     Duration(VlqError),
+}
+
+/// One exact Note representation at a caller-supplied cursor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedNoteEvent<'a> {
+    pub representation_range: Range<usize>,
+    pub timing: LocatedVlq<'a>,
+    pub status: Option<LocatedByte>,
+    pub pitch: LocatedByte,
+    pub attack_velocity: LocatedByte,
+    pub release_velocity: LocatedByte,
+    pub duration: LocatedVlq<'a>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedNoteBody<'a> {
+    pub representation_range: Range<usize>,
+    pub status: Option<LocatedByte>,
+    pub pitch: LocatedByte,
+    pub attack_velocity: LocatedByte,
+    pub release_velocity: LocatedByte,
+    pub duration: LocatedVlq<'a>,
+}
+
+/// Strict failures from one current-cursor Note decode.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BoundedNoteError {
+    Timing(VlqError),
+    MissingStatus { offset: usize },
+    WrongStatus { offset: usize, observed: u8 },
+    MissingPropertyBytes { offset: usize, end: usize },
+    HighBitProperty { offset: usize, observed: u8 },
+    Duration(VlqError),
+    OffsetOverflow { offset: usize },
+}
+
+/// Decodes one Note at `cursor`, bounded by `end`, without discovering either.
+///
+/// `explicit_status` selects whether the established `90` entry byte is
+/// required. The returned cursor is the exact end of the duration VLQ.
+pub fn decode_note_at(
+    bytes: &[u8],
+    cursor: usize,
+    end: usize,
+    explicit_status: bool,
+) -> Result<(BoundedNoteEvent<'_>, usize), BoundedNoteError> {
+    let decoded_timing =
+        decode_7bit_be_vlq(bytes, cursor, end).map_err(BoundedNoteError::Timing)?;
+    let timing_end = cursor
+        .checked_add(decoded_timing.bytes_consumed)
+        .ok_or(BoundedNoteError::OffsetOverflow { offset: cursor })?;
+    let timing = LocatedVlq {
+        value: decoded_timing.value,
+        bytes: &bytes[cursor..timing_end],
+        range: cursor..timing_end,
+    };
+
+    let (body, next) = decode_note_body_at(bytes, timing_end, end, explicit_status)?;
+    Ok((
+        BoundedNoteEvent {
+            representation_range: cursor..next,
+            timing,
+            status: body.status,
+            pitch: body.pitch,
+            attack_velocity: body.attack_velocity,
+            release_velocity: body.release_velocity,
+            duration: body.duration,
+        },
+        next,
+    ))
+}
+
+/// Decodes the status/properties/duration portion of one Note after timing has
+/// already been established by an enclosing transition grammar.
+pub fn decode_note_body_at(
+    bytes: &[u8],
+    cursor: usize,
+    end: usize,
+    explicit_status: bool,
+) -> Result<(BoundedNoteBody<'_>, usize), BoundedNoteError> {
+    let (status, property_start) = if explicit_status {
+        let Some(observed) = bytes.get(cursor).copied().filter(|_| cursor < end) else {
+            return Err(BoundedNoteError::MissingStatus { offset: cursor });
+        };
+        if observed != 0x90 {
+            return Err(BoundedNoteError::WrongStatus {
+                offset: cursor,
+                observed,
+            });
+        }
+        (
+            Some(LocatedByte {
+                value: observed,
+                offset: cursor,
+            }),
+            cursor
+                .checked_add(1)
+                .ok_or(BoundedNoteError::OffsetOverflow { offset: cursor })?,
+        )
+    } else {
+        (None, cursor)
+    };
+
+    let property_end = property_start
+        .checked_add(3)
+        .ok_or(BoundedNoteError::OffsetOverflow {
+            offset: property_start,
+        })?;
+    let Some(properties) = bytes.get(property_start..property_end) else {
+        return Err(BoundedNoteError::MissingPropertyBytes {
+            offset: property_start,
+            end: end.min(bytes.len()),
+        });
+    };
+    if property_end > end {
+        return Err(BoundedNoteError::MissingPropertyBytes {
+            offset: property_start,
+            end,
+        });
+    }
+    for (index, observed) in properties.iter().copied().enumerate() {
+        if observed >= 0x80 {
+            return Err(BoundedNoteError::HighBitProperty {
+                offset: property_start + index,
+                observed,
+            });
+        }
+    }
+
+    let decoded_duration =
+        decode_7bit_be_vlq(bytes, property_end, end).map_err(BoundedNoteError::Duration)?;
+    let next = property_end
+        .checked_add(decoded_duration.bytes_consumed)
+        .ok_or(BoundedNoteError::OffsetOverflow {
+            offset: property_end,
+        })?;
+    let duration = LocatedVlq {
+        value: decoded_duration.value,
+        bytes: &bytes[property_end..next],
+        range: property_end..next,
+    };
+
+    Ok((
+        BoundedNoteBody {
+            representation_range: cursor..next,
+            status,
+            pitch: LocatedByte {
+                value: properties[0],
+                offset: property_start,
+            },
+            attack_velocity: LocatedByte {
+                value: properties[1],
+                offset: property_start + 1,
+            },
+            release_velocity: LocatedByte {
+                value: properties[2],
+                offset: property_start + 2,
+            },
+            duration,
+        },
+        next,
+    ))
 }
 
 impl fmt::Display for EventError {

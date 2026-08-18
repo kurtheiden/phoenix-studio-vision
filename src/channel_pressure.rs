@@ -18,6 +18,91 @@ pub struct ChannelPressureEntry<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedChannelPressureEntry<'a> {
+    pub entry: ChannelPressureEntry<'a>,
+    pub entry_tag: Option<LocatedByte>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChannelPressureEntryError {
+    Timing(VlqError),
+    MissingEntryTag { offset: usize },
+    WrongEntryTag { offset: usize, observed: u8 },
+    MissingValue { offset: usize },
+    OffsetOverflow { offset: usize },
+}
+
+/// Decodes one exact Channel Pressure entry or continuation at the current
+/// cursor. It never discovers a run boundary.
+pub fn decode_channel_pressure_entry_at(
+    bytes: &[u8],
+    cursor: usize,
+    end: usize,
+    explicit_status: bool,
+) -> Result<(DecodedChannelPressureEntry<'_>, usize), ChannelPressureEntryError> {
+    let decoded_timing =
+        decode_7bit_be_vlq(bytes, cursor, end).map_err(ChannelPressureEntryError::Timing)?;
+    let timing_end = cursor
+        .checked_add(decoded_timing.bytes_consumed)
+        .ok_or(ChannelPressureEntryError::OffsetOverflow { offset: cursor })?;
+    let timing_delta = LocatedVlq {
+        value: decoded_timing.value,
+        bytes: &bytes[cursor..timing_end],
+        range: cursor..timing_end,
+    };
+    let (entry_tag, value_offset) = if explicit_status {
+        let Some(observed) = bytes.get(timing_end).copied().filter(|_| timing_end < end) else {
+            return Err(ChannelPressureEntryError::MissingEntryTag { offset: timing_end });
+        };
+        if observed != CHANNEL_PRESSURE_ENTRY_TAG {
+            return Err(ChannelPressureEntryError::WrongEntryTag {
+                offset: timing_end,
+                observed,
+            });
+        }
+        (
+            Some(LocatedByte {
+                value: observed,
+                offset: timing_end,
+            }),
+            timing_end
+                .checked_add(1)
+                .ok_or(ChannelPressureEntryError::OffsetOverflow { offset: timing_end })?,
+        )
+    } else {
+        (None, timing_end)
+    };
+    let Some(value) = bytes
+        .get(value_offset)
+        .copied()
+        .filter(|_| value_offset < end)
+    else {
+        return Err(ChannelPressureEntryError::MissingValue {
+            offset: value_offset,
+        });
+    };
+    let next = value_offset
+        .checked_add(1)
+        .ok_or(ChannelPressureEntryError::OffsetOverflow {
+            offset: value_offset,
+        })?;
+    Ok((
+        DecodedChannelPressureEntry {
+            entry: ChannelPressureEntry {
+                entry_range: cursor..next,
+                timing_delta,
+                pressure_value: LocatedByte {
+                    value,
+                    offset: value_offset,
+                },
+            },
+            entry_tag,
+        },
+        next,
+    ))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChannelPressureRun<'a> {
     pub run_range: Range<usize>,
     pub entry_tag: LocatedByte,
@@ -72,102 +157,59 @@ pub fn decode_bounded_channel_pressure_run(
         });
     }
 
-    let first_timing =
-        decode_7bit_be_vlq(bytes, start, end).map_err(BoundedChannelPressureError::EntryTiming)?;
-    let first_timing_end = start
-        .checked_add(first_timing.bytes_consumed)
-        .ok_or(BoundedChannelPressureError::OffsetOverflow { offset: start })?;
-    let first_timing = LocatedVlq {
-        value: first_timing.value,
-        bytes: &bytes[start..first_timing_end],
-        range: start..first_timing_end,
-    };
-
-    if first_timing_end == end {
-        return Err(BoundedChannelPressureError::MissingEntryTag {
-            offset: first_timing_end,
-        });
-    }
-
-    let observed_tag = bytes[first_timing_end];
-    if observed_tag != CHANNEL_PRESSURE_ENTRY_TAG {
-        return Err(BoundedChannelPressureError::WrongEntryTag {
-            offset: first_timing_end,
-            observed: observed_tag,
-            expected: CHANNEL_PRESSURE_ENTRY_TAG,
-        });
-    }
-    let entry_tag = LocatedByte {
-        value: observed_tag,
-        offset: first_timing_end,
-    };
-
-    let first_value_offset =
-        first_timing_end
-            .checked_add(1)
-            .ok_or(BoundedChannelPressureError::OffsetOverflow {
-                offset: first_timing_end,
-            })?;
-    if first_value_offset == end {
-        return Err(BoundedChannelPressureError::MissingFirstPressureValue {
-            offset: first_value_offset,
-        });
-    }
-    let first_entry_end =
-        first_value_offset
-            .checked_add(1)
-            .ok_or(BoundedChannelPressureError::OffsetOverflow {
-                offset: first_value_offset,
-            })?;
-
-    let mut entries = vec![ChannelPressureEntry {
-        entry_range: start..first_entry_end,
-        timing_delta: first_timing,
-        pressure_value: LocatedByte {
-            value: bytes[first_value_offset],
-            offset: first_value_offset,
-        },
-    }];
-    let mut cursor = first_entry_end;
+    let (first, mut cursor) =
+        decode_channel_pressure_entry_at(bytes, start, end, true).map_err(|error| match error {
+            ChannelPressureEntryError::Timing(source) => {
+                BoundedChannelPressureError::EntryTiming(source)
+            }
+            ChannelPressureEntryError::MissingEntryTag { offset } => {
+                BoundedChannelPressureError::MissingEntryTag { offset }
+            }
+            ChannelPressureEntryError::WrongEntryTag { offset, observed } => {
+                BoundedChannelPressureError::WrongEntryTag {
+                    offset,
+                    observed,
+                    expected: CHANNEL_PRESSURE_ENTRY_TAG,
+                }
+            }
+            ChannelPressureEntryError::MissingValue { offset } => {
+                BoundedChannelPressureError::MissingFirstPressureValue { offset }
+            }
+            ChannelPressureEntryError::OffsetOverflow { offset } => {
+                BoundedChannelPressureError::OffsetOverflow { offset }
+            }
+        })?;
+    let entry_tag = first.entry_tag.expect("explicit entry has a validated tag");
+    let mut entries = vec![first.entry];
 
     while cursor < end {
         let entry_index = entries.len();
-        let decoded_timing = decode_7bit_be_vlq(bytes, cursor, end).map_err(|source| {
-            BoundedChannelPressureError::ContinuationTiming {
-                entry_index,
-                cursor,
-                source,
-            }
-        })?;
-        let timing_end = cursor
-            .checked_add(decoded_timing.bytes_consumed)
-            .ok_or(BoundedChannelPressureError::OffsetOverflow { offset: cursor })?;
-        let timing = LocatedVlq {
-            value: decoded_timing.value,
-            bytes: &bytes[cursor..timing_end],
-            range: cursor..timing_end,
-        };
-
-        if timing_end == end {
-            return Err(
-                BoundedChannelPressureError::MissingContinuationPressureValue {
-                    entry_index,
-                    offset: timing_end,
-                },
-            );
-        }
-        let entry_end = timing_end
-            .checked_add(1)
-            .ok_or(BoundedChannelPressureError::OffsetOverflow { offset: timing_end })?;
-        entries.push(ChannelPressureEntry {
-            entry_range: cursor..entry_end,
-            timing_delta: timing,
-            pressure_value: LocatedByte {
-                value: bytes[timing_end],
-                offset: timing_end,
+        let (entry, next) = decode_channel_pressure_entry_at(bytes, cursor, end, false).map_err(
+            |error| match error {
+                ChannelPressureEntryError::Timing(source) => {
+                    BoundedChannelPressureError::ContinuationTiming {
+                        entry_index,
+                        cursor,
+                        source,
+                    }
+                }
+                ChannelPressureEntryError::MissingValue { offset } => {
+                    BoundedChannelPressureError::MissingContinuationPressureValue {
+                        entry_index,
+                        offset,
+                    }
+                }
+                ChannelPressureEntryError::OffsetOverflow { offset } => {
+                    BoundedChannelPressureError::OffsetOverflow { offset }
+                }
+                ChannelPressureEntryError::MissingEntryTag { offset }
+                | ChannelPressureEntryError::WrongEntryTag { offset, .. } => {
+                    BoundedChannelPressureError::OffsetOverflow { offset }
+                }
             },
-        });
-        cursor = entry_end;
+        )?;
+        entries.push(entry.entry);
+        cursor = next;
     }
 
     Ok(ChannelPressureRun {

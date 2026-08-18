@@ -194,9 +194,19 @@ committed or specified.
 - [x] Resolve the Patch-to-first-Note handoff with Experiment 031: confirm
       `81 25 -> 81 26`, separate the length-framed `ff 60 07` context from the
       final timing VLQ, and establish direct/extended bounded navigation.
-- [ ] Correlate current-cursor state exit after timing VLQs across Note,
-      Channel Pressure, and Pitch Bend transitions before designing a
-      mixed-event walker.
+- [x] Correlate current-cursor state exit after timing VLQs across Note,
+      Channel Pressure, and Pitch Bend: 785 transitions establish data-byte
+      continuation, high-bit tagged/status exit, and exact Track 9/14 walks.
+- [x] Design the first exact-bounded mixed-event walker for the established
+      Note, Patch, Controller, Channel Pressure, and Pitch Bend grammar with a
+      transactional exact-range API, lossless coupled Patch transitions, and
+      strict unsupported-branch rejection.
+- [x] Implement the designed mixed-event walker and validate exact no-scan
+      walks of all 184 Bells Track 9 and 601 Bells Track 14 events before
+      beginning MIDI writer/export integration.
+- [ ] Design MIDI writer/export integration over the proven sequence,
+      Meter/Tempo, and mixed-event representations without broadening binary
+      parsing or adding unsupported event families.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

@@ -580,6 +580,51 @@ edit while `c5 4c` and the framed context remain unchanged. This decision does
 not authorize the mixed walker: current-cursor Note/Pressure/Bend state exit is
 still unresolved.
 
+## 2026-08-18: dispatch bounded mixed events by post-VLQ byte class
+
+**Status:** Accepted as design-enabling structural evidence
+
+Within an exact 166-profile event region, test `cursor == event_end` before
+decoding. Otherwise decode one bounded timing VLQ and classify its first
+following byte. Under active Note, Channel Pressure, or Pitch Bend state,
+`00..7f` selects that family's established continuation width. `ff` selects a
+strict known tagged/context branch. Observed `80..ef` status branches are only
+`90`, `d0`, and `e0`. Unknown high-bit branches and data bytes without active
+state are deterministic unsupported errors, never fallback or scan triggers.
+
+This rule reproduces the complete authenticated Track 9 and Track 14 event
+populations and dynamically derives Pressure/Bend run ends. It permits design,
+not implementation, of one exact-bounded walker limited to Note, Patch,
+ordinary Controller, Channel Pressure, and Pitch Bend. Do not generalize to
+SysEx, unknown tags/statuses, other Patch contexts, the 120-byte profile, or
+MIDI emission.
+
+## 2026-08-18: make the first mixed walker exact-bounded and transactional
+
+**Status:** Accepted design
+
+The first mixed walker receives one absolute `event_start..event_end` range
+already derived and tail-validated by the 166-profile container layer. It owns
+only cursor dispatch, accumulated position, and the compact active states None,
+Note, Channel Pressure, and Pitch Bend. Controller remains an individually
+tagged record; Patch and the established `ff 60` syntax are strict transition
+forms rather than persistent states.
+
+Return decoded output only after exact complete consumption. Preserve a coupled
+Patch-to-Note result because its source grammar and existing bounded Patch
+representation cross the logical event handoff. Reuse the bounded Controller
+decoder directly, wrap the bounded Patch decoder after deriving its transition
+bound, and factor shared single-event primitives for Note, Channel Pressure,
+and Pitch Bend without weakening their current bounded APIs. Unknown branches
+fail at the current cursor; no decoder probing, scan-ahead, backtracking, or
+partial-success recovery is allowed.
+
+**Implementation:** `mixed_event::walk_bounded_mixed_events` now enforces this
+contract. Authentic Track 9 and Track 14 consume exactly with the established
+184/601 counts; one Pressure entry and nine Bend entries dynamically establish
+their runs. Shared single-event primitives preserve the previous exact-run
+decoder APIs and tests.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

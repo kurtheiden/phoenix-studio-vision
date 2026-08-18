@@ -24,6 +24,94 @@ pub struct PitchBendEntry<'a> {
     pub pitch_msb: LocatedByte,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedPitchBendEntry<'a> {
+    pub entry: PitchBendEntry<'a>,
+    pub entry_tag: Option<LocatedByte>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PitchBendEntryError {
+    Timing(VlqError),
+    MissingEntryTag { offset: usize },
+    WrongEntryTag { offset: usize, observed: u8 },
+    MissingLsb { offset: usize },
+    MissingMsb { offset: usize },
+    OffsetOverflow { offset: usize },
+}
+
+/// Decodes one exact Pitch Bend entry or continuation at the current cursor.
+/// It never discovers a run boundary.
+pub fn decode_pitch_bend_entry_at(
+    bytes: &[u8],
+    cursor: usize,
+    end: usize,
+    explicit_status: bool,
+) -> Result<(DecodedPitchBendEntry<'_>, usize), PitchBendEntryError> {
+    let decoded_timing =
+        decode_7bit_be_vlq(bytes, cursor, end).map_err(PitchBendEntryError::Timing)?;
+    let timing_end = cursor
+        .checked_add(decoded_timing.bytes_consumed)
+        .ok_or(PitchBendEntryError::OffsetOverflow { offset: cursor })?;
+    let timing_delta = LocatedVlq {
+        value: decoded_timing.value,
+        bytes: &bytes[cursor..timing_end],
+        range: cursor..timing_end,
+    };
+    let (entry_tag, lsb_offset) = if explicit_status {
+        let Some(observed) = bytes.get(timing_end).copied().filter(|_| timing_end < end) else {
+            return Err(PitchBendEntryError::MissingEntryTag { offset: timing_end });
+        };
+        if observed != PITCH_BEND_ENTRY_TAG {
+            return Err(PitchBendEntryError::WrongEntryTag {
+                offset: timing_end,
+                observed,
+            });
+        }
+        (
+            Some(LocatedByte {
+                value: observed,
+                offset: timing_end,
+            }),
+            timing_end
+                .checked_add(1)
+                .ok_or(PitchBendEntryError::OffsetOverflow { offset: timing_end })?,
+        )
+    } else {
+        (None, timing_end)
+    };
+    let Some(lsb) = bytes.get(lsb_offset).copied().filter(|_| lsb_offset < end) else {
+        return Err(PitchBendEntryError::MissingLsb { offset: lsb_offset });
+    };
+    let msb_offset = lsb_offset
+        .checked_add(1)
+        .ok_or(PitchBendEntryError::OffsetOverflow { offset: lsb_offset })?;
+    let Some(msb) = bytes.get(msb_offset).copied().filter(|_| msb_offset < end) else {
+        return Err(PitchBendEntryError::MissingMsb { offset: msb_offset });
+    };
+    let next = msb_offset
+        .checked_add(1)
+        .ok_or(PitchBendEntryError::OffsetOverflow { offset: msb_offset })?;
+    Ok((
+        DecodedPitchBendEntry {
+            entry: PitchBendEntry {
+                entry_range: cursor..next,
+                timing_delta,
+                pitch_lsb: LocatedByte {
+                    value: lsb,
+                    offset: lsb_offset,
+                },
+                pitch_msb: LocatedByte {
+                    value: msb,
+                    offset: msb_offset,
+                },
+            },
+            entry_tag,
+        },
+        next,
+    ))
+}
+
 impl PitchBendEntry<'_> {
     pub fn raw_value(&self) -> u16 {
         u16::from(self.pitch_lsb.value) + (u16::from(self.pitch_msb.value) << 7)
@@ -91,112 +179,63 @@ pub fn decode_bounded_pitch_bend_run(
         });
     }
 
-    let decoded_timing =
-        decode_7bit_be_vlq(bytes, start, end).map_err(BoundedPitchBendError::EntryTiming)?;
-    let timing_end = start
-        .checked_add(decoded_timing.bytes_consumed)
-        .ok_or(BoundedPitchBendError::OffsetOverflow { offset: start })?;
-    let timing_delta = LocatedVlq {
-        value: decoded_timing.value,
-        bytes: &bytes[start..timing_end],
-        range: start..timing_end,
-    };
-
-    if timing_end == end {
-        return Err(BoundedPitchBendError::MissingEntryTag { offset: timing_end });
-    }
-    let observed_tag = bytes[timing_end];
-    if observed_tag != PITCH_BEND_ENTRY_TAG {
-        return Err(BoundedPitchBendError::WrongEntryTag {
-            offset: timing_end,
-            observed: observed_tag,
-            expected: PITCH_BEND_ENTRY_TAG,
-        });
-    }
-    let entry_tag = LocatedByte {
-        value: observed_tag,
-        offset: timing_end,
-    };
-
-    let lsb_offset = timing_end
-        .checked_add(1)
-        .ok_or(BoundedPitchBendError::OffsetOverflow { offset: timing_end })?;
-    if lsb_offset == end {
-        return Err(BoundedPitchBendError::MissingEntryLsb { offset: lsb_offset });
-    }
-    let msb_offset = lsb_offset
-        .checked_add(1)
-        .ok_or(BoundedPitchBendError::OffsetOverflow { offset: lsb_offset })?;
-    if msb_offset == end {
-        return Err(BoundedPitchBendError::MissingEntryMsb { offset: msb_offset });
-    }
-    let first_entry_end = msb_offset
-        .checked_add(1)
-        .ok_or(BoundedPitchBendError::OffsetOverflow { offset: msb_offset })?;
-
-    let mut entries = vec![PitchBendEntry {
-        entry_range: start..first_entry_end,
-        timing_delta,
-        pitch_lsb: LocatedByte {
-            value: bytes[lsb_offset],
-            offset: lsb_offset,
-        },
-        pitch_msb: LocatedByte {
-            value: bytes[msb_offset],
-            offset: msb_offset,
-        },
-    }];
-    let mut cursor = first_entry_end;
+    let (first, mut cursor) =
+        decode_pitch_bend_entry_at(bytes, start, end, true).map_err(|error| match error {
+            PitchBendEntryError::Timing(source) => BoundedPitchBendError::EntryTiming(source),
+            PitchBendEntryError::MissingEntryTag { offset } => {
+                BoundedPitchBendError::MissingEntryTag { offset }
+            }
+            PitchBendEntryError::WrongEntryTag { offset, observed } => {
+                BoundedPitchBendError::WrongEntryTag {
+                    offset,
+                    observed,
+                    expected: PITCH_BEND_ENTRY_TAG,
+                }
+            }
+            PitchBendEntryError::MissingLsb { offset } => {
+                BoundedPitchBendError::MissingEntryLsb { offset }
+            }
+            PitchBendEntryError::MissingMsb { offset } => {
+                BoundedPitchBendError::MissingEntryMsb { offset }
+            }
+            PitchBendEntryError::OffsetOverflow { offset } => {
+                BoundedPitchBendError::OffsetOverflow { offset }
+            }
+        })?;
+    let entry_tag = first.entry_tag.expect("explicit entry has a validated tag");
+    let mut entries = vec![first.entry];
 
     while cursor < end {
         let entry_index = entries.len();
-        let decoded_timing = decode_7bit_be_vlq(bytes, cursor, end).map_err(|source| {
-            BoundedPitchBendError::ContinuationTiming {
-                entry_index,
-                cursor,
-                source,
-            }
-        })?;
-        let timing_end = cursor
-            .checked_add(decoded_timing.bytes_consumed)
-            .ok_or(BoundedPitchBendError::OffsetOverflow { offset: cursor })?;
-        let timing_delta = LocatedVlq {
-            value: decoded_timing.value,
-            bytes: &bytes[cursor..timing_end],
-            range: cursor..timing_end,
-        };
-
-        if timing_end == end {
-            return Err(BoundedPitchBendError::MissingContinuationLsb {
-                entry_index,
-                offset: timing_end,
-            });
-        }
-        let msb_offset = timing_end
-            .checked_add(1)
-            .ok_or(BoundedPitchBendError::OffsetOverflow { offset: timing_end })?;
-        if msb_offset == end {
-            return Err(BoundedPitchBendError::MissingContinuationMsb {
-                entry_index,
-                offset: msb_offset,
-            });
-        }
-        let entry_end = msb_offset
-            .checked_add(1)
-            .ok_or(BoundedPitchBendError::OffsetOverflow { offset: msb_offset })?;
-        entries.push(PitchBendEntry {
-            entry_range: cursor..entry_end,
-            timing_delta,
-            pitch_lsb: LocatedByte {
-                value: bytes[timing_end],
-                offset: timing_end,
-            },
-            pitch_msb: LocatedByte {
-                value: bytes[msb_offset],
-                offset: msb_offset,
-            },
-        });
-        cursor = entry_end;
+        let (entry, next) =
+            decode_pitch_bend_entry_at(bytes, cursor, end, false).map_err(|error| match error {
+                PitchBendEntryError::Timing(source) => BoundedPitchBendError::ContinuationTiming {
+                    entry_index,
+                    cursor,
+                    source,
+                },
+                PitchBendEntryError::MissingLsb { offset } => {
+                    BoundedPitchBendError::MissingContinuationLsb {
+                        entry_index,
+                        offset,
+                    }
+                }
+                PitchBendEntryError::MissingMsb { offset } => {
+                    BoundedPitchBendError::MissingContinuationMsb {
+                        entry_index,
+                        offset,
+                    }
+                }
+                PitchBendEntryError::OffsetOverflow { offset } => {
+                    BoundedPitchBendError::OffsetOverflow { offset }
+                }
+                PitchBendEntryError::MissingEntryTag { offset }
+                | PitchBendEntryError::WrongEntryTag { offset, .. } => {
+                    BoundedPitchBendError::OffsetOverflow { offset }
+                }
+            })?;
+        entries.push(entry.entry);
+        cursor = next;
     }
 
     Ok(PitchBendRun {
