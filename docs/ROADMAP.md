@@ -166,8 +166,17 @@ committed or specified.
 - [x] Implement the bounded initial Tempo decoder with fixed natural and
       controlled fixtures, absolute provenance for all seven bytes, derived
       MPQN/optional BPM, exact-bound failures, and no scanning.
-- [ ] Correlate the adjacent Meter structure read-only; decide from that
-      evidence whether one controlled non-4/4 Meter change is necessary.
+- [x] Correlate the adjacent Meter structure using natural 4/4/6/8/10/8,
+      controlled 7/8, and provenance-controlled exports: establish the exact
+      initial `00 ff 58 04 nn dd xx yy` form and bounded historical `cc`
+      mappings without requiring another Meter experiment.
+- [x] Design an exact caller-bounded eight-byte initial Meter decoder that
+      preserves every byte, derives denominator safely, does not scan, and
+      keeps SMF export policy separate.
+- [x] Implement the bounded initial Meter decoder with fixed 4/4, 6/8, 7/8,
+      and project-only 10/8 fixtures plus focused malformed/no-scanning tests.
+- [ ] Establish sequence/container discovery and integration that can supply
+      exact bounds to the implemented family decoders without heuristic scans.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

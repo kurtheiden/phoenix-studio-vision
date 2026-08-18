@@ -365,3 +365,35 @@ the natural 594,059 MPQN and controlled 500,000/461,538 MPQN states. Synthetic
 tests cover the full 24-bit endpoints, exact-bound failures, every fixed
 structural byte, nonzero slice provenance, and no scanning. Position semantics
 remain partial; secondary-copy and general Tempo-map parsing remain absent.
+
+All 18 authenticated sequences contain one initial primary Meter form with
+exact grammar `00 ff 58 04 nn dd xx yy`. Natural `Bells for her` 4/4 is
+`0xeb80..0xeb88 = 00 ff 58 04 04 02 08 08`; natural `Sequence K` 6/8 is
+`0x258df..0x258e7 = 00 ff 58 04 06 03 06 08`; controlled Experiment 030
+`Bells for her` 7/8 is `0xeb80..0xeb88 = 00 ff 58 04 07 03 06 08`.
+The project also has a structurally supported `mission impossibl` 10/8 form at
+`0x1c864..0x1c86c = 00 ff 58 04 0a 03 06 08`.
+
+Provenance-controlled SMF events establish direct numerator and denominator-
+exponent export and direct observed `yy = 08` to `bb = 08`. Studio Vision
+converts the third project payload: natural 4/4 maps `xx 08 -> cc 18`, while
+natural 6/8 and controlled 7/8 both map `xx 06 -> cc 0c`. The general semantic
+meaning and universal historical conversion of `xx` remain partial, but all
+source bytes can be preserved and standards-valid Meter can be exported from
+the established musical fields.
+
+Every primary leading byte is zero and every correlated event is initial at
+tick zero; absolute/delta semantics and nonzero forms remain unknown. Meter is
+sequence-level structure beside Tempo, outside performance-event streams.
+Nearby `58 nn dd xx yy` copies correlate with the primaries but lack complete
+containing-record boundaries. The exact eight-byte initial primary is ready
+for a caller-bounded decoder; general Meter-map parsing is not.
+
+The production `meter` module now implements that exact caller-bounded initial
+form. It requires `00 ff 58 04`, preserves all eight bytes with absolute
+provenance, exposes all four payload bytes without imposing historical export
+semantics, and derives `2^dd` safely as `Option<u64>`. Fixed authentic tests
+cover natural 4/4, natural 6/8, controlled 7/8, and project-only natural 10/8.
+Synthetic tests enforce exact bounds, structural errors, arbitrary third and
+fourth payload preservation, high-exponent safety, and no scanning. General
+Meter-map and secondary-copy parsing remain absent.

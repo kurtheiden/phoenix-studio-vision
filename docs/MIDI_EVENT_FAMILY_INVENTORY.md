@@ -181,7 +181,7 @@ the expanded evidence set.
 | Poly Pressure | NOT PRESENT | absent in available exports |
 | SysEx | UNINVESTIGATED | two export examples; no project encoding |
 | Tempo | IMPLEMENTED BOUNDED INITIAL | exact seven-byte decoder with direct MPQN and authentic fixtures; general map unknown |
-| Meter / time signature | UNINVESTIGATED | export evidence and named Meter Track only |
+| Meter / time signature | IMPLEMENTED BOUNDED INITIAL | exact eight-byte decoder; numerator/denominator and payload provenance established; general map and universal historical `cc` policy unknown |
 | Export metadata | PARTIALLY UNDERSTOOD | strings and metadata tables observed; no general semantic parser |
 
 # Shared Controller-family assessment
@@ -210,7 +210,7 @@ This was intentionally a lightweight survey, not a decoding campaign.
 | Pitch Bend | STRONG for bounded `Bells for her`; unresolved for older `ANALOG` set | 102 events form nine exact stateful Track 14 runs with direct LSB/MSB and timing agreement |
 | SysEx | WEAK | two distinctive Roland payloads; neither full payload nor payload without terminator appears verbatim in the project |
 | Tempo | STRONG for bounded initial `Bells for her` form | natural and controlled seven-byte forms agree; direct MPQN and exact primary boundary established |
-| Meter | WEAK | four exported 4/4 events and a literal `Meter Track`; no varying natural value or record mapping |
+| Meter | STRONG for bounded initial form | natural 4/4/6/8/10/8 project forms and controlled 7/8 establish framing and fields; 4/4, 6/8, and 7/8 have provenance-correlated exports |
 | Pressure | STRONG for one bounded `Bells for her` run | 32 direct values and event-start deltas match exactly; entry/continuation state is established only for Track 9 |
 
 Controller, Channel Pressure, and Pitch Bend now have strong bounded natural
@@ -238,9 +238,8 @@ because export framing may transform raw data.
 
 # Recommended family order
 
-1. **Meter structural correlation.** Inspect the adjacent sequence-level form
-   read-only first. All natural values are 4/4, so one later controlled change
-   may be required before decoder design.
+1. **Sequence/container discovery and integration.** Supply exact bounds and
+   ownership to the proven bounded family decoders without heuristic scans.
 2. **SysEx representation.** Only two events occur. Preserve raw bytes and
    timing; expect one targeted List Window capture or controlled payload edit.
 
@@ -249,10 +248,9 @@ already established and opaque preservation loses no bytes.
 
 # Estimated remaining controlled experiments
 
-- **Likely minimum: 1.** One non-4/4 Meter change if read-only structural
-  correlation cannot distinguish its value fields. Controller, Channel
-  Pressure, Pitch Bend, and bounded initial Tempo need no further edit for
-  their established contracts.
+- **Likely minimum: 0 for established bounded families.** Controller, Channel
+  Pressure, Pitch Bend, bounded initial Tempo, and bounded initial Meter need
+  no further controlled edit for their established contracts.
 - **Additional conditional experiment: 0–1 for SysEx.** Use one payload-byte
   change only if natural/List Window evidence cannot map its representation.
 - Broader generality, optional Patch bank state, or Tempo-map positioning may
@@ -281,9 +279,10 @@ milestones and may use natural evidence rather than edits.
 - **Tempo:** no edit is needed for the bounded initial form. General
   mid-sequence Tempo-map positioning remains unsupported and is a separate
   question.
-- **Meter:** all observed values are 4/4, so natural evidence cannot separate
-  numerator, denominator, or event framing. One deliberately different meter
-  is the minimum discriminator if meter recovery becomes current priority.
+- **Meter:** no further edit is needed. Natural 4/4/6/8/10/8 evidence,
+  controlled 7/8, and correlated 4/4/6/8/7/8 exports establish the bounded
+  initial record. Universal historical `cc` policy remains partial but does
+  not block musical Meter recovery or standards-valid export.
 - **SysEx:** only two distinct payloads exist and neither is verbatim in the
   project. If List Window ground truth cannot map them, one small payload-byte
   change is likely necessary.
@@ -306,7 +305,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 | Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | IMPLEMENTED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | covered |
 | Pitch Bend | yes; 102 proven `Bells for her` events plus older unresolved population | 440 in earlier snapshot plus 102 in later provenance export | 2 export sets | 2 earlier plus identified Track 14 | IMPLEMENTED BOUNDED RUN | HIGH | high | strong for one nine-run population | no for observed contract | covered |
 | Tempo | yes; bounded initial `Bells for her` form proven | 3 in earlier snapshot plus 1 later provenance export | 4 export sets | 4 conductor tracks | IMPLEMENTED BOUNDED INITIAL | HIGH | medium | strong for initial form | no for bounded initial form | covered |
-| Meter | yes | 4 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 1 | 3 |
+| Meter | yes; natural and controlled initial forms correlated | initial events across 18 project sequences; 4/4, 6/8, and 7/8 export-correlated | 18 project sequences | sequence-level | IMPLEMENTED BOUNDED INITIAL | MEDIUM | medium | strong for initial form | no | covered |
 | SysEx | yes | 2 | 2 | 2 | UNINVESTIGATED | MEDIUM | medium | weak | likely 0–1 | 4 |
 | Channel Pressure | yes in later provenance export | 32 | 1 | 1 | IMPLEMENTED BOUNDED RUN | HIGH | medium | strong for one stateful run | no | covered |
 | Poly Pressure | no | 0 | 0 | 0 | NOT PRESENT | conditional | unknown | none | no current need | none |
@@ -337,18 +336,23 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 - The bounded initial Tempo decoder implements `00 ff 51 03 | MPQN[3]` with
   exact bounds, all-byte provenance, direct unsigned 24-bit big-endian MPQN,
   fixed authentic fixtures, and no scanning. General Tempo maps remain unknown.
+- The bounded initial Meter decoder implements `00 ff 58 04 nn dd xx yy` with
+  exact bounds, all-byte provenance, safe optional denominator derivation,
+  four fixed authentic fixtures, and no scanning. Historical `xx -> cc`
+  conversion is exact for correlated `08` and `06` values but remains outside
+  decoding and is not universal.
 
 # Unknowns
 
-The 17 active sequences without proven exports may contain additional families
+The 15 active sequences without proven project-correlated exports may contain additional families
 or values. Export
 initialization may not correspond one-to-one with project events. Broader
-Controller/Pitch Bend forms plus SysEx and Meter project encodings, broader
-Tempo framing/map variants, event boundaries, sequence/track associations, and
-framing variants remain unknown. No claim is made about pressure or bend
-support in Studio Vision generally.
+Controller/Pitch Bend forms plus SysEx project encoding, broader Meter/Tempo
+map variants, event boundaries, sequence/track associations, and framing
+variants remain unknown. No claim is made about pressure or bend support in
+Studio Vision generally.
 
 # Single recommended next step
 
-Correlate the adjacent Meter structure read-only before deciding whether one
-controlled non-4/4 Meter change is needed.
+Prioritize sequence/container discovery and integration capable of supplying
+exact bounds and ownership to the proven family decoders.

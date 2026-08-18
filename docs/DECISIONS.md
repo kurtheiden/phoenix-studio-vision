@@ -476,6 +476,39 @@ delta semantics. Do not parse the secondary copy, discover sequence structure,
 construct Tempo maps, enter the performance-event walker, or emit MIDI. Fixed
 natural and controlled fixtures establish only the bounded initial form.
 
+## 2026-08-18: design Meter only as an exact-bounded initial representation
+
+**Status:** Accepted
+
+Natural 4/4 and 6/8 evidence plus controlled Experiment 030 7/8 establish the
+eight-byte primary `00 ff 58 04 nn dd xx yy`. Design one decoder requiring an
+exact caller-supplied bound, zero initial-position byte, fixed tag/length, and
+absolute provenance for all eight bytes. Preserve numerator, denominator
+exponent, third payload, and fourth payload directly. Derive `2^dd` only as an
+overflow-safe convenience and do not reject framing-valid payload values.
+
+Keep the third payload semantically neutral. Historical exports correlate
+`xx 08 -> cc 18` and `xx 06 -> cc 0c`, but SMF policy is separate from binary
+decoding and the universal rule remains partial. Do not parse secondary copies,
+discover Meter, infer nonzero position semantics, enter the performance-event
+walker, or imply general Meter-map support. No further Meter experiment is
+needed for the bounded representation or current converter goal.
+
+## 2026-08-18: implement the exact-bounded initial Meter contract
+
+**Status:** Accepted and implemented
+
+`decode_bounded_initial_meter` accepts only an exact caller-supplied eight-byte
+range matching `00 ff 58 04 nn dd xx yy`. It preserves every source byte with
+absolute provenance and derives `2^dd` only through an overflow-safe optional
+convenience. Arbitrary numerator, exponent, third payload, and fourth payload
+bytes remain structurally preservable after framing validation.
+
+Keep the initial-position byte restricted to zero without assigning position
+semantics. Do not implement historical `xx -> cc` conversion, Meter discovery,
+secondary copies, Meter maps, sequence/container integration, mixed-event
+walking, or MIDI emission. Authentic and synthetic tests enforce these bounds.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
