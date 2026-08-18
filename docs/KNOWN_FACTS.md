@@ -353,9 +353,10 @@ authentic project range `0xebd8..0xebdf` is exactly
 All established primary examples have a leading zero and represent initial
 Tempo at sequence start. The byte is not established generally as absolute
 position or delta. The primary lies in a sequence-level Meter/Tempo structural
-area, outside the known performance-event streams. The correlated secondary
-`51 | MPQN` copy has no established containing-record boundary. General Tempo
-map discovery and mid-sequence positioning remain unknown.
+area, outside the known performance-event streams. Later container correlation
+bounds the correlated secondary `51 | MPQN` copy inside its type-`0x29`
+record, but the record's purpose and field semantics remain unknown. General
+Tempo map discovery and mid-sequence positioning remain unknown.
 
 The production `tempo` module now decodes only an exact caller-bounded
 seven-byte initial form. It requires `00 ff 51 03`, preserves all seven bytes
@@ -385,9 +386,10 @@ the established musical fields.
 Every primary leading byte is zero and every correlated event is initial at
 tick zero; absolute/delta semantics and nonzero forms remain unknown. Meter is
 sequence-level structure beside Tempo, outside performance-event streams.
-Nearby `58 nn dd xx yy` copies correlate with the primaries but lack complete
-containing-record boundaries. The exact eight-byte initial primary is ready
-for a caller-bounded decoder; general Meter-map parsing is not.
+Nearby `58 nn dd xx yy` copies correlate with the primaries. Later container
+correlation bounds each inside a type-`0x29` record, but the record's purpose
+and field semantics remain unresolved. The exact eight-byte initial primary is
+ready for a caller-bounded decoder; general Meter-map parsing is not.
 
 The production `meter` module now implements that exact caller-bounded initial
 form. It requires `00 ff 58 04`, preserves all eight bytes with absolute
@@ -397,3 +399,56 @@ cover natural 4/4, natural 6/8, controlled 7/8, and project-only natural 10/8.
 Synthetic tests enforce exact bounds, structural errors, arbitrary third and
 fourth payload preservation, high-exponent safety, and no scanning. General
 Meter-map and secondary-copy parsing remain absent.
+
+Read-only correlation of all 18 authenticated sequences establishes a repeated
+sequence/container chain in Experiment 007. Each sequence has a 208-byte
+preamble whose byte `+5` equals total descriptor count, followed by 166-byte
+descriptors beginning with Meter and Tempo descriptors. Descriptor labels begin
+at `+15`; the Pascal sequence-name length field occurs at
+`descriptor_start + count * 166 - 15`.
+
+After the sequence name, records use `type:u8 | big-endian u32 payload length |
+payload`. Optional `0x09` records precede Meter primary `0x02`, Meter secondary
+`0x29`, Tempo primary `0x02`, and Tempo secondary `0x29`. Both bounded primary
+events begin at payload `+14`. Track `0x02`/`0x29` pairs follow, then a terminal
+`0x00` record. For all 17 adjacent sequence pairs, the terminal record end is
+exactly the next 208-byte preamble start.
+
+Track primary records now have exact length-derived containing ranges and
+their order strongly matches local descriptor order across independently
+identified Bells and Ode tracks. `Sequence I` has eleven track descriptors but
+only ten record pairs, so inactive/blank descriptor handling remains partial.
+Inner performance-event ends and Pressure/Bend run bounds are not generally
+derived from the track-primary length.
+
+Project-root correlation establishes an eight-byte opaque root header followed
+at `0x00000008` by the same checked `type:u8 | big-endian u32 length | payload`
+grammar. In Experiment 007, 527 consecutive top-level records consume exactly
+through EOF. The 109th boundary is `0x00006abc`, where the first of 18
+authenticated type-`0x01` sequence preambles begins. The immediately preceding
+type-`0x2f` record is exactly `0x00006aab..0x00006abc`, with length 12 and
+payload `00 83 00 02 02 66 01 30 00 24 00 00`. Comparable projects likewise
+place one length-12 type-`0x2f` immediately before their first type-`0x01`
+sequence. The root walk is cross-validated from offset eight to exact EOF in
+the older authentic sample and all controlled project states through
+Experiment 030. The root-header words and record-type semantics remain opaque;
+no pointer interpretation or content-signature locator is required.
+
+The approved narrow parser design preserves the eight-byte root header and all
+generic records, classifies type-`0x01` candidates only after full local
+validation, and supplies exact initial Meter/Tempo ranges plus track-primary
+containing bounds. Its first semantic profile supports only the established
+208-byte preamble/166-byte descriptor form. The older 120-byte descriptor form
+remains generically frameable but is deterministically unsupported for
+sequence classification; the fourth root word is not promoted to a universal
+descriptor-width selector. Sequence I's 11 descriptors and 10 pairs are
+accepted as unresolved associations rather than repaired speculatively.
+
+The production `sequence_container` module implements this design. Generic
+root framing preserves unknown and zero-length records and consumes exact EOF;
+the separate `parse_project_166` API strictly validates every type-`0x01`
+candidate. Authentic tests derive all 527 Experiment 007 records, 18 sequences,
+Bells and Ode bounds, and the Sequence I mismatch. The older sample's 495
+records frame generically while semantic 166-profile parsing rejects its first
+candidate. No scanning, 120-byte fallback, mixed-event parsing, or exact inner
+event-end inference is present.

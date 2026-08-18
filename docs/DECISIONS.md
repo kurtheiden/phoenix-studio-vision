@@ -509,6 +509,41 @@ semantics. Do not implement historical `xx -> cc` conversion, Meter discovery,
 secondary copies, Meter maps, sequence/container integration, mixed-event
 walking, or MIDI emission. Authentic and synthetic tests enforce these bounds.
 
+## 2026-08-18: enter sequence parsing through the checked root record stream
+
+**Status:** Accepted
+
+Treat the first eight bytes as an opaque fixed root header, then walk top-level
+records from offset eight with checked `type | big-endian u32 length | payload`
+framing. This consumes Experiment 007 exactly through EOF and reaches the first
+type-`0x01` sequence preamble at `0x006abc` without searching for names,
+descriptor labels, Meter/Tempo tags, or event signatures. Require the full
+sequence-local invariant set before admitting a type-`0x01` record as a
+sequence. Preserve root-header words and unknown record payloads without
+assigning semantics.
+
+The fixed header boundary and exact-to-EOF record walk are cross-validated in
+the older authentic sample and controlled project population. Do not invent a
+root pointer, sequence count, or parent payload. `Sequence I` inactive
+descriptor mapping and track-local event ends remain partial; keep those and
+mixed-event/family-run interpretation separate from root/container traversal.
+
+The first semantic parser profile supports only the proven 208-byte
+preamble/166-byte descriptor form. Keep generic root framing available for the
+older authentic sample, but reject its 120-byte sequence form under this
+profile rather than deriving a width from opaque root word 3. When descriptor
+and track-pair counts differ, preserve both collections with unresolved
+associations; do not infer which descriptor is inactive. A malformed
+type-`0x01` candidate fails semantic project classification at that cursor and
+must not be skipped in search of a later candidate.
+
+This contract is now implemented in the `sequence_container` module. Keep the
+generic `parse_root_record_stream` guarantee distinct from strict
+`parse_project_166` classification. The implemented parser may supply exact
+initial Meter/Tempo bounds and track-primary containing ranges, but it must not
+promote those containing ranges to exact event ranges or absorb mixed-event
+walking.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

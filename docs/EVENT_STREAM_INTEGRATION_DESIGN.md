@@ -251,11 +251,29 @@ coerced into delta accumulation.
 The established initial Meter and Tempo representations belong to one
 sequence-level Meter/Tempo structural area, not this performance-event stream.
 A future sequence parser may supply exact eight-byte Meter and seven-byte Tempo
-bounds to their independently implemented bounded decoders. The mixed walker must not search
-for `ff 58` or `ff 51`, treat either leading zero as a performance-event delta,
-parse unresolved secondary copies, or fold Meter/Tempo into Note, Controller,
-Channel Pressure, or Pitch Bend state. General Meter-map and Tempo-map walking
-remain unsupported.
+bounds to their independently implemented bounded decoders. The mixed walker
+must not search for `ff 58` or `ff 51`, treat either leading zero as a
+performance-event delta, parse unresolved secondary copies, or fold
+Meter/Tempo into Note, Controller, Channel Pressure, or Pitch Bend state.
+General Meter-map and Tempo-map walking remain unsupported.
+
+# Container-boundary correlation
+
+All 18 authenticated sequences now have exact length-derived sequence record
+streams. A checked top-level record walk starts after the opaque eight-byte
+root header, consumes Experiment 007 exactly through EOF, and reaches the first
+type-`0x01` sequence preamble at `0x006abc` without signature scanning. The
+sequence layer can then derive initial Meter and Tempo ranges at primary-record
+payload `+14` and exact type-`0x02` containing ranges for ordered track
+primaries. This resolves hard-coded per-sequence and per-track containing
+offsets inside the bounded chain.
+
+Track-primary bounds are safe containing upper bounds, not automatically exact
+performance-event bounds. Known event tails vary, stateful Pressure/Bend run
+ends have no container field, and Patch/Note and generic Note discrimination
+remain unchanged. A future integration layer must not treat successful
+container walking as permission to scan or heuristically dispatch inside a
+track.
 
 # Evidence supported
 
@@ -286,6 +304,9 @@ discoveries performed by a walker.
 
 # Single recommended next step
 
-Establish sequence/container discovery and integration capable of supplying
-exact decoder bounds. Generic mixed walking remains out of scope until its
-independent Note and Patch-boundary blockers are resolved.
+Use the implemented narrow root-record/sequence-container parser to supply
+sequence provenance, exact Meter/Tempo bounds, and track-primary containing
+ranges. Generic mixed walking remains out of scope until its independent Note
+and Patch-boundary blockers are resolved. The implementation profile remains
+limited to the established 166-byte descriptor form; the older 120-byte form
+is not selected from an opaque root word.

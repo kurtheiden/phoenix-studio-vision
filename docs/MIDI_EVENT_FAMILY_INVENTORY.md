@@ -354,5 +354,7 @@ Studio Vision generally.
 
 # Single recommended next step
 
-Prioritize sequence/container discovery and integration capable of supplying
-exact bounds and ownership to the proven family decoders.
+Correlate exact track-local event termination and family transitions inside the
+track-primary containers now exposed by the implemented root/sequence parser.
+Mixed-event and stateful-run subdivision remain separate blockers; do not fold
+heuristic event scanning into container navigation.

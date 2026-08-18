@@ -175,8 +175,22 @@ committed or specified.
       keeps SMF export policy separate.
 - [x] Implement the bounded initial Meter decoder with fixed 4/4, 6/8, 7/8,
       and project-only 10/8 fixtures plus focused malformed/no-scanning tests.
-- [ ] Establish sequence/container discovery and integration that can supply
-      exact bounds to the implemented family decoders without heuristic scans.
+- [x] Correlate all 18 sequence/container structures: establish the 208-byte
+      preamble, descriptor count/stride, Pascal name, big-endian record lengths,
+      Meter/Tempo bounds, track primary containers, and terminal-to-next-start
+      chain without changing production code.
+- [x] Resolve the project-root entry point: preserve the opaque eight-byte root
+      header, then use checked top-level record lengths to reach the first
+      type-`0x01` sequence preamble and exact EOF without signature scanning.
+- [x] Design the narrow read-only root-record/sequence-container parser with
+      deterministic errors, absolute provenance, a mismatch-safe Sequence I
+      representation, and an explicit 166-byte descriptor profile.
+- [x] Implement that bounded design with generic exact-EOF framing, strict
+      166-byte sequence validation, authentic 527/18 and older 495-record
+      fixtures, mismatch-safe Sequence I handling, and no scanning.
+- [ ] Correlate exact track-local event termination and family transitions
+      inside structurally located track-primary containers before designing a
+      mixed-event walker.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
