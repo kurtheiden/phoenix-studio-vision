@@ -1,6 +1,7 @@
 //! Reusable, research-driven parsers for observed Studio Vision project data.
 
 pub mod analysis;
+pub mod app_contract;
 pub mod channel_pressure;
 pub mod comparison;
 pub mod controller;
