@@ -20,13 +20,15 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fs,
+    io::Write,
     ops::Range,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 const SOURCE_PATH: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline";
 const REFERENCE_PATH: &str = "/Users/kurtheiden/Documents/Phoenix Research/Studio Vision MIDI Exports/Project 001/Ode to Clarke Multi All";
 const REFERENCE_SHA256: &str = "4f63b34ef92204d4bc5eeb78dbbe7b94d005c1f9ceb57ea0f9809533ad590f29";
+const PROOF_PATH: &str = "/Users/kurtheiden/Documents/Phoenix Research/Phoenix MIDI Proofs/Ode to Clarke - Phoenix Multitrack Proof.mid";
 
 #[derive(Clone, Debug)]
 struct SequenceManifest {
@@ -836,20 +838,112 @@ fn complete_ode_matches_authenticated_multitrack_reference() {
         eprintln!("skipping D3: authentic source or reference fixture is absent");
         return;
     };
-    let reference_bytes = fs::read(REFERENCE_PATH).unwrap();
-    assert_eq!(sha256_hex(&source), ode_manifest().project_sha256);
-    assert_eq!(sha256_hex(&reference_bytes), REFERENCE_SHA256);
+    build_and_compare_complete_ode(&source).unwrap();
+}
 
-    let phoenix_bytes = validate_and_assemble(&source, &ode_manifest())
-        .unwrap()
+fn build_and_compare_complete_ode(source: &[u8]) -> Result<Vec<u8>, String> {
+    let reference_bytes = fs::read(REFERENCE_PATH).unwrap();
+    if sha256_hex(source) != ode_manifest().project_sha256 {
+        return Err("source SHA-256 differs".into());
+    }
+    if sha256_hex(&reference_bytes) != REFERENCE_SHA256 {
+        return Err("reference SHA-256 differs".into());
+    }
+
+    let phoenix_bytes = validate_and_assemble(source, &ode_manifest())
+        .map_err(|error| error.to_string())?
         .result
         .smf_bytes;
-    let phoenix = parse_comparison_smf(&phoenix_bytes).unwrap();
-    let reference = parse_comparison_smf(&reference_bytes).unwrap();
-    compare_complete_ode(&phoenix, &reference, &ode_manifest()).unwrap();
+    let phoenix = parse_comparison_smf(&phoenix_bytes)?;
+    let reference = parse_comparison_smf(&reference_bytes)?;
+    compare_complete_ode(&phoenix, &reference, &ode_manifest())?;
 
+    if comparison_inventory(&phoenix)?
+        != (ComparisonInventory {
+            notes: 1_308,
+            explicit_releases: 1_308,
+            zero_velocity_ends: 0,
+            ordinary_controllers: 0,
+            bank_msb: 2,
+            bank_lsb: 2,
+            programs: 4,
+            pressure: 0,
+            bend: 0,
+            tempo: 1,
+            meter: 1,
+        })
+    {
+        return Err("Phoenix inventory differs".into());
+    }
+    if comparison_inventory(&reference)?
+        != (ComparisonInventory {
+            notes: 1_308,
+            explicit_releases: 1_291,
+            zero_velocity_ends: 17,
+            ordinary_controllers: 0,
+            bank_msb: 2,
+            bank_lsb: 2,
+            programs: 4,
+            pressure: 0,
+            bend: 0,
+            tempo: 1,
+            meter: 1,
+        })
+    {
+        return Err("reference inventory differs".into());
+    }
+    Ok(phoenix_bytes)
+}
+
+#[test]
+#[ignore = "explicit D4 research artifact write; normal tests stay write-free"]
+fn write_and_reopen_complete_ode_multitrack_proof() {
+    let source = fixture().expect("authentic source fixture required for D4");
+    assert!(
+        Path::new(REFERENCE_PATH).exists(),
+        "reference fixture required for D4"
+    );
+    let validated_bytes = build_and_compare_complete_ode(&source).unwrap();
+    let path = PathBuf::from(PROOF_PATH);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+    if path.exists() {
+        let existing = fs::read(&path).unwrap();
+        assert_eq!(
+            existing,
+            validated_bytes,
+            "refusing to overwrite differing proof: path={}, size={}, sha256={}",
+            path.display(),
+            existing.len(),
+            sha256_hex(&existing)
+        );
+    } else {
+        let temporary = path.with_extension(format!("mid.tmp-{}", std::process::id()));
+        let write_result = (|| -> Result<(), std::io::Error> {
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)?;
+            file.write_all(&validated_bytes)?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temporary, &path)
+        })();
+        if let Err(error) = write_result {
+            let _ = fs::remove_file(&temporary);
+            panic!("atomic proof write failed: {error}");
+        }
+    }
+
+    let disk_bytes = fs::read(&path).unwrap();
+    assert_eq!(disk_bytes, validated_bytes);
+    let disk = parse_comparison_smf(&disk_bytes).unwrap();
+    let reference_bytes = fs::read(REFERENCE_PATH).unwrap();
+    assert_eq!(sha256_hex(&reference_bytes), REFERENCE_SHA256);
+    let reference = parse_comparison_smf(&reference_bytes).unwrap();
+    compare_complete_ode(&disk, &reference, &ode_manifest()).unwrap();
     assert_eq!(
-        comparison_inventory(&phoenix).unwrap(),
+        comparison_inventory(&disk).unwrap(),
         ComparisonInventory {
             notes: 1_308,
             explicit_releases: 1_308,
@@ -864,21 +958,11 @@ fn complete_ode_matches_authenticated_multitrack_reference() {
             meter: 1,
         }
     );
-    assert_eq!(
-        comparison_inventory(&reference).unwrap(),
-        ComparisonInventory {
-            notes: 1_308,
-            explicit_releases: 1_291,
-            zero_velocity_ends: 17,
-            ordinary_controllers: 0,
-            bank_msb: 2,
-            bank_lsb: 2,
-            programs: 4,
-            pressure: 0,
-            bend: 0,
-            tempo: 1,
-            meter: 1,
-        }
+    eprintln!(
+        "D4 proof: path={}, size={}, sha256={}",
+        path.display(),
+        disk_bytes.len(),
+        sha256_hex(&disk_bytes)
     );
 }
 

@@ -746,6 +746,21 @@ tracks and requires normalized musical timing/value equality; optional
 metadata, historical Note-end representation, raw encoding/order, and EOT
 padding remain explicit policy differences rather than serializer changes.
 
+D4 exposes persistence only as an ignored test-owned research action. It
+refuses to overwrite a differing final file, writes through a same-directory
+temporary file, and validates byte identity plus the complete comparison from
+disk. Normal tests remain proof-write-free; no general CLI/file-writing policy
+is inferred from this one approved artifact.
+
+D5 records manual validation separately from automated equivalence. The
+user-observed Logic Pro 12 result establishes that the exact proof opened with
+all nine expected musical tracks and looked and sounded correct during
+playback, with no problem reported. Logic's nine top-level Event List/filter
+entries are track/region observations, not an independent 1,308-Note count.
+The bounded Ode cycle is complete without broadening claims to arbitrary
+projects, general routing, unsupported families, original sound recreation,
+or a user-facing export workflow.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

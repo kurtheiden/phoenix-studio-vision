@@ -82,6 +82,17 @@ not establish a file signature, structure, or parser behavior.
   ordinary Controller/Pressure/Bend inventories match. Remaining differences
   are established metadata, release-representation, raw-encoding/order, and
   tick-94,080 reference EOT policies.
+- D4 persisted those exact validated bytes only at the approved external proof
+  path. The 12,184-byte Format 1, PPQN-480, ten-track file has SHA-256
+  `14d855f9d6c8e609365ac8d45335ca1e6c36fd9ede8299d01fba9d5d0f4a72eb`.
+  Its disk bytes equal the D3 buffer, independently parse to exact EOF, and
+  repeat the full normalized comparison successfully.
+- On 2026-08-19 the user opened that exact multitrack proof in Logic Pro 12.
+  All nine expected musical tracks were visible in the established order; the
+  user reported that it looked and sounded good, with no playback problem.
+  Logic's Event List/filter showed nine top-level MIDI regions/tracks, not an
+  independent count of the 1,308 Notes established by automated D3/D4
+  comparison. This completes the bounded authenticated Ode proof cycle only.
 - Synthetic tests independently parse a complete generated two-track SMF and
   verify header/chunk bounds, delta VLQs, legal explicit messages, final EOTs,
   and exact file consumption. No authentic MIDI artifact is generated.

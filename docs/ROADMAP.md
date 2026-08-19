@@ -243,8 +243,14 @@ committed or specified.
       against the authenticated Studio Vision MIDI export: all 1,308 Notes,
       1,291 comparable releases, four Patch translations, conductor state,
       track identities/channels, and supported-family inventories pass.
-- [ ] Implement Phase D4 explicit proof write and independent disk re-open;
-      keep normal tests in-memory only.
+- [x] Implement Phase D4 explicit proof write and independent disk re-open:
+      persist the exact D3 buffer at the approved external path, verify byte
+      identity and SHA-256, and repeat the complete comparison from disk while
+      normal tests remain write-free.
+- [x] Complete D5 user-owned Logic Pro 12 multitrack validation: all nine
+      expected musical tracks appeared and the sequence looked and sounded
+      correct during playback, with no problem reported. The bounded Ode
+      multitrack proof cycle is complete.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

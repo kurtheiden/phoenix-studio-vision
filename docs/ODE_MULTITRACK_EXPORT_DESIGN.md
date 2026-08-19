@@ -323,12 +323,11 @@ must not create or rewrite it. This design task creates no artifact.
 
 # Manual DAW validation
 
-After automated success, the user should open the proof in Logic Pro and
-verify normal import; ten total SMF tracks / nine musical tracks; sensible
-names and descriptor-order layout; complete glitch-free playback; no hanging
-or obviously misplaced Notes; sensible Patch/Program behavior; and sensible
-Tempo/Meter. This remains pending until user-observed and must not be inferred
-from Phase C.
+**PASS / USER-OBSERVED — Logic Pro 12 (2026-08-19).** Logic opened the proof
+with all nine expected musical tracks. The user visually inspected it and
+reported that it looked and sounded correct, with no playback problem. Logic's
+nine top-level Event List/filter entries represent MIDI regions/tracks, not an
+independent count of the 1,308 Notes established by D3/D4 automation.
 
 # Production/proof boundary
 
@@ -374,10 +373,12 @@ future multi-sequence workflow wording without defining CLI/UI behavior.
 3. **D3 — independent comparison (IMPLEMENTED):** parse both complete SMFs
    independently and assert the full inventory, 1,308 Note equivalences, and
    explicit policy differences transactionally.
-4. **D4 — proof artifact:** behind an explicit research action only, write the
-   named file after D3 passes, re-open it, hash it, and validate exact EOF.
-5. **D5 — user-owned Logic Pro validation:** record the multitrack layout and
-   playback result; do not infer it from automation.
+4. **D4 — proof artifact (IMPLEMENTED):** an explicit ignored research action
+   writes the exact D3 buffer, re-opens/hashes/parses it, and repeats the
+   complete normalized comparison from disk.
+5. **D5 — user-owned Logic Pro validation (COMPLETE):** all nine expected
+   musical tracks were visible and playback looked/sounded correct with no
+   problem reported.
 
 This avoids nine separate one-track integrations and keeps authentic policy
 outside reusable assembly.
@@ -411,5 +412,5 @@ outside reusable assembly.
 
 # Single recommended next step
 
-Implement D4's explicit proof write and independent disk re-open, using the
-already-compared in-memory result and leaving normal tests write-free.
+Preserve the completed bounded Ode proof cycle; select any broader export work
+only under a separate evidence-bounded task.

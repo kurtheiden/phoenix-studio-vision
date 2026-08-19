@@ -146,9 +146,10 @@ channel derivation or export beyond the locked Ode profile.
 
 **PASS.** Both provenance gates and independent parses pass; all ten tracks,
 1,308 Notes, 1,291 comparable releases, four Patch translations, and supported
-inventories match. No permanent proof artifact was written.
+inventories match. D4 subsequently persisted these exact compared bytes and
+repeated this comparison from disk.
 
 # Single recommended next step
 
-Implement D4: explicitly write the compared in-memory bytes to the one approved
-proof path and independently re-open them.
+D5 subsequently passed by user observation in Logic Pro 12. Preserve this
+comparison as the automated baseline for the completed bounded proof cycle.
