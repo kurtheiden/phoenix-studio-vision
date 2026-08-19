@@ -215,6 +215,11 @@ committed or specified.
       types, explicit statuses, bounded VLQs/lengths, deterministic same-tick
       ordering, automatic EOT, conductor construction, and independent
       synthetic parsing. No parser, manifest, CLI, or artifact integration.
+- [x] Implement Phase B pure decoded-event adaptation with explicit channel and
+      identity-480 timing policy, deterministic release-velocity Note Off
+      scheduling, direct Controller/Pressure/Bend mapping, strict classified
+      Patch handling, Meter/Tempo policy, transactional reports/errors, and
+      synthetic in-memory Format 1 integration only.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

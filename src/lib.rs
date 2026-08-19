@@ -5,6 +5,7 @@ pub mod channel_pressure;
 pub mod comparison;
 pub mod controller;
 pub mod meter;
+pub mod midi_export;
 pub mod mixed_event;
 pub mod opening;
 pub mod patch;

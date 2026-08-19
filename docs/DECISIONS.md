@@ -679,6 +679,26 @@ duplicated. Emit explicit statuses only. The serializer imports no Studio
 Vision modules, performs no channel inference or file I/O, and contains no Ode
 manifest values. Synthetic byte-exact tests include an independent SMF parser.
 
+## 2026-08-19: implement Phase B as transactional decoded-event adaptation
+
+**Status:** Implemented
+
+Add a focused `midi_export` module between existing decoded values and the SMF
+serializer. Require an explicit human-facing channel assignment and explicit
+`Identity480` timing policy. Encode stable source ordinals as even values and
+generated Note Off ordinals as the corresponding odd values; reject duplicate
+or overflowing ordinals. Preserve attack and release velocity and schedule
+each Note ending independently.
+
+Map Controller, Pressure, and Bend directly through validated MIDI data bytes.
+Require Patch bank/no-bank safety to be classified upstream; never inspect
+opaque Patch bytes in the adapter. Implement the documented historical/fallback
+Meter policy, initial Tempo validation, counts/warnings/report aggregation, and
+transactional failure. Preserve valid UTF-8 text and reject invalid legacy text
+as `MacRomanDeferred` pending an explicit encoding implementation decision.
+Synthetic tests alone cover all mappings and complete in-memory Format 1
+integration; no authentic artifact or manifest is used.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

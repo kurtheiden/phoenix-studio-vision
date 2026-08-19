@@ -371,7 +371,7 @@ shared channel blocker.
 
 1. **A — pure SMF primitives (IMPLEMENTED):** chunks, explicit-status messages, meta events,
    VLQs, lengths, total ordering, and independent-parser synthetic tests.
-2. **B — decoded adapter and scheduler:** identity 480 mapping, Note Off
+2. **B — decoded adapter and scheduler (IMPLEMENTED):** identity 480 mapping, Note Off
    generation, all direct event-family mappings, policy/report/errors, using
    synthetic decoded values.
 3. **C — one authentic `Ode to Clarke` Track 3 proof:** structural navigation,
@@ -392,11 +392,11 @@ and serializer used by the final multitrack export.
 | Area | Gate | Reason |
 |---|---|---|
 | A. SMF container serialization | YES — IMPLEMENTED | pure Format 1 subset and independent synthetic parser validation |
-| B. Note export | YES | all fields and timing are established |
-| C. Controller export | PARTIAL | number/value yes; channel external |
-| D. Channel Pressure export | PARTIAL | value yes; channel external |
-| E. Pitch Bend export | PARTIAL | exact LSB/MSB yes; channel external |
-| F. Patch / Program Change | PARTIAL | PC yes; bank optionality and channel partial |
+| B. Note export | YES — IMPLEMENTED ADAPTER | explicit release-velocity Note Off scheduling |
+| C. Controller export | YES — IMPLEMENTED ADAPTER | direct mapping with required explicit channel |
+| D. Channel Pressure export | YES — IMPLEMENTED ADAPTER | direct mapping with required explicit channel |
+| E. Pitch Bend export | YES — IMPLEMENTED ADAPTER | exact LSB/MSB with required explicit channel |
+| F. Patch / Program Change | PARTIAL — IMPLEMENTED SAFE SUBSET | confirmed program/bank classifications only; opaque forms fail |
 | G. Tempo export | YES | initial MPQN maps directly |
 | H. Meter export | YES | musical fields plus explicit safe policy |
 | I. MIDI channel assignment | PARTIAL | proven overrides exist; parser derivation absent |
@@ -420,6 +420,6 @@ blocker for arbitrary sequences and production-general export.
 
 # Single recommended next step
 
-Implement Phase B only: the pure decoded-event-to-MIDI adapter and Note Off
-scheduler using synthetic values. Keep the `Ode to Clarke` channel manifest
-outside parser-format knowledge and do not begin authentic integration yet.
+Design Phase C's one-track authentic proof integration, including manifest-key
+validation and decoded Patch/Note flattening, without yet adding CLI/file
+writing or broad sequence export.

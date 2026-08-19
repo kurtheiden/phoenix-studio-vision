@@ -36,6 +36,17 @@ not establish a file signature, structure, or parser behavior.
 - Synthetic tests independently parse a complete generated two-track SMF and
   verify header/chunk bounds, delta VLQs, legal explicit messages, final EOTs,
   and exact file consumption. No authentic MIDI artifact is generated.
+- The `midi_export` module now transactionally converts already decoded Note,
+  ordinary Controller, Channel Pressure, Pitch Bend, and explicitly classified
+  Patch values into SMF scheduled events under an explicit channel and
+  `Identity480` timing policy. It does not parse or locate source bytes.
+- Each Note produces a Note On and checked generated `8n` Note Off preserving
+  release velocity. Stable source ordinals are even and their generated Note
+  Off ordinals odd; duplicate/overflowing source ordinals fail.
+- Meter historical mappings `08 -> 24` and `06 -> 12`, standards fallback
+  warnings, initial Tempo validation, export counts/reporting, and synthetic
+  adapter-to-Format-1 integration are implemented. Invalid non-UTF-8 text is
+  explicitly deferred rather than silently converted.
 - The walker returns output only after exact event-range consumption and
   rejects unknown branches at the current cursor.
 
