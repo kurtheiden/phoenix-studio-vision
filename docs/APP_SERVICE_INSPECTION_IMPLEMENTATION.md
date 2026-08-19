@@ -147,6 +147,19 @@ and only the separately audited generic Patch observations. UI0B readiness and
 export capability remain unchanged; compatibility-registry assessment is still
 deferred.
 
+# UI0C4 handoff design
+
+Assessment is a later Core pass over retained evidence: each opaque
+`SequenceId` is mapped to its structural ordinal independently, and matched
+policies remain private to that session. Inspection remains useful for NoMatch
+and Rejected sequences; export must revalidate source identity before use.
+
+# UI0C4A implementation status
+
+AppService now performs this internal assessment after inspection using the
+built-in or injected registry. The public inspection response remains the
+unchanged UI0B response until a later readiness-projection phase.
+
 # UI0B gate
 
 The implementation provides path inspection, owned sessions and DTOs,

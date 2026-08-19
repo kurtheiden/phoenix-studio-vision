@@ -11,8 +11,8 @@ use crate::app_contract::{
     WarningScope, WarningSeverity, CONTRACT_VERSION,
 };
 use crate::compatibility::{
-    ByteRange, EvidenceEventFamily, ParserProfileId, PatchEvidence, ProfileEvidence,
-    SequenceEvidence, TrackEvidence,
+    ByteRange, CompatibilityRegistry, EvidenceEventFamily, ParserProfileId, PatchEvidence,
+    ProfileEvidence, ProfileMatch, ResolvedProfilePolicy, SequenceEvidence, TrackEvidence,
 };
 use crate::identification::{identify, read_finder_metadata};
 use crate::inspection::inspect;
@@ -25,6 +25,44 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SequenceMatchState {
+    NoMatch,
+    Matched,
+    Rejected,
+    RegistryError,
+}
+
+#[derive(Clone)]
+struct SequenceAssessment {
+    structural_ordinal: u32,
+    #[allow(dead_code)]
+    generic_readiness: Readiness,
+    match_state: SequenceMatchState,
+    capability: Option<crate::app_contract::ProfileCapability>,
+    resolved_policy: Option<ResolvedProfilePolicy>,
+    diagnostic_code: Option<String>,
+    #[allow(dead_code)]
+    technical_detail: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SequenceAssessmentKind {
+    NoMatch,
+    Matched,
+    Rejected,
+    RegistryError,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SequenceAssessmentStatus {
+    pub structural_ordinal: u32,
+    pub match_kind: SequenceAssessmentKind,
+    pub capability: Option<crate::app_contract::ProfileCapability>,
+    pub has_resolved_policy: bool,
+    pub diagnostic_code: Option<String>,
+}
+
 #[derive(Clone)]
 struct Session {
     source_path: String,
@@ -35,6 +73,7 @@ struct Session {
     structure: Option<InspectedProjectStructure>,
     #[allow(dead_code)]
     sequence_ordinals: HashMap<SequenceId, u32>,
+    assessments: HashMap<SequenceId, SequenceAssessment>,
 }
 
 #[derive(Clone)]
@@ -71,6 +110,8 @@ struct InspectedTrackStructure {
 pub struct AppService {
     sessions: HashMap<SessionId, Session>,
     next_session: u64,
+    registry: Option<CompatibilityRegistry>,
+    registry_error: Option<String>,
 }
 
 impl Default for AppService {
@@ -81,9 +122,23 @@ impl Default for AppService {
 
 impl AppService {
     pub fn new() -> Self {
+        match crate::compatibility_profiles::built_in_compatibility_registry() {
+            Ok(registry) => Self::with_registry(registry),
+            Err(error) => Self {
+                sessions: HashMap::new(),
+                next_session: 1,
+                registry: None,
+                registry_error: Some(format!("{error:?}")),
+            },
+        }
+    }
+
+    pub fn with_registry(registry: CompatibilityRegistry) -> Self {
         Self {
             sessions: HashMap::new(),
             next_session: 1,
+            registry: Some(registry),
+            registry_error: None,
         }
     }
 
@@ -194,9 +249,142 @@ impl AppService {
                 diagnostics,
                 structure,
                 sequence_ordinals,
+                assessments: HashMap::new(),
             },
         );
+        self.assess_session(&session_id);
         Ok(response)
+    }
+
+    fn assess_session(&mut self, session_id: &SessionId) {
+        let Ok(evidence) = self.profile_evidence(session_id) else {
+            return;
+        };
+        let Some(registry) = self.registry.clone() else {
+            let diagnostic = self
+                .registry_error
+                .clone()
+                .unwrap_or_else(|| "compatibility registry unavailable".into());
+            if let Some(session) = self.sessions.get_mut(session_id) {
+                for summary in &session.response.sequences {
+                    let ordinal = *session
+                        .sequence_ordinals
+                        .get(&summary.sequence_id)
+                        .unwrap_or(&0);
+                    let generic_readiness = summary.readiness;
+                    session.assessments.insert(
+                        summary.sequence_id.clone(),
+                        SequenceAssessment {
+                            structural_ordinal: ordinal,
+                            generic_readiness,
+                            match_state: SequenceMatchState::RegistryError,
+                            capability: None,
+                            resolved_policy: None,
+                            diagnostic_code: Some("profile_registry_configuration".into()),
+                            technical_detail: Some(diagnostic.clone()),
+                        },
+                    );
+                }
+            }
+            return;
+        };
+        if let Some(session) = self.sessions.get_mut(session_id) {
+            for summary in &session.response.sequences {
+                let Some(&ordinal) = session.sequence_ordinals.get(&summary.sequence_id) else {
+                    continue;
+                };
+                let (match_state, capability, resolved_policy, diagnostic_code, technical_detail) =
+                    match registry.assess(&evidence, ordinal) {
+                        Ok(ProfileMatch::NoMatch) => {
+                            (SequenceMatchState::NoMatch, None, None, None, None)
+                        }
+                        Ok(ProfileMatch::Matched {
+                            capability,
+                            resolved_policy,
+                        }) => (
+                            SequenceMatchState::Matched,
+                            Some(capability),
+                            Some(resolved_policy),
+                            None,
+                            None,
+                        ),
+                        Ok(ProfileMatch::Rejected { reason, .. }) => (
+                            SequenceMatchState::Rejected,
+                            None,
+                            None,
+                            Some(reason.diagnostic_code().into()),
+                            Some(
+                                "authenticated profile candidate rejected by exact evidence".into(),
+                            ),
+                        ),
+                        Err(error) => (
+                            SequenceMatchState::RegistryError,
+                            None,
+                            None,
+                            Some("profile_ambiguous_match".into()),
+                            Some(format!("{error:?}")),
+                        ),
+                    };
+                session.assessments.insert(
+                    summary.sequence_id.clone(),
+                    SequenceAssessment {
+                        structural_ordinal: ordinal,
+                        generic_readiness: summary.readiness,
+                        match_state,
+                        capability,
+                        resolved_policy,
+                        diagnostic_code,
+                        technical_detail,
+                    },
+                );
+            }
+        }
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn assessment_for_sequence(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<SequenceAssessmentStatus, AppError> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| self.unknown_session(AppOperation::GetDiagnostics))?;
+        let assessment = session
+            .assessments
+            .get(sequence_id)
+            .ok_or_else(|| self.unknown_sequence(session_id, sequence_id))?;
+        Ok(SequenceAssessmentStatus {
+            structural_ordinal: assessment.structural_ordinal,
+            match_kind: match assessment.match_state {
+                SequenceMatchState::NoMatch => SequenceAssessmentKind::NoMatch,
+                SequenceMatchState::Matched => SequenceAssessmentKind::Matched,
+                SequenceMatchState::Rejected => SequenceAssessmentKind::Rejected,
+                SequenceMatchState::RegistryError => SequenceAssessmentKind::RegistryError,
+            },
+            capability: assessment.capability.clone(),
+            has_resolved_policy: assessment.resolved_policy.is_some(),
+            diagnostic_code: assessment.diagnostic_code.clone(),
+        })
+    }
+
+    #[allow(clippy::result_large_err)]
+    #[allow(dead_code)]
+    pub(crate) fn resolved_policy_for_sequence(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<Option<ResolvedProfilePolicy>, AppError> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| self.unknown_session(AppOperation::GetDiagnostics))?;
+        session
+            .assessments
+            .get(sequence_id)
+            .map(|assessment| assessment.resolved_policy.clone())
+            .ok_or_else(|| self.unknown_sequence(session_id, sequence_id))
     }
 
     #[allow(clippy::result_large_err)]

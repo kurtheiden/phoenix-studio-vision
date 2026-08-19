@@ -2,7 +2,8 @@ use phoenix::app_contract::{
     AppErrorCategory, AppOperation, DiagnosticsLevel, InspectProjectRequest, Readiness,
     CONTRACT_VERSION,
 };
-use phoenix::app_service::AppService;
+use phoenix::app_service::{AppService, SequenceAssessmentKind};
+use phoenix::compatibility::CompatibilityRegistry;
 use phoenix::compatibility::EvidenceEventFamily;
 use phoenix::mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventTimingBasis};
 use phoenix::sequence_container::{parse_project_166, TrackAssociations};
@@ -248,4 +249,59 @@ fn optional_authentic_fixture_preserves_structural_sequence_order() {
         }
     }
     assert!(compared, "at least one direct bounded walk should succeed");
+}
+
+#[test]
+fn optional_authentic_fixture_assesses_each_sequence_without_projecting_readiness() {
+    let path = PathBuf::from(
+        "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline",
+    );
+    if !path.is_file() {
+        return;
+    }
+    let mut service = AppService::new();
+    let response = service
+        .inspect_project(request(&path, DiagnosticsLevel::Summary))
+        .expect("authentic fixture should inspect");
+    let mut matched = 0;
+    for sequence in &response.sequences {
+        let status = service
+            .assessment_for_sequence(&response.session_id, &sequence.sequence_id)
+            .expect("every discovered sequence must have an assessment");
+        assert_eq!(status.capability.is_some(), status.has_resolved_policy);
+        assert_ne!(sequence.readiness, Readiness::Ready);
+        assert!(sequence.export_capability.is_none());
+        if sequence.display_name == "Ode to Clarke" {
+            assert_eq!(status.match_kind, SequenceAssessmentKind::Matched);
+            assert!(status.has_resolved_policy);
+            matched += 1;
+        } else {
+            assert_ne!(status.match_kind, SequenceAssessmentKind::Matched);
+            assert!(!status.has_resolved_policy);
+        }
+    }
+    assert_eq!(matched, 1);
+    assert_ne!(response.project.overall_readiness, Readiness::Ready);
+}
+
+#[test]
+fn injected_empty_registry_assesses_all_sequences_as_no_match() {
+    let path = PathBuf::from(
+        "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline",
+    );
+    if !path.is_file() {
+        return;
+    }
+    let mut service = AppService::with_registry(CompatibilityRegistry::empty());
+    let response = service
+        .inspect_project(request(&path, DiagnosticsLevel::None))
+        .expect("authentic fixture should inspect");
+    for sequence in &response.sequences {
+        let status = service
+            .assessment_for_sequence(&response.session_id, &sequence.sequence_id)
+            .expect("assessment");
+        assert_eq!(status.match_kind, SequenceAssessmentKind::NoMatch);
+        assert!(!status.has_resolved_policy);
+        assert!(status.capability.is_none());
+    }
 }

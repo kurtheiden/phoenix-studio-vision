@@ -292,6 +292,11 @@ committed or specified.
       integration.
 - [x] Implement UI0C3's isolated authenticated Ode compatibility profile and
       exact-match regression without wiring AppService readiness or export.
+- [x] Design UI0C4's multi-sequence Core-only assessment handoff, private
+      resolved-policy lifetime, and export-time source revalidation boundary;
+      defer implementation and readiness projection.
+- [x] Implement UI0C4A per-sequence compatibility assessment storage with
+      readiness/export behavior frozen.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

@@ -915,6 +915,19 @@ target-independent. A built-in registry match returns a resolved policy, but
 inspection readiness and export remain unchanged until a separately designed
 handoff adds source revalidation.
 
+UI0C4A now stores these results privately per `SequenceId`; it deliberately does
+not project a capability or Ready state into app-facing summaries.
+
 The banked-policy matcher has explicit regressions for absent, matching,
 partial, and contradictory observed bank values; absent generic evidence never
 acts as permission to ignore a contradictory observed value.
+
+## 2026-08-19: design per-sequence profile assessment handoff
+
+**Status:** Designed; UI0C4A implementation deferred
+
+AppService will own an immutable registry and assess every discovered sequence
+against retained evidence, storing `SequenceId`-keyed resolved policies
+privately. UI0C4A will not change readiness; a later projection may do so only
+for exact matches. Export must reread, rehash, reparse, remap, and reassess the
+selected sequence before using any stored policy.

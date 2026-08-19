@@ -479,3 +479,9 @@ The evidence bridge is now complete for its established scope. Descriptor166
 validated bounds, deterministic bounded-walker inventory, and the conservative
 generic Patch observation subset are available to Core; routing, bank policy,
 profile assessment, and export remain separate future operations.
+
+# UI0C4 assessment handoff
+
+The next service seam assesses every discovered `SequenceId` independently and
+retains any resolved profile policy privately. No profile internals cross the
+contract, and fresh source identity validation remains mandatory before export.
