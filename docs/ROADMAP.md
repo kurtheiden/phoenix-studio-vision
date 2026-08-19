@@ -239,8 +239,12 @@ committed or specified.
 - [x] Implement Phase D2 authenticated Ode manifest validation and nine-track
       exact walk/flatten integration as proof policy feeding D1; produce and
       structurally validate a complete ten-track Format 1 result in memory.
-- [ ] Implement Phase D3 independent full ten-track normalized comparison
-      against the authenticated Studio Vision MIDI export.
+- [x] Implement Phase D3 independent full ten-track normalized comparison
+      against the authenticated Studio Vision MIDI export: all 1,308 Notes,
+      1,291 comparable releases, four Patch translations, conductor state,
+      track identities/channels, and supported-family inventories pass.
+- [ ] Implement Phase D4 explicit proof write and independent disk re-open;
+      keep normal tests in-memory only.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

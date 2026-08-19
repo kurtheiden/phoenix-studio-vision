@@ -371,8 +371,9 @@ future multi-sequence workflow wording without defining CLI/UI behavior.
 2. **D2 — authenticated Ode integration (IMPLEMENTED):** define the caller-supplied manifest
    contract and proof-local nine-row value/Patch classifications; structurally
    validate, walk, flatten, and adapt all rows in one pass.
-3. **D3 — independent comparison:** extend the independent test parser to all
-   ten tracks and assert the complete inventory and 1,308 Note equivalences.
+3. **D3 — independent comparison (IMPLEMENTED):** parse both complete SMFs
+   independently and assert the full inventory, 1,308 Note equivalences, and
+   explicit policy differences transactionally.
 4. **D4 — proof artifact:** behind an explicit research action only, write the
    named file after D3 passes, re-open it, hash it, and validate exact EOF.
 5. **D5 — user-owned Logic Pro validation:** record the multitrack layout and
@@ -410,5 +411,5 @@ outside reusable assembly.
 
 # Single recommended next step
 
-Implement D3's independent full ten-track normalized comparison against the
-authenticated Studio Vision reference, still entirely in memory.
+Implement D4's explicit proof write and independent disk re-open, using the
+already-compared in-memory result and leaving normal tests write-free.

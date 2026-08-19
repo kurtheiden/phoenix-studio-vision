@@ -740,6 +740,12 @@ authenticated integration coverage. That integration validates all nine rows
 before invoking D1 once; no Ode value or authenticated channel is promoted into
 generic production code.
 
+D3 reuses that integration path and compares both complete SMFs through a
+running-status-aware test-side parser. Success is transactional across all ten
+tracks and requires normalized musical timing/value equality; optional
+metadata, historical Note-end representation, raw encoding/order, and EOT
+padding remain explicit policy differences rather than serializer changes.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

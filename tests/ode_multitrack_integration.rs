@@ -17,9 +17,16 @@ use phoenix::{
     tempo::{decode_bounded_initial_tempo, InitialTempoBounds},
 };
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeSet, fs, ops::Range, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    fs,
+    ops::Range,
+    path::Path,
+};
 
 const SOURCE_PATH: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline";
+const REFERENCE_PATH: &str = "/Users/kurtheiden/Documents/Phoenix Research/Studio Vision MIDI Exports/Project 001/Ode to Clarke Multi All";
+const REFERENCE_SHA256: &str = "4f63b34ef92204d4bc5eeb78dbbe7b94d005c1f9ceb57ea0f9809533ad590f29";
 
 #[derive(Clone, Debug)]
 struct SequenceManifest {
@@ -764,4 +771,511 @@ fn manifest_mutations_fail_without_a_multitrack_result() {
     for mutated in mutations {
         assert!(validate_and_assemble(&bytes, &mutated).is_err());
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ComparisonSmf {
+    format: u16,
+    division: u16,
+    tracks: Vec<ComparisonTrack>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ComparisonTrack {
+    events: Vec<ComparisonEvent>,
+    eot_tick: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ComparisonEvent {
+    Meta {
+        tick: u32,
+        kind: u8,
+        data: Vec<u8>,
+    },
+    Channel {
+        tick: u32,
+        status: u8,
+        data: Vec<u8>,
+    },
+    SysEx {
+        tick: u32,
+        status: u8,
+        data: Vec<u8>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ComparisonNote {
+    channel: u8,
+    pitch: u8,
+    start: u32,
+    end: u32,
+    attack: u8,
+    release: Option<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ComparisonInventory {
+    notes: usize,
+    explicit_releases: usize,
+    zero_velocity_ends: usize,
+    ordinary_controllers: usize,
+    bank_msb: usize,
+    bank_lsb: usize,
+    programs: usize,
+    pressure: usize,
+    bend: usize,
+    tempo: usize,
+    meter: usize,
+}
+
+#[test]
+fn complete_ode_matches_authenticated_multitrack_reference() {
+    let (Some(source), true) = (fixture(), Path::new(REFERENCE_PATH).exists()) else {
+        eprintln!("skipping D3: authentic source or reference fixture is absent");
+        return;
+    };
+    let reference_bytes = fs::read(REFERENCE_PATH).unwrap();
+    assert_eq!(sha256_hex(&source), ode_manifest().project_sha256);
+    assert_eq!(sha256_hex(&reference_bytes), REFERENCE_SHA256);
+
+    let phoenix_bytes = validate_and_assemble(&source, &ode_manifest())
+        .unwrap()
+        .result
+        .smf_bytes;
+    let phoenix = parse_comparison_smf(&phoenix_bytes).unwrap();
+    let reference = parse_comparison_smf(&reference_bytes).unwrap();
+    compare_complete_ode(&phoenix, &reference, &ode_manifest()).unwrap();
+
+    assert_eq!(
+        comparison_inventory(&phoenix).unwrap(),
+        ComparisonInventory {
+            notes: 1_308,
+            explicit_releases: 1_308,
+            zero_velocity_ends: 0,
+            ordinary_controllers: 0,
+            bank_msb: 2,
+            bank_lsb: 2,
+            programs: 4,
+            pressure: 0,
+            bend: 0,
+            tempo: 1,
+            meter: 1,
+        }
+    );
+    assert_eq!(
+        comparison_inventory(&reference).unwrap(),
+        ComparisonInventory {
+            notes: 1_308,
+            explicit_releases: 1_291,
+            zero_velocity_ends: 17,
+            ordinary_controllers: 0,
+            bank_msb: 2,
+            bank_lsb: 2,
+            programs: 4,
+            pressure: 0,
+            bend: 0,
+            tempo: 1,
+            meter: 1,
+        }
+    );
+}
+
+fn compare_complete_ode(
+    phoenix: &ComparisonSmf,
+    reference: &ComparisonSmf,
+    manifest: &SequenceManifest,
+) -> Result<(), String> {
+    if (phoenix.format, phoenix.division, phoenix.tracks.len()) != (1, 480, 10)
+        || (reference.format, reference.division, reference.tracks.len()) != (1, 480, 10)
+    {
+        return Err("Format/division/track-count mismatch".into());
+    }
+    compare_conductor(
+        &phoenix.tracks[0],
+        &reference.tracks[0],
+        manifest.sequence_name,
+    )?;
+    for (index, row) in manifest.rows.iter().enumerate() {
+        let track = index + 1;
+        let generated = &phoenix.tracks[track];
+        let historical = &reference.tracks[track];
+        if comparison_track_name(generated) != Some(row.name)
+            || comparison_track_name(historical) != Some(row.name)
+            || comparison_channels(generated) != BTreeSet::from([row.channel])
+            || comparison_channels(historical) != BTreeSet::from([row.channel])
+        {
+            return Err(format!("track {track} identity/channel mismatch"));
+        }
+        let generated_notes = comparison_notes(generated)?;
+        let historical_notes = comparison_notes(historical)?;
+        if generated_notes.len() != row.notes || historical_notes.len() != row.notes {
+            return Err(format!("track {track} Note count mismatch"));
+        }
+        for (note_index, (left, right)) in generated_notes.iter().zip(&historical_notes).enumerate()
+        {
+            if left.channel != right.channel
+                || left.pitch != right.pitch
+                || left.start != right.start
+                || left.end != right.end
+                || left.attack != right.attack
+                || (right.release.is_some() && left.release != right.release)
+            {
+                return Err(format!(
+                    "track {track} first Note mismatch at normalized index {note_index}: Phoenix {left:?}, reference {right:?}"
+                ));
+            }
+        }
+        if comparison_patch_events(generated) != comparison_patch_events(historical) {
+            return Err(format!("track {track} Patch/channel-state mismatch"));
+        }
+        reject_unsupported_channel_events(generated, track)?;
+        reject_unsupported_channel_events(historical, track)?;
+        if historical.eot_tick != 94_080 {
+            return Err(format!("reference track {track} EOT tick differs"));
+        }
+    }
+    if reference.tracks[0].eot_tick != 94_080 || phoenix.tracks[0].eot_tick != 0 {
+        return Err("conductor EOT policy mismatch".into());
+    }
+    Ok(())
+}
+
+fn compare_conductor(
+    phoenix: &ComparisonTrack,
+    reference: &ComparisonTrack,
+    name: &[u8],
+) -> Result<(), String> {
+    if comparison_track_name(phoenix) != Some(name)
+        || comparison_track_name(reference) != Some(name)
+    {
+        return Err("conductor name mismatch".into());
+    }
+    let metas = |track: &ComparisonTrack, kind| {
+        track
+            .events
+            .iter()
+            .filter_map(move |event| match event {
+                ComparisonEvent::Meta {
+                    tick,
+                    kind: actual,
+                    data,
+                } if *actual == kind => Some((*tick, data.clone())),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected_tempo = vec![(0, vec![0x07, 0xa1, 0x20])];
+    let expected_meter = vec![(0, vec![4, 2, 24, 8])];
+    if metas(phoenix, 0x51) != expected_tempo
+        || metas(reference, 0x51) != expected_tempo
+        || metas(phoenix, 0x58) != expected_meter
+        || metas(reference, 0x58) != expected_meter
+        || !metas(phoenix, 0x54).is_empty()
+        || metas(reference, 0x54) != vec![(0, vec![0x60, 0, 0, 0, 0])]
+    {
+        return Err("conductor Tempo/Meter/SMPTE inventory mismatch".into());
+    }
+    Ok(())
+}
+
+fn parse_comparison_smf(bytes: &[u8]) -> Result<ComparisonSmf, String> {
+    if bytes.len() < 14 || &bytes[..4] != b"MThd" || d3_be_u32(&bytes[4..8])? != 6 {
+        return Err("invalid MThd".into());
+    }
+    let format = d3_be_u16(&bytes[8..10])?;
+    let count = usize::from(d3_be_u16(&bytes[10..12])?);
+    let division = d3_be_u16(&bytes[12..14])?;
+    if division == 0 || division & 0x8000 != 0 {
+        return Err("invalid PPQN division".into());
+    }
+    let mut cursor = 14;
+    let mut tracks = Vec::with_capacity(count);
+    for _ in 0..count {
+        if bytes.get(cursor..cursor + 4) != Some(b"MTrk") {
+            return Err(format!("missing MTrk at {cursor}"));
+        }
+        let length = usize::try_from(d3_be_u32(
+            bytes
+                .get(cursor + 4..cursor + 8)
+                .ok_or("truncated MTrk length")?,
+        )?)
+        .map_err(|_| "MTrk length overflow")?;
+        let start = cursor + 8;
+        let end = start.checked_add(length).ok_or("MTrk length overflow")?;
+        tracks.push(parse_comparison_track(
+            bytes.get(start..end).ok_or("MTrk exceeds file")?,
+        )?);
+        cursor = end;
+    }
+    if cursor != bytes.len() {
+        return Err("SMF trailing bytes".into());
+    }
+    Ok(ComparisonSmf {
+        format,
+        division,
+        tracks,
+    })
+}
+
+fn parse_comparison_track(bytes: &[u8]) -> Result<ComparisonTrack, String> {
+    let mut cursor = 0;
+    let mut tick = 0_u32;
+    let mut running = None;
+    let mut events = Vec::new();
+    let mut eot_tick = None;
+    while cursor < bytes.len() {
+        let (delta, width) = d3_vlq(bytes, cursor)?;
+        cursor += width;
+        tick = tick.checked_add(delta).ok_or("absolute tick overflow")?;
+        let first = *bytes.get(cursor).ok_or("missing event")?;
+        if first == 0xff {
+            running = None;
+            let kind = *bytes.get(cursor + 1).ok_or("missing meta kind")?;
+            let (length, width) = d3_vlq(bytes, cursor + 2)?;
+            let start = cursor + 2 + width;
+            let end = start
+                .checked_add(usize::try_from(length).map_err(|_| "meta overflow")?)
+                .ok_or("meta overflow")?;
+            let data = bytes.get(start..end).ok_or("meta exceeds track")?.to_vec();
+            if kind == 0x2f
+                && (!data.is_empty() || eot_tick.replace(tick).is_some() || end != bytes.len())
+            {
+                return Err("invalid/nonfinal/multiple EOT".into());
+            }
+            events.push(ComparisonEvent::Meta { tick, kind, data });
+            cursor = end;
+            continue;
+        }
+        if matches!(first, 0xf0 | 0xf7) {
+            running = None;
+            let (length, width) = d3_vlq(bytes, cursor + 1)?;
+            let start = cursor + 1 + width;
+            let end = start
+                .checked_add(usize::try_from(length).map_err(|_| "SysEx overflow")?)
+                .ok_or("SysEx overflow")?;
+            events.push(ComparisonEvent::SysEx {
+                tick,
+                status: first,
+                data: bytes.get(start..end).ok_or("SysEx exceeds track")?.to_vec(),
+            });
+            cursor = end;
+            continue;
+        }
+        let (status, start) = if first & 0x80 != 0 {
+            if first >= 0xf0 {
+                return Err(format!("unsupported status {first:02x}"));
+            }
+            running = Some(first);
+            (first, cursor + 1)
+        } else {
+            (running.ok_or("data without running status")?, cursor)
+        };
+        let length = if matches!(status >> 4, 0xc | 0xd) {
+            1
+        } else {
+            2
+        };
+        let data = bytes
+            .get(start..start + length)
+            .ok_or("channel event exceeds track")?;
+        if data.iter().any(|value| value & 0x80 != 0) {
+            return Err("invalid channel data byte".into());
+        }
+        events.push(ComparisonEvent::Channel {
+            tick,
+            status,
+            data: data.to_vec(),
+        });
+        cursor = start + length;
+    }
+    Ok(ComparisonTrack {
+        events,
+        eot_tick: eot_tick.ok_or("missing EOT")?,
+    })
+}
+
+fn comparison_track_name(track: &ComparisonTrack) -> Option<&[u8]> {
+    track.events.iter().find_map(|event| match event {
+        ComparisonEvent::Meta { kind: 3, data, .. } => Some(data.as_slice()),
+        _ => None,
+    })
+}
+
+fn comparison_channels(track: &ComparisonTrack) -> BTreeSet<u8> {
+    track
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            ComparisonEvent::Channel { status, .. } => Some((status & 0x0f) + 1),
+            _ => None,
+        })
+        .collect()
+}
+
+fn comparison_notes(track: &ComparisonTrack) -> Result<Vec<ComparisonNote>, String> {
+    let mut active: BTreeMap<(u8, u8), VecDeque<(u32, u8)>> = BTreeMap::new();
+    let mut notes = Vec::new();
+    for event in &track.events {
+        let ComparisonEvent::Channel { tick, status, data } = event else {
+            continue;
+        };
+        let channel = (status & 0x0f) + 1;
+        match (status >> 4, data.as_slice()) {
+            (9, [pitch, attack]) if *attack != 0 => active
+                .entry((channel, *pitch))
+                .or_default()
+                .push_back((*tick, *attack)),
+            (8, [pitch, release]) => comparison_finish_note(
+                &mut active,
+                &mut notes,
+                channel,
+                *pitch,
+                *tick,
+                Some(*release),
+            )?,
+            (9, [pitch, 0]) => {
+                comparison_finish_note(&mut active, &mut notes, channel, *pitch, *tick, None)?
+            }
+            _ => {}
+        }
+    }
+    if active.values().any(|queue| !queue.is_empty()) {
+        return Err("unclosed Note On".into());
+    }
+    notes.sort();
+    Ok(notes)
+}
+
+fn comparison_finish_note(
+    active: &mut BTreeMap<(u8, u8), VecDeque<(u32, u8)>>,
+    notes: &mut Vec<ComparisonNote>,
+    channel: u8,
+    pitch: u8,
+    end: u32,
+    release: Option<u8>,
+) -> Result<(), String> {
+    let (start, attack) = active
+        .get_mut(&(channel, pitch))
+        .and_then(VecDeque::pop_front)
+        .ok_or_else(|| {
+            format!("Note end without start: channel {channel}, pitch {pitch}, tick {end}")
+        })?;
+    notes.push(ComparisonNote {
+        channel,
+        pitch,
+        start,
+        end,
+        attack,
+        release,
+    });
+    Ok(())
+}
+
+fn comparison_patch_events(track: &ComparisonTrack) -> Vec<(u32, u8, Vec<u8>)> {
+    track
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            ComparisonEvent::Channel { tick, status, data } if matches!(status >> 4, 0xb | 0xc) => {
+                Some((*tick, *status, data.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn reject_unsupported_channel_events(
+    track: &ComparisonTrack,
+    ordinal: usize,
+) -> Result<(), String> {
+    for event in &track.events {
+        match event {
+            ComparisonEvent::Channel { status, data, .. } => match status >> 4 {
+                8 | 9 | 0xc => {}
+                0xb if matches!(data.as_slice(), [0 | 32, _]) => {}
+                0xa | 0xd | 0xe => {
+                    return Err(format!(
+                        "track {ordinal} unsupported channel family {:x}",
+                        status >> 4
+                    ))
+                }
+                0xb => return Err(format!("track {ordinal} ordinary Controller {data:?}")),
+                other => return Err(format!("track {ordinal} unknown channel family {other:x}")),
+            },
+            ComparisonEvent::SysEx { tick, status, data } => {
+                return Err(format!(
+                    "track {ordinal} SysEx {status:02x} at {tick}: {data:02x?}"
+                ))
+            }
+            ComparisonEvent::Meta { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn comparison_inventory(smf: &ComparisonSmf) -> Result<ComparisonInventory, String> {
+    let mut result = ComparisonInventory {
+        notes: 0,
+        explicit_releases: 0,
+        zero_velocity_ends: 0,
+        ordinary_controllers: 0,
+        bank_msb: 0,
+        bank_lsb: 0,
+        programs: 0,
+        pressure: 0,
+        bend: 0,
+        tempo: 0,
+        meter: 0,
+    };
+    for track in &smf.tracks {
+        let notes = comparison_notes(track)?;
+        result.notes += notes.len();
+        result.explicit_releases += notes.iter().filter(|note| note.release.is_some()).count();
+        result.zero_velocity_ends += notes.iter().filter(|note| note.release.is_none()).count();
+        for event in &track.events {
+            match event {
+                ComparisonEvent::Meta { kind: 0x51, .. } => result.tempo += 1,
+                ComparisonEvent::Meta { kind: 0x58, .. } => result.meter += 1,
+                ComparisonEvent::Channel { status, data, .. } => {
+                    match (status >> 4, data.as_slice()) {
+                        (0xb, [0, _]) => result.bank_msb += 1,
+                        (0xb, [32, _]) => result.bank_lsb += 1,
+                        (0xb, _) => result.ordinary_controllers += 1,
+                        (0xc, _) => result.programs += 1,
+                        (0xd, _) => result.pressure += 1,
+                        (0xe, _) => result.bend += 1,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn d3_vlq(bytes: &[u8], offset: usize) -> Result<(u32, usize), String> {
+    let mut value = 0;
+    for index in 0..4 {
+        let byte = *bytes.get(offset + index).ok_or("truncated VLQ")?;
+        value = (value << 7) | u32::from(byte & 0x7f);
+        if byte & 0x80 == 0 {
+            return Ok((value, index + 1));
+        }
+    }
+    Err("VLQ exceeds four bytes".into())
+}
+
+fn d3_be_u16(bytes: &[u8]) -> Result<u16, String> {
+    Ok(u16::from_be_bytes(
+        bytes.try_into().map_err(|_| "invalid u16")?,
+    ))
+}
+
+fn d3_be_u32(bytes: &[u8]) -> Result<u32, String> {
+    Ok(u32::from_be_bytes(
+        bytes.try_into().map_err(|_| "invalid u32")?,
+    ))
 }

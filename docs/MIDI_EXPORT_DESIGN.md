@@ -377,9 +377,10 @@ shared channel blocker.
 3. **C — one authentic `Ode to Clarke` Track 3 proof (COMPLETE):** structural navigation,
    exact walk, authenticated channel override, Program/bank policy, independent
    normalized comparison, and DAW smoke test.
-4. **D — strict `Ode to Clarke` multitrack Format 1 (D1/D2 IMPLEMENTED):**
-   reusable assembly and authenticated nine-track manifest/walk integration
-   are complete; full normalized reference comparison remains.
+4. **D — strict `Ode to Clarke` multitrack Format 1 (D1/D2/D3 IMPLEMENTED):**
+   reusable assembly, authenticated nine-track manifest/walk integration, and
+   independent complete normalized comparison are complete; artifact
+   write/re-open and manual DAW validation remain.
 5. **E — `Bells for her` family coverage:** Controller, Pressure, Bend, and
    authenticated multitrack comparison.
 6. **F — CLI/file writing:** only after the pure conversion succeeds; atomic
@@ -421,5 +422,6 @@ blocker for arbitrary sequences and production-general export.
 
 # Single recommended next step
 
-Implement Phase D3's independent complete reference comparison for all ten
-in-memory tracks without writing the permanent proof artifact.
+Implement Phase D4's explicit write of the compared in-memory result to the
+approved proof path and independently re-open it; normal tests must not write
+the artifact.

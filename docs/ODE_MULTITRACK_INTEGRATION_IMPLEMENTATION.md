@@ -133,7 +133,8 @@ tracks, ten exact MTrk chunks, exact EOF, one final EOT per track, conductor
 name/no channel messages, all nine musical names in manifest order, and channel
 sets '1,2,10,10,10,1,10,15,10'.
 
-This is D2 structural validation, not D3's complete reference comparison.
+This D2 structural validation now feeds D3's complete comparison in the same
+focused test, avoiding a second manifest/walk/assembly implementation.
 
 # Transactionality
 
@@ -158,7 +159,6 @@ Ode constants or authenticated routing claims.
 
 # Explicit exclusions
 
-- D3 reference Note/event comparison;
 - permanent multitrack proof writing/re-open;
 - Logic Pro validation;
 - general channel derivation;
@@ -175,5 +175,5 @@ production modules remain uncoupled.
 
 # Single recommended next step
 
-Implement D3's independent full ten-track normalized comparison against the
-authenticated Studio Vision reference without writing the permanent artifact.
+Implement D4's explicit proof write and independent disk re-open now that D3's
+complete normalized comparison passes.

@@ -74,6 +74,14 @@ not establish a file signature, structure, or parser behavior.
   resulting in-memory Format 1 file has 10 tracks in locked order and the
   expected channel sets; its report totals 1,312 logical source events, 1,308
   Notes/Note Offs, two bank pairs, four Programs, one Tempo, and one Meter.
+- Authenticated D3 comparison independently parses that in-memory result and
+  the Studio Vision reference with running-status and exact EOF/EOT checks.
+  All 1,308 Notes match one-for-one; all 1,291 explicit reference releases
+  match; exactly 17 reference endings use velocity-zero Note On. Track
+  order/names/channels, conductor state, four Patch translations, and zero
+  ordinary Controller/Pressure/Bend inventories match. Remaining differences
+  are established metadata, release-representation, raw-encoding/order, and
+  tick-94,080 reference EOT policies.
 - Synthetic tests independently parse a complete generated two-track SMF and
   verify header/chunk bounds, delta VLQs, legal explicit messages, final EOTs,
   and exact file consumption. No authentic MIDI artifact is generated.
