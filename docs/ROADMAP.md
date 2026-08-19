@@ -268,8 +268,28 @@ committed or specified.
       enabling any application-facing export operation; use exact provenance,
       structural manifests, immutable policy handles, and export-time
       revalidation without exposing internals to the UI.
-- [ ] Implement UI0C1: generic registry/profile/match types and synthetic
+- [x] Implement UI0C1: generic registry/profile/match types and synthetic
       tests before migrating the authenticated Ode policy.
+- [x] Implement UI0C2: adapt owned AppService structural snapshots into generic
+      ProfileEvidence without registry assessment, channel inference, or
+      readiness changes; retain incomplete exact-event evidence explicitly.
+- [ ] Establish a reusable exact event-range/evidence seam before UI0C3 profile
+      migration.
+- [x] Investigate UI0C2A exact event termination: the seven-byte suffix rule is
+      confirmed for the established 166-byte profile, while broader-format
+      generalization remains open.
+- [ ] Implement the scoped validated track-event-bounds parser helper before
+      completing UI0C2 evidence families and Patch facts.
+- [x] Implement the scoped Descriptor166 validated track-event-bounds helper;
+      retain incomplete evidence until UI0C2C supplies event-family facts.
+- [x] Populate deterministic decoded event-family inventory from validated
+      Descriptor166 ranges without changing readiness or policy.
+- [x] Audit and populate only evidence-backed generic Patch observations;
+      retain bank semantics and routing as unresolved.
+- [x] Complete the UI0C2 ProfileEvidence adapter audit: provenance, structural
+      identity, Descriptor166 bounds, deterministic decoded families, and the
+      bounded generic Patch subset are complete without readiness or export
+      integration.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

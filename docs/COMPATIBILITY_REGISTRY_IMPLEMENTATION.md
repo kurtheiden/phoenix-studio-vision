@@ -147,3 +147,38 @@ rejects ambiguity without first-wins behavior, and remains target-independent.
 Implement UI0C2: build generic `ProfileEvidence` from AppService's owned
 inspection/session state without migrating the authenticated Ode profile or
 changing readiness yet.
+
+# Initial UI0C2 handoff (historical baseline)
+
+The AppService adapter now supplies owned provenance and structural evidence
+snapshots. Exact event ranges, decoded families, Patch evidence, and channels
+remain explicitly incomplete until reusable parser facts are established;
+complete profile matching rejects those rows safely.
+
+# UI0C2A investigation
+
+The exact-range blocker is scoped: a validated seven-byte suffix rule is
+supported for the established 166-byte profile by a 132-primary census and
+empty-track evidence. Implementing the parser-facing bounds helper remains a
+separate structural change; incomplete evidence must continue to reject
+matching.
+
+## UI0C2B implementation
+
+Exact Descriptor166 bounds are now available to the evidence snapshot through a
+validated parser helper. Registry matching remains unchanged: `Some` exact
+bounds do not satisfy `evidence_complete`, so no profile can match until later
+evidence slices are present.
+
+## UI0C2C family inventory
+
+Decoded family facts and logical counts are now available for complete bounded
+walks, but `evidence_complete` remains false because Patch evidence and routing
+are still absent. Registry matching is unchanged.
+
+## UI0C2 completion status
+
+The adapter now supplies exact Descriptor166 ranges, deterministic decoded
+family/count facts, and the bounded generic Patch subset. The registry still
+requires `evidence_complete` and therefore remains unwired to AppService until
+authenticated profile migration supplies routing and policy evidence.

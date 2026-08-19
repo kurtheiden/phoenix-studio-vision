@@ -102,6 +102,7 @@ pub enum EvidenceEventFamily {
     PitchBend,
     Tempo,
     Meter,
+    Patch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -119,7 +120,7 @@ pub struct TrackEvidence {
     pub descriptor_range: ByteRange,
     pub pair_ordinal: u32,
     pub primary_range: ByteRange,
-    pub exact_event_range: ByteRange,
+    pub exact_event_range: Option<ByteRange>,
     pub label_bytes: Vec<u8>,
     pub decoded_event_families: Vec<EvidenceEventFamily>,
     pub decoded_event_count: u64,
@@ -127,6 +128,7 @@ pub struct TrackEvidence {
     /// Optional observed routing evidence. `None` means routing is supplied by
     /// the authenticated profile rather than discovered by the parser.
     pub observed_channel: Option<u8>,
+    pub evidence_complete: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -229,7 +231,7 @@ pub struct TrackExpectation {
     pub key: TrackKey,
     pub descriptor_range: ByteRange,
     pub primary_range: ByteRange,
-    pub exact_event_range: ByteRange,
+    pub exact_event_range: Option<ByteRange>,
     pub expected_label_bytes: Option<Vec<u8>>,
     pub channel_policy: TrackChannelPolicy,
     pub patch_expectations: Vec<PatchExpectation>,
@@ -331,6 +333,7 @@ pub enum ProfileDefinitionError {
         track: TrackKey,
         source_ordinal: u32,
     },
+    IncompleteTrackEvidence(TrackKey),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -416,6 +419,11 @@ fn validate_profile(profile: &CompatibilityProfile) -> Result<(), ProfileDefinit
             }
             if track.channel_policy.key != track.key {
                 return Err(ProfileDefinitionError::DuplicateTrackKey(track.key.clone()));
+            }
+            if track.exact_event_range.is_none() {
+                return Err(ProfileDefinitionError::IncompleteTrackEvidence(
+                    track.key.clone(),
+                ));
             }
             let mut patch_ordinals = HashSet::new();
             for patch in &track.patch_expectations {
@@ -517,6 +525,9 @@ fn assess_profile(
                 .as_ref()
                 .is_some_and(|label| label != &observed_track.label_bytes)
         {
+            return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
+        }
+        if !observed_track.evidence_complete || observed_track.exact_event_range.is_none() {
             return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
         }
         if observed_track

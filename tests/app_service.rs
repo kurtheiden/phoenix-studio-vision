@@ -3,6 +3,9 @@ use phoenix::app_contract::{
     CONTRACT_VERSION,
 };
 use phoenix::app_service::AppService;
+use phoenix::compatibility::EvidenceEventFamily;
+use phoenix::mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventTimingBasis};
+use phoenix::sequence_container::{parse_project_166, TrackAssociations};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -109,6 +112,20 @@ fn unknown_session_is_a_stable_error() {
 }
 
 #[test]
+fn evidence_for_unrecognized_session_is_unavailable_not_fabricated() {
+    let mut service = AppService::new();
+    let path = temp_file(b"not a project");
+    let response = service
+        .inspect_project(request(&path, DiagnosticsLevel::None))
+        .expect("readable input should be assessed");
+    let error = service
+        .profile_evidence(&response.session_id)
+        .expect_err("no parser structure means no fabricated evidence");
+    assert_eq!(error.diagnostic_code, "profile_evidence_unavailable");
+    fs::remove_file(path).ok();
+}
+
+#[test]
 fn source_identity_is_retained_for_future_revalidation() {
     let mut service = AppService::new();
     let path = temp_file(b"identity");
@@ -136,9 +153,99 @@ fn optional_authentic_fixture_preserves_structural_sequence_order() {
     let response = service
         .inspect_project(request(&path, DiagnosticsLevel::Summary))
         .expect("authentic fixture should inspect");
+    let readiness_before = response.project.overall_readiness;
     assert!(!response.sequences.is_empty());
     assert!(response
         .sequences
         .windows(2)
         .all(|pair| pair[0].sequence_id < pair[1].sequence_id));
+    let evidence = service
+        .profile_evidence(&response.session_id)
+        .expect("established parser should produce owned evidence");
+    let bytes = fs::read(&path).expect("fixture bytes");
+    let parsed = parse_project_166(&bytes).expect("fixture parser");
+    let (_, source_size, source_hash) = service
+        .source_identity(&response.session_id)
+        .expect("source identity");
+    assert_eq!(evidence.source_byte_size, source_size);
+    assert_eq!(evidence.source_sha256, source_hash);
+    assert_eq!(evidence.source_sha256.len(), 64);
+    assert_eq!(evidence.parser_profile.as_str(), "descriptor166");
+    assert_eq!(
+        service
+            .get_inspection(&response.session_id)
+            .unwrap()
+            .project
+            .overall_readiness,
+        readiness_before
+    );
+    assert_eq!(evidence.sequences.len(), response.sequences.len());
+    if let Ok(name) = std::str::from_utf8(&evidence.sequences[0].name_bytes) {
+        assert_eq!(name, response.sequences[0].display_name);
+    }
+    let tracks: Vec<_> = evidence
+        .sequences
+        .iter()
+        .flat_map(|sequence| sequence.tracks.iter())
+        .collect();
+    assert!(!tracks.is_empty());
+    assert!(tracks.iter().all(|track| {
+        !track.evidence_complete
+            && track.exact_event_range.is_some()
+            && track.patch_evidence.iter().all(|patch| {
+                patch.decoded_bank_msb.is_none()
+                    && patch.decoded_bank_lsb.is_none()
+                    && track.exact_event_range.is_some_and(|range| {
+                        patch.source_range.start() >= range.start()
+                            && patch.source_range.end_exclusive() <= range.end_exclusive()
+                    })
+            })
+            && track.observed_channel.is_none()
+    }));
+    assert!(tracks.iter().any(|track| !track.patch_evidence.is_empty()));
+    assert!(tracks.iter().any(|track| {
+        track.decoded_event_count > 0 && !track.decoded_event_families.is_empty()
+    }));
+    assert!(tracks.iter().any(|track| {
+        track
+            .decoded_event_families
+            .contains(&EvidenceEventFamily::Patch)
+    }));
+    assert!(tracks
+        .iter()
+        .all(|track| { track.decoded_event_count > 0 || track.decoded_event_families.is_empty() }));
+    let mut compared = false;
+    for (sequence_index, sequence) in parsed.sequences.iter().enumerate() {
+        let TrackAssociations::Ordinal(bindings) = &sequence.track_associations else {
+            continue;
+        };
+        for pair in &sequence.track_pairs {
+            let Ok(bounds) = pair.validated_event_bounds() else {
+                continue;
+            };
+            let Ok(direct) = walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds {
+                    event_range: bounds.event_range.clone(),
+                },
+                MixedEventTimingBasis::default(),
+            ) else {
+                continue;
+            };
+            let track_index = bindings
+                .iter()
+                .position(|binding| binding.pair_ordinal == pair.pair_ordinal)
+                .expect("ordinal pair binding");
+            assert_eq!(
+                evidence.sequences[sequence_index].tracks[track_index].decoded_event_count,
+                direct.logical_event_count() as u64
+            );
+            compared = true;
+            break;
+        }
+        if compared {
+            break;
+        }
+    }
+    assert!(compared, "at least one direct bounded walk should succeed");
 }

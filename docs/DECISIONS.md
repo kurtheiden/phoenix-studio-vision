@@ -835,3 +835,70 @@ trigger Ready and no fallback policy is allowed. Multiple matches are an
 ambiguity error, and export must re-read, re-hash, reparse, and re-match. The
 existing UI0A `ProfileCapability`/readiness DTOs are sufficient; no policy
 internals cross into the app contract.
+
+## 2026-08-19: keep UI0C2 evidence conservative
+
+**Status:** Implemented; profile assessment deferred
+
+AppService stores an owned structural snapshot and can build generic
+`ProfileEvidence` for parsed sessions. It copies raw sequence names, ranges,
+descriptor/pair identities, and source provenance. Because the reusable parser
+does not expose the proof-specific exact event-tail derivation, event ranges,
+decoded families, Patch facts, and channels remain incomplete rather than
+guessed. UI0B readiness and export capability are unchanged.
+
+## 2026-08-19: scope exact event bounds to the validated 166-byte profile
+
+**Status:** Evidence accepted; helper implementation pending
+
+The all-sequence 132-primary census, empty-track controls, and independent
+Bells/Ode observations confirm `ff aa bb cc ff 2f 00` at every established
+166-profile primary payload end. A future parser helper may validate that tail
+and derive payload `+14 .. payload.end - 7` with checked arithmetic. This does
+not generalize to the unsupported 120-byte profile, does not give the walker
+terminal discovery, and does not resolve internal Pressure/Bend run exits.
+
+## 2026-08-19: implement validated Descriptor166 event bounds
+
+**Status:** Implemented; UI0C2C remains pending
+
+The parser now exposes `TrackEventBounds` for a track pair. It checks the
+already-established 14-byte prefix relationship, validates `ff ?? ?? ?? ff 2f
+00` at the payload end, and derives exact half-open event and tail ranges with
+checked arithmetic. Empty event ranges are valid. The containing range remains
+unchanged, and AppService records an exact range without marking evidence
+complete or changing readiness. The helper is not applied to the 120-byte
+profile or used for channel/Patch policy.
+
+## 2026-08-19: keep UI0C2C family inventory factual
+
+**Status:** Implemented; compatibility evidence remains incomplete
+
+AppService reuses the existing bounded mixed-event walker over validated
+Descriptor166 event ranges. It records canonical family presence and logical
+counts, including Patch and its coupled Note as two logical facts, but does not
+populate Patch evidence, channels, readiness, or export capability. A walk
+failure yields no partial inventory.
+
+## 2026-08-19: permit only bounded generic Patch evidence
+
+**Status:** Implemented; bank semantics and routing remain unresolved
+
+Four authentic Patch representations validate a shared bounded semantic core,
+and controlled program changes confirm the direct program byte. AppService may
+therefore record the walker item ordinal, decoded representation range, and
+direct program value from a successful `PatchToNote` walk. Bank fields remain
+opaque, and no channel, translation, readiness, or compatibility policy is
+inferred.
+
+## 2026-08-19: close the UI0C2 evidence adapter milestone
+
+**Status:** Complete; UI0C3 deferred
+
+The accumulated UI0C2A–UI0C2D work now provides the complete conservative
+ProfileEvidence bridge intended for this milestone: exact Descriptor166 bounds,
+bounded-walker family/count inventory, and the audited generic Patch subset.
+`evidence_complete` remains false because it gates exact profile matching, not
+adapter construction. Channel routing, bank semantics, the unsupported
+120-byte profile, authenticated profile migration, registry assessment, and
+export remain intentionally later work.

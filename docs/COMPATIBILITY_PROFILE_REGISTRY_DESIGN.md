@@ -358,3 +358,25 @@ question, not permission to infer missing evidence.
 Implement UI0C1: generic Core-only profile identity, evidence, declarative
 policy, match-result types, and synthetic tests with no authenticated Ode
 constants or AppService wiring.
+
+# Initial UI0C2 status (historical baseline)
+
+The generic service adapter may now build owned evidence from parsed sessions,
+but it does not assess profiles or alter readiness. Since the parser exposes a
+containing track range rather than a reusable exact event range, incomplete
+track evidence must remain non-matchable until a safe range seam exists.
+
+# Exact-range seam status (historical baseline)
+
+Existing cross-track evidence confirms the seven-byte terminal grammar for the
+authenticated 166-byte profile, but the parser API still exposes only a
+containing range. A future validated bounds helper must own tail validation and
+checked arithmetic before UI0C2 marks evidence complete; no broader-format rule
+is implied.
+
+# UI0C2 completion status
+
+The later evidence slices established the reusable Descriptor166 bounds and
+bounded-walker facts, so the adapter handoff is complete. Evidence remains
+non-matchable until a later phase supplies authenticated routing and complete
+profile policy; this is intentional registry isolation, not an adapter gap.

@@ -63,6 +63,30 @@ fn experiment_007_derives_bells_and_ode_bounds_without_production_offsets() {
 }
 
 #[test]
+fn experiment_007_descriptor166_track_bounds_validate_for_ordinal_pairs() {
+    let bytes = fs::read(BASELINE).expect("authentic Experiment 007 fixture should be available");
+    let project = parse_project_166(&bytes).unwrap();
+    let mut checked = 0;
+    for sequence in &project.sequences {
+        if !matches!(sequence.track_associations, TrackAssociations::Ordinal(_)) {
+            continue;
+        }
+        for pair in &sequence.track_pairs {
+            let bounds = sequence
+                .validated_track_event_bounds(pair.pair_ordinal)
+                .expect("ordinal Descriptor166 track should have validated bounds");
+            assert_eq!(bounds.event_range.start, pair.candidate_event_start);
+            assert_eq!(bounds.event_range.end, bounds.tail_range.start);
+            assert_eq!(bounds.tail_range.end, bounds.payload_range.end);
+            assert!(bounds.event_range.start >= pair.event_containing_range.start);
+            assert!(bounds.event_range.end <= pair.event_containing_range.end);
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}
+
+#[test]
 fn experiment_007_preserves_sequence_i_mismatch_without_guessing() {
     let bytes = fs::read(BASELINE).expect("authentic Experiment 007 fixture should be available");
     let project = parse_project_166(&bytes).unwrap();

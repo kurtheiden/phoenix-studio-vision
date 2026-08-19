@@ -10,8 +10,16 @@ use crate::app_contract::{
     ReadinessReason, ReadinessReasonCode, SequenceId, SequenceSummary, SessionId, Warning,
     WarningScope, WarningSeverity, CONTRACT_VERSION,
 };
+use crate::compatibility::{
+    ByteRange, EvidenceEventFamily, ParserProfileId, PatchEvidence, ProfileEvidence,
+    SequenceEvidence, TrackEvidence,
+};
 use crate::identification::{identify, read_finder_metadata};
 use crate::inspection::inspect;
+use crate::mixed_event::{
+    walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+    MixedEventTimingBasis,
+};
 use crate::sequence_container::{parse_project_166, TrackAssociations};
 use std::collections::HashMap;
 use std::fs;
@@ -24,6 +32,39 @@ struct Session {
     source_sha256: String,
     response: InspectProjectResponse,
     diagnostics: Diagnostics,
+    structure: Option<InspectedProjectStructure>,
+    #[allow(dead_code)]
+    sequence_ordinals: HashMap<SequenceId, u32>,
+}
+
+#[derive(Clone)]
+struct InspectedProjectStructure {
+    parser_profile: ParserProfileId,
+    sequences: Vec<InspectedSequenceStructure>,
+}
+
+#[derive(Clone)]
+struct InspectedSequenceStructure {
+    structural_ordinal: u32,
+    sequence_range: ByteRange,
+    name_bytes: Vec<u8>,
+    name_range: ByteRange,
+    descriptor_count: u32,
+    pair_count: u32,
+    tracks: Vec<InspectedTrackStructure>,
+}
+
+#[derive(Clone)]
+struct InspectedTrackStructure {
+    descriptor_ordinal: u32,
+    descriptor_range: ByteRange,
+    pair_ordinal: u32,
+    primary_range: ByteRange,
+    exact_event_range: Option<ByteRange>,
+    label_bytes: Vec<u8>,
+    decoded_event_families: Vec<EvidenceEventFamily>,
+    decoded_event_count: u64,
+    patch_evidence: Vec<PatchEvidence>,
 }
 
 /// Synchronous, owned service state for one or more inspection sessions.
@@ -101,11 +142,13 @@ impl AppService {
         let finder = identify(read_finder_metadata(&inspection.full_path));
         let finder_recognized = !finder.confidence.to_string().eq("Unknown");
         let session_id = self.allocate_session_id();
-        let (project, sequences, warnings, diagnostics) = match parse_project_166(&bytes) {
+        let (project, sequences, warnings, diagnostics, structure) = match parse_project_166(&bytes)
+        {
             Ok(parsed) => self.build_parsed_result(
                 &inspection.filename,
                 inspection.size,
                 &finder,
+                &bytes,
                 parsed.sequences,
                 &session_id,
                 request.diagnostics_level,
@@ -133,6 +176,12 @@ impl AppService {
             warnings,
             diagnostics_available: true,
         };
+        let sequence_ordinals = response
+            .sequences
+            .iter()
+            .enumerate()
+            .map(|(index, summary)| (summary.sequence_id.clone(), index as u32))
+            .collect();
         let mut diagnostics = diagnostics;
         diagnostics.source_sha256 = Some(inspection.sha256.clone());
         self.sessions.insert(
@@ -143,6 +192,8 @@ impl AppService {
                 source_sha256: inspection.sha256,
                 response: response.clone(),
                 diagnostics,
+                structure,
+                sequence_ordinals,
             },
         );
         Ok(response)
@@ -198,17 +249,104 @@ impl AppService {
         ))
     }
 
+    /// Builds Core-only compatibility evidence from the retained structural
+    /// snapshot. This never performs profile matching or changes readiness.
+    #[allow(clippy::result_large_err)]
+    pub fn profile_evidence(&self, session_id: &SessionId) -> Result<ProfileEvidence, AppError> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| self.unknown_session(AppOperation::GetDiagnostics))?;
+        let Some(structure) = &session.structure else {
+            return Err(self.error(
+                AppErrorCategory::InternalError,
+                "Structural compatibility evidence is unavailable for this session.",
+                "the inspected input did not produce an established project structure".into(),
+                AppOperation::GetDiagnostics,
+                "profile_evidence_unavailable",
+                Some(session_id.clone()),
+                None,
+            ));
+        };
+        let source_byte_size = u64::try_from(session.source_bytes.len()).map_err(|_| {
+            self.error(
+                AppErrorCategory::InternalError,
+                "Phoenix could not represent the inspected source size.",
+                "source byte length exceeds compatibility evidence range".into(),
+                AppOperation::GetDiagnostics,
+                "profile_evidence_size_overflow",
+                Some(session_id.clone()),
+                None,
+            )
+        })?;
+        Ok(ProfileEvidence {
+            source_sha256: session.source_sha256.clone(),
+            source_byte_size,
+            parser_profile: structure.parser_profile.clone(),
+            sequences: structure
+                .sequences
+                .iter()
+                .map(|sequence| SequenceEvidence {
+                    structural_ordinal: sequence.structural_ordinal,
+                    sequence_range: sequence.sequence_range,
+                    name_bytes: sequence.name_bytes.clone(),
+                    name_range: sequence.name_range,
+                    descriptor_count: sequence.descriptor_count,
+                    pair_count: sequence.pair_count,
+                    tracks: sequence
+                        .tracks
+                        .iter()
+                        .map(|track| TrackEvidence {
+                            descriptor_ordinal: track.descriptor_ordinal,
+                            descriptor_range: track.descriptor_range,
+                            pair_ordinal: track.pair_ordinal,
+                            primary_range: track.primary_range,
+                            exact_event_range: track.exact_event_range,
+                            label_bytes: track.label_bytes.clone(),
+                            decoded_event_families: track.decoded_event_families.clone(),
+                            decoded_event_count: track.decoded_event_count,
+                            patch_evidence: track.patch_evidence.clone(),
+                            observed_channel: None,
+                            evidence_complete: false,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
+    }
+
+    /// Core-only mapping used later when a registry assesses one sequence.
+    #[allow(clippy::result_large_err)]
+    #[allow(dead_code)]
+    pub(crate) fn sequence_ordinal_for_id(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<u32, AppError> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| self.unknown_session(AppOperation::GetDiagnostics))?;
+        session
+            .sequence_ordinals
+            .get(sequence_id)
+            .copied()
+            .ok_or_else(|| self.unknown_sequence(session_id, sequence_id))
+    }
+
     fn allocate_session_id(&mut self) -> SessionId {
         let value = format!("session-{:08}", self.next_session);
         self.next_session = self.next_session.saturating_add(1);
         SessionId::new(value)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_parsed_result<'a>(
         &self,
         filename: &str,
         size: u64,
         finder: &crate::identification::Identification,
+        bytes: &'a [u8],
         sequences: Vec<crate::sequence_container::SequenceContainer<'a>>,
         session_id: &SessionId,
         _level: DiagnosticsLevel,
@@ -217,10 +355,15 @@ impl AppService {
         Vec<SequenceSummary>,
         Vec<Warning>,
         Diagnostics,
+        Option<InspectedProjectStructure>,
     ) {
         let mut summaries = Vec::with_capacity(sequences.len());
         let mut warnings = Vec::new();
         let mut technical_errors = Vec::new();
+        let structure = build_structure_snapshot(&sequences, bytes);
+        if structure.is_none() {
+            technical_errors.push("structural evidence conversion was incomplete".into());
+        }
         for (index, sequence) in sequences.iter().enumerate() {
             let name = sequence
                 .sequence_name
@@ -296,7 +439,7 @@ impl AppService {
             technical_errors,
             export_report: None,
         };
-        (project, summaries, warnings, diagnostics)
+        (project, summaries, warnings, diagnostics, structure)
     }
 
     fn build_profile_failure(
@@ -311,6 +454,7 @@ impl AppService {
         Vec<SequenceSummary>,
         Vec<Warning>,
         Diagnostics,
+        Option<InspectedProjectStructure>,
     ) {
         self.build_failure_result(
             filename,
@@ -334,6 +478,7 @@ impl AppService {
         Vec<SequenceSummary>,
         Vec<Warning>,
         Diagnostics,
+        Option<InspectedProjectStructure>,
     ) {
         self.build_failure_result(
             filename,
@@ -358,6 +503,7 @@ impl AppService {
         Vec<SequenceSummary>,
         Vec<Warning>,
         Diagnostics,
+        Option<InspectedProjectStructure>,
     ) {
         let message = if recognized {
             "Phoenix recognized the file metadata, but its established project profile could not parse it."
@@ -402,7 +548,7 @@ impl AppService {
         };
         let mut reason = ReadinessReason::new(reason_code, message);
         reason.diagnostic_ref = Some("inspection-parse".into());
-        (project, Vec::new(), vec![warning], diagnostics)
+        (project, Vec::new(), vec![warning], diagnostics, None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -440,6 +586,170 @@ impl AppService {
             None,
         )
     }
+
+    #[allow(dead_code)]
+    fn unknown_sequence(&self, session_id: &SessionId, sequence_id: &SequenceId) -> AppError {
+        self.error(
+            AppErrorCategory::InternalError,
+            "The selected sequence is not available in this inspection session.",
+            "no sequence exists for the supplied session and sequence identifiers".into(),
+            AppOperation::GetDiagnostics,
+            "unknown_sequence",
+            Some(session_id.clone()),
+            Some(sequence_id.clone()),
+        )
+    }
+}
+
+fn build_structure_snapshot<'a>(
+    sequences: &[crate::sequence_container::SequenceContainer<'a>],
+    bytes: &[u8],
+) -> Option<InspectedProjectStructure> {
+    let mut snapshots = Vec::with_capacity(sequences.len());
+    for (index, sequence) in sequences.iter().enumerate() {
+        let sequence_range = owned_range(&sequence.sequence_range)?;
+        let name_range = owned_range(&sequence.sequence_name.bytes.range)?;
+        let mut tracks = Vec::new();
+        if let TrackAssociations::Ordinal(bindings) = &sequence.track_associations {
+            for binding in bindings {
+                let descriptor = sequence
+                    .descriptors
+                    .iter()
+                    .find(|descriptor| descriptor.ordinal == binding.descriptor_ordinal)?;
+                let pair = sequence
+                    .track_pairs
+                    .iter()
+                    .find(|pair| pair.pair_ordinal == binding.pair_ordinal)?;
+                let (
+                    exact_event_range,
+                    decoded_event_families,
+                    decoded_event_count,
+                    patch_evidence,
+                ) = inventory_track(bytes, pair);
+                tracks.push(InspectedTrackStructure {
+                    descriptor_ordinal: u32::try_from(binding.descriptor_ordinal).ok()?,
+                    descriptor_range: owned_range(&descriptor.range)?,
+                    pair_ordinal: u32::try_from(binding.pair_ordinal).ok()?,
+                    primary_range: owned_range(&pair.primary.record_range)?,
+                    exact_event_range,
+                    label_bytes: descriptor
+                        .label
+                        .as_ref()
+                        .map(|label| label.bytes.to_vec())
+                        .unwrap_or_default(),
+                    decoded_event_families,
+                    decoded_event_count,
+                    patch_evidence,
+                });
+            }
+        }
+        snapshots.push(InspectedSequenceStructure {
+            structural_ordinal: u32::try_from(index).ok()?,
+            sequence_range,
+            name_bytes: sequence.sequence_name.bytes.bytes.to_vec(),
+            name_range,
+            descriptor_count: u32::from(sequence.descriptor_count.value),
+            pair_count: u32::try_from(sequence.track_pairs.len()).ok()?,
+            tracks,
+        });
+    }
+    Some(InspectedProjectStructure {
+        parser_profile: ParserProfileId::new("descriptor166"),
+        sequences: snapshots,
+    })
+}
+
+fn inventory_track(
+    bytes: &[u8],
+    pair: &crate::sequence_container::TrackRecordPair<'_>,
+) -> (
+    Option<ByteRange>,
+    Vec<EvidenceEventFamily>,
+    u64,
+    Vec<PatchEvidence>,
+) {
+    let Ok(bounds) = pair.validated_event_bounds() else {
+        return (None, Vec::new(), 0, Vec::new());
+    };
+    let exact_event_range = owned_range(&bounds.event_range);
+    let Ok(walk) = walk_bounded_mixed_events(
+        bytes,
+        MixedEventBounds {
+            event_range: bounds.event_range.clone(),
+        },
+        MixedEventTimingBasis::default(),
+    ) else {
+        return (exact_event_range, Vec::new(), 0, Vec::new());
+    };
+    if walk.consumed_range != bounds.event_range {
+        return (exact_event_range, Vec::new(), 0, Vec::new());
+    }
+
+    let (families, count, patch_evidence) = inventory_families(&walk);
+    (exact_event_range, families, count, patch_evidence)
+}
+
+fn inventory_families(
+    walk: &crate::mixed_event::MixedEventWalk<'_>,
+) -> (Vec<EvidenceEventFamily>, u64, Vec<PatchEvidence>) {
+    let mut present = [false; 5];
+    let mut patch_evidence = Vec::new();
+    for (item_index, item) in walk.items.iter().enumerate() {
+        match item {
+            MixedEventItem::PatchToNote(transition) => {
+                present[0] = true;
+                present[1] = true;
+                if let (Ok(source_ordinal), Some(source_range)) = (
+                    u32::try_from(item_index),
+                    owned_range(&transition.patch.representation_range),
+                ) {
+                    patch_evidence.push(PatchEvidence {
+                        source_ordinal,
+                        source_range,
+                        decoded_program: transition.patch.program_change.value,
+                        decoded_bank_msb: None,
+                        decoded_bank_lsb: None,
+                    });
+                }
+            }
+            MixedEventItem::Event(positioned) => match &positioned.event {
+                MixedEventKind::Note(_) | MixedEventKind::ContextMediatedNote(_) => {
+                    present[1] = true;
+                }
+                MixedEventKind::Controller(_) => present[2] = true,
+                MixedEventKind::ChannelPressure { .. } => present[3] = true,
+                MixedEventKind::PitchBend { .. } => present[4] = true,
+            },
+        }
+    }
+    let canonical = [
+        EvidenceEventFamily::Patch,
+        EvidenceEventFamily::Note,
+        EvidenceEventFamily::Controller,
+        EvidenceEventFamily::ChannelPressure,
+        EvidenceEventFamily::PitchBend,
+    ];
+    let families = canonical
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, family)| {
+            present
+                .get(index)
+                .copied()
+                .unwrap_or(false)
+                .then_some(family)
+        })
+        .collect();
+    let count = u64::try_from(walk.logical_event_count()).unwrap_or(0);
+    (families, count, patch_evidence)
+}
+
+fn owned_range(range: &std::ops::Range<usize>) -> Option<ByteRange> {
+    ByteRange::new(
+        u64::try_from(range.start).ok()?,
+        u64::try_from(range.end).ok()?,
+    )
+    .ok()
 }
 
 fn identification_summary(
@@ -473,5 +783,40 @@ fn overall_readiness(sequences: &[SequenceSummary]) -> Readiness {
         Readiness::Unsupported
     } else {
         Readiness::Unknown
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_walk_has_empty_inventory() {
+        let walk = walk_bounded_mixed_events(
+            &[],
+            MixedEventBounds { event_range: 0..0 },
+            MixedEventTimingBasis::default(),
+        )
+        .unwrap();
+        assert_eq!(inventory_families(&walk), (Vec::new(), 0, Vec::new()));
+    }
+
+    #[test]
+    fn repeated_notes_count_logical_events_once_per_occurrence() {
+        let bytes = [
+            0x00, 0x90, 0x3c, 0x40, 0x20, 0x01, 0x00, 0x90, 0x3d, 0x41, 0x20, 0x01,
+        ];
+        let walk = walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds {
+                event_range: 0..bytes.len(),
+            },
+            MixedEventTimingBasis::default(),
+        )
+        .unwrap();
+        let (families, count, patch_evidence) = inventory_families(&walk);
+        assert_eq!(families, vec![EvidenceEventFamily::Note]);
+        assert_eq!(count, 2);
+        assert!(patch_evidence.is_empty());
     }
 }

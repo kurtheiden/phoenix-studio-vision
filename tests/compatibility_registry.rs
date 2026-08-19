@@ -21,12 +21,13 @@ fn track(observed_channel: Option<u8>, patches: Vec<PatchEvidence>) -> TrackEvid
         descriptor_range: range(100, 200),
         pair_ordinal: 0,
         primary_range: range(300, 400),
-        exact_event_range: range(320, 390),
+        exact_event_range: Some(range(320, 390)),
         label_bytes: b"Piano".to_vec(),
         decoded_event_families: vec![EvidenceEventFamily::Note],
         decoded_event_count: 2,
         patch_evidence: patches,
         observed_channel,
+        evidence_complete: true,
     }
 }
 
@@ -77,7 +78,7 @@ fn expectation(patches: Vec<PatchExpectation>) -> TrackExpectation {
         key: key.clone(),
         descriptor_range: range(100, 200),
         primary_range: range(300, 400),
-        exact_event_range: range(320, 390),
+        exact_event_range: Some(range(320, 390)),
         expected_label_bytes: Some(b"Piano".to_vec()),
         channel_policy: TrackChannelPolicy::new(key, 1).expect("valid channel"),
         patch_expectations: patches,

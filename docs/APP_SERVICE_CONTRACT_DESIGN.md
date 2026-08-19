@@ -465,3 +465,17 @@ the existing `ProfileCapability` and validated readiness through the app
 contract. Channel assignments, Patch translations, ranges, and resolved policy
 handles remain private. A mismatch never falls back to a guessed policy, and
 export-time revalidation is mandatory.
+
+# UI0C2 evidence boundary
+
+The application service may retain an internal structural snapshot and produce
+generic compatibility evidence for Core. That evidence is not an app DTO,
+does not expose offsets or channels to the frontend, and remains separate from
+registry assessment and readiness.
+
+# UI0C2 completion status
+
+The evidence bridge is now complete for its established scope. Descriptor166
+validated bounds, deterministic bounded-walker inventory, and the conservative
+generic Patch observation subset are available to Core; routing, bank policy,
+profile assessment, and export remain separate future operations.

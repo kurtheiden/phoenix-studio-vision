@@ -173,6 +173,54 @@ pub struct TrackRecordPair<'a> {
     pub event_containing_range: Range<usize>,
 }
 
+/// Exact half-open bounds for a Descriptor166 track payload.
+///
+/// The event range excludes the validated seven-byte terminal structure. This
+/// helper is intentionally scoped to the established Descriptor166 grammar;
+/// it is not a format-wide Studio Vision terminator rule.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackEventBounds {
+    pub primary_range: Range<usize>,
+    pub payload_range: Range<usize>,
+    pub event_range: Range<usize>,
+    pub tail_range: Range<usize>,
+}
+
+/// Failures while deriving exact Descriptor166 track-event bounds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TrackEventBoundsError {
+    PairNotFound {
+        pair_ordinal: usize,
+        pair_count: usize,
+    },
+    MalformedBounds {
+        detail: &'static str,
+    },
+    PayloadTooShort {
+        payload_range: Range<usize>,
+        required: usize,
+    },
+    ArithmeticOverflow {
+        detail: &'static str,
+    },
+    EventStartAfterEnd {
+        event_start: usize,
+        event_end: usize,
+    },
+    InvalidTerminalGrammar {
+        tail_range: Range<usize>,
+        observed: [u8; 7],
+    },
+}
+
+impl fmt::Display for TrackEventBoundsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl std::error::Error for TrackEventBoundsError {}
+
 /// Evidence status for descriptor-to-record-pair association.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TrackAssociations {
@@ -215,6 +263,102 @@ pub struct SequenceContainer<'a> {
 impl SequenceContainer<'_> {
     pub fn track_descriptors(&self) -> &[SequenceDescriptor<'_>] {
         &self.descriptors[2..]
+    }
+
+    /// Derives exact event bounds for one ordinal-associated Descriptor166
+    /// track pair after validating its terminal seven-byte grammar.
+    pub fn validated_track_event_bounds(
+        &self,
+        pair_ordinal: usize,
+    ) -> Result<TrackEventBounds, TrackEventBoundsError> {
+        let pair =
+            self.track_pairs
+                .get(pair_ordinal)
+                .ok_or(TrackEventBoundsError::PairNotFound {
+                    pair_ordinal,
+                    pair_count: self.track_pairs.len(),
+                })?;
+        pair.validated_event_bounds()
+    }
+}
+
+impl TrackRecordPair<'_> {
+    /// Derives exact event bounds from already parsed Descriptor166 facts.
+    ///
+    /// The payload prefix and seven-byte suffix are validated in place; no
+    /// forward or backward heuristic search is performed.
+    pub fn validated_event_bounds(&self) -> Result<TrackEventBounds, TrackEventBoundsError> {
+        let primary_range = self.primary.record_range.clone();
+        let payload_range = self.primary.payload.range.clone();
+        if payload_range.start < primary_range.start
+            || payload_range.end > primary_range.end
+            || payload_range.start > payload_range.end
+            || self.event_containing_range.start != self.candidate_event_start
+            || self.event_containing_range.end != payload_range.end
+        {
+            return Err(TrackEventBoundsError::MalformedBounds {
+                detail: "parsed payload and containing bounds are inconsistent",
+            });
+        }
+
+        let expected_start = payload_range
+            .start
+            .checked_add(PRIMARY_EVENT_OFFSET)
+            .ok_or(TrackEventBoundsError::ArithmeticOverflow {
+                detail: "event start",
+            })?;
+        if expected_start != self.candidate_event_start {
+            return Err(TrackEventBoundsError::MalformedBounds {
+                detail: "candidate event start does not match the parsed payload prefix",
+            });
+        }
+
+        let payload_length = payload_range.end - payload_range.start;
+        if payload_length < 7 {
+            return Err(TrackEventBoundsError::PayloadTooShort {
+                payload_range,
+                required: 7,
+            });
+        }
+        let event_end =
+            payload_range
+                .end
+                .checked_sub(7)
+                .ok_or(TrackEventBoundsError::ArithmeticOverflow {
+                    detail: "terminal tail",
+                })?;
+        if self.candidate_event_start > event_end {
+            return Err(TrackEventBoundsError::EventStartAfterEnd {
+                event_start: self.candidate_event_start,
+                event_end,
+            });
+        }
+        let tail_range = event_end..payload_range.end;
+        let tail = self
+            .primary
+            .payload
+            .bytes
+            .get(tail_range.start - payload_range.start..tail_range.end - payload_range.start)
+            .ok_or(TrackEventBoundsError::MalformedBounds {
+                detail: "terminal tail is outside the parsed payload",
+            })?;
+        let observed: [u8; 7] =
+            tail.try_into()
+                .map_err(|_| TrackEventBoundsError::MalformedBounds {
+                    detail: "terminal tail is not seven bytes",
+                })?;
+        if observed[0] != 0xff || observed[4] != 0xff || observed[5] != 0x2f || observed[6] != 0 {
+            return Err(TrackEventBoundsError::InvalidTerminalGrammar {
+                tail_range,
+                observed,
+            });
+        }
+        Ok(TrackEventBounds {
+            primary_range,
+            payload_range,
+            event_range: self.candidate_event_start..event_end,
+            tail_range,
+        })
     }
 }
 
@@ -818,6 +962,15 @@ mod tests {
     }
 
     fn synthetic_project(track_descriptors: usize, track_pairs: usize, name: &[u8]) -> Vec<u8> {
+        synthetic_project_with_track_payload(track_descriptors, track_pairs, name, &[0; 14])
+    }
+
+    fn synthetic_project_with_track_payload(
+        track_descriptors: usize,
+        track_pairs: usize,
+        name: &[u8],
+        track_payload: &[u8],
+    ) -> Vec<u8> {
         let count = track_descriptors + 2;
         let sequence_start = ROOT_HEADER_LENGTH;
         let type_one_payload_length = count * DESCRIPTOR_STRIDE + 172;
@@ -845,7 +998,7 @@ mod tests {
         push_record(&mut bytes, PRIMARY_TYPE, &[0; 21]);
         push_record(&mut bytes, SECONDARY_TYPE, &[]);
         for _ in 0..track_pairs {
-            push_record(&mut bytes, PRIMARY_TYPE, &[0; 14]);
+            push_record(&mut bytes, PRIMARY_TYPE, track_payload);
             push_record(&mut bytes, SECONDARY_TYPE, &[]);
         }
         push_record(&mut bytes, TERMINAL_TYPE, &[]);
@@ -1095,6 +1248,108 @@ mod tests {
                 },
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn validates_nonempty_and_empty_descriptor166_event_bounds() {
+        let mut payload = vec![0x11; PRIMARY_EVENT_OFFSET];
+        payload.extend_from_slice(&[0xa1, 0xa2, 0xa3]);
+        payload.extend_from_slice(&[0xff, 0x01, 0x02, 0x03, 0xff, 0x2f, 0x00]);
+        let bytes = synthetic_project_with_track_payload(1, 1, b"bounds", &payload);
+        let parsed = parse_project_166(&bytes).unwrap();
+        let bounds = parsed.sequences[0].validated_track_event_bounds(0).unwrap();
+        assert_eq!(bounds.event_range.end - bounds.event_range.start, 3);
+        assert_eq!(bounds.event_range.end, bounds.tail_range.start);
+        assert_eq!(bounds.tail_range.end, bounds.payload_range.end);
+        assert!(
+            bounds.event_range.start
+                >= parsed.sequences[0].track_pairs[0]
+                    .event_containing_range
+                    .start
+        );
+        assert!(
+            bounds.event_range.end
+                <= parsed.sequences[0].track_pairs[0]
+                    .event_containing_range
+                    .end
+        );
+
+        let mut empty_payload = vec![0x11; PRIMARY_EVENT_OFFSET];
+        empty_payload.extend_from_slice(&[0xff, 0xfe, 0xfd, 0xfc, 0xff, 0x2f, 0x00]);
+        let empty_bytes = synthetic_project_with_track_payload(1, 1, b"empty", &empty_payload);
+        let empty = parse_project_166(&empty_bytes).unwrap();
+        let empty_bounds = empty.sequences[0].validated_track_event_bounds(0).unwrap();
+        assert_eq!(empty_bounds.event_range.start, empty_bounds.event_range.end);
+    }
+
+    #[test]
+    fn accepts_opaque_middle_tail_bytes_and_rejects_fixed_grammar_bytes() {
+        for middle in [[0, 0, 0], [1, 2, 3], [0xff, 0x00, 0x80]] {
+            let mut payload = vec![0x11; PRIMARY_EVENT_OFFSET];
+            payload.extend_from_slice(&[0xaa, 0xbb]);
+            payload.push(0xff);
+            payload.extend_from_slice(&middle);
+            payload.extend_from_slice(&[0xff, 0x2f, 0x00]);
+            let bytes = synthetic_project_with_track_payload(1, 1, b"opaque", &payload);
+            let parsed = parse_project_166(&bytes).unwrap();
+            assert!(parsed.sequences[0].validated_track_event_bounds(0).is_ok());
+        }
+
+        for index in [0_usize, 4, 5, 6] {
+            let mut payload = vec![0x11; PRIMARY_EVENT_OFFSET];
+            payload.extend_from_slice(&[0xff, 0, 0, 0, 0xff, 0x2f, 0]);
+            payload[PRIMARY_EVENT_OFFSET + index] ^= 1;
+            let bytes = synthetic_project_with_track_payload(1, 1, b"invalid", &payload);
+            let parsed = parse_project_166(&bytes).unwrap();
+            assert!(matches!(
+                parsed.sequences[0].validated_track_event_bounds(0),
+                Err(TrackEventBoundsError::InvalidTerminalGrammar { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn exact_bounds_do_not_search_for_an_earlier_terminal_shape() {
+        let mut payload = vec![0x11; PRIMARY_EVENT_OFFSET];
+        payload.extend_from_slice(&[0xff, 0xaa, 0xbb, 0xcc, 0xff, 0x2f, 0x00]);
+        payload.extend_from_slice(&[0x21, 0x22]);
+        payload.extend_from_slice(&[0xff, 0x01, 0x02, 0x03, 0xff, 0x2f, 0x00]);
+        let bytes = synthetic_project_with_track_payload(1, 1, b"terminal", &payload);
+        let parsed = parse_project_166(&bytes).unwrap();
+        let bounds = parsed.sequences[0].validated_track_event_bounds(0).unwrap();
+        assert_eq!(bounds.event_range.end, bounds.tail_range.start);
+        assert_eq!(
+            bounds.event_range.end - bounds.event_range.start,
+            9,
+            "the earlier terminal-shaped bytes remain event-region bytes"
+        );
+    }
+
+    #[test]
+    fn typed_bounds_errors_cover_pair_and_end_failures() {
+        let bytes = synthetic_project(1, 1, b"errors");
+        let parsed = parse_project_166(&bytes).unwrap();
+        assert!(matches!(
+            parsed.sequences[0].validated_track_event_bounds(1),
+            Err(TrackEventBoundsError::PairNotFound {
+                pair_ordinal: 1,
+                pair_count: 1
+            })
+        ));
+        assert!(matches!(
+            parsed.sequences[0].validated_track_event_bounds(0),
+            Err(TrackEventBoundsError::EventStartAfterEnd { .. })
+        ));
+
+        let mut short_pair = parsed.sequences[0].track_pairs[0].clone();
+        let payload_start = short_pair.primary.payload.range.start;
+        let short_end = payload_start + 6;
+        short_pair.primary.payload = located_bytes(&bytes, payload_start..short_end);
+        short_pair.event_containing_range = short_pair.candidate_event_start..short_end;
+        assert!(matches!(
+            short_pair.validated_event_bounds(),
+            Err(TrackEventBoundsError::PayloadTooShort { required: 7, .. })
         ));
     }
 }

@@ -139,6 +139,14 @@ UI0B adds no FFI, serialization, UI, export writing, compatibility-profile
 registry, channel derivation, event walking, or CLI behavior. It contains no
 authenticated Ode constants.
 
+# UI0C2 status
+
+The accumulated ProfileEvidence adapter extends this inspection snapshot with
+validated Descriptor166 event bounds, bounded-walker family/count inventory,
+and only the separately audited generic Patch observations. UI0B readiness and
+export capability remain unchanged; compatibility-registry assessment is still
+deferred.
+
 # UI0B gate
 
 The implementation provides path inspection, owned sessions and DTOs,
@@ -156,3 +164,31 @@ UI0C should add registry assessment after generic parsing while preserving the
 current conservative UI0B result for no-match and rejected profiles. Only a
 complete exact match may change a sequence to Ready; the frontend must remain
 unaware of profile internals.
+
+# UI0C2 evidence adapter
+
+Parsed sessions retain a private structural snapshot and expose Core-only
+`ProfileEvidence`. Raw name/range and descriptor/pair facts are copied exactly;
+channels, Patch facts, decoded families, and exact event ranges remain absent
+where generic parser evidence is not established. This does not call the
+registry or change UI0B readiness.
+
+## UI0C2B exact bounds
+
+For Descriptor166 sessions, the structural snapshot records an exact event range
+only after the parser validates the terminal seven-byte grammar. A bounds
+failure leaves that field unavailable. Readiness, export capability, decoded
+families, Patch evidence, and observed channels are unchanged.
+
+## UI0C2D Patch evidence
+
+The shared walk also supplies bounded Patch observations. AppService preserves
+their source ranges and direct program bytes with deterministic ordinals, while
+leaving bank fields, routing, readiness, and export capability conservative.
+
+## UI0C2C family inventory
+
+AppService reuses the bounded mixed-event walker over validated Descriptor166
+ranges. It records canonical family presence and logical counts while retaining
+`patch_evidence` empty, `observed_channel` unset, conservative readiness, and no
+export capability.
