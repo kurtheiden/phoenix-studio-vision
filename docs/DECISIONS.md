@@ -778,6 +778,26 @@ arbitrary projects remain inspectable but receive no enabled Export action.
 Authenticated offsets/channels never enter Swift or generic parser modules.
 General channel derivation is not a prerequisite for the shell architecture.
 
+## 2026-08-19: define UI0 as an owned versioned Core service contract
+
+**Status:** Designed; implementation deferred
+
+Use a session-scoped opaque Core handle and session-scoped opaque SequenceId;
+never expose offsets, borrowed parser values, or names as identity. Return owned
+project/sequence summaries, four-state readiness plus machine reason codes,
+warnings, on-demand diagnostics, and transactional export reports.
+
+For the first ABI, keep Rust calls synchronous and run them off the Swift main
+actor. Prefer JSON payloads over a tiny C ABI with Rust-owned length-delimited
+response buffers and an explicit free function; implementation may add a JSON
+serialization dependency only after separate approval. Swift passes authorized
+POSIX paths while security-scoped access is active; Core owns collision checks
+and final atomic output writing.
+
+Core alone matches explicit compatibility profiles and selects channel/Patch
+policy. Arbitrary projects remain inspectable but do not receive Export. All
+processing is local and diagnostics never expose arbitrary raw bytes.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

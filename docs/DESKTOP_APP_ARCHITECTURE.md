@@ -78,6 +78,11 @@ Patch data, serializes MIDI, validates export completeness, or contains an Ode
 hash/range/channel constant. It must render Core results, not independently
 recalculate them.
 
+UI0 formalizes this boundary as an owned, versioned application-service
+contract: session-scoped opaque project/sequence IDs, readiness/reason codes,
+diagnostics, compatibility-profile labels, export reports, and categorized
+errors. The frontend receives no borrowed parser data.
+
 # Missing app-facing API
 
 ## Already available
@@ -358,6 +363,10 @@ bundle, CLI behavior, or production code.
    details/copying.
 6. **UI5 — hardening:** cancellation behavior, VoiceOver/keyboard/contrast QA,
    signing, sandbox, notarization, packaging, and manual DAW acceptance.
+
+UI0's contract design is recorded separately in
+`docs/APP_SERVICE_CONTRACT_DESIGN.md`; its first implementation slice is owned
+DTOs before transport or Swift code.
 
 # Strategic implementation gate
 

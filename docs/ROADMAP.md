@@ -255,9 +255,12 @@ committed or specified.
       over a versioned Phoenix Core application-service boundary, with one-file
       inspection and export restricted to exact validated compatibility
       profiles.
-- [ ] Design and implement UI0: owned app-facing Core DTOs, readiness/errors,
-      compatibility-profile isolation, cancellation, and sandbox-safe I/O
-      ownership before creating the desktop shell.
+- [x] Design UI0's owned/versioned Core service contract: session/sequence
+      identities, readiness/reason codes, diagnostics, compatibility-profile
+      isolation, export request/report, errors, JSON-over-C ABI direction,
+      cancellation/progress seam, and sandbox-safe path ownership.
+- [ ] Implement UI0A: owned app-facing Core DTOs and deterministic contract
+      tests before creating the desktop shell or FFI.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
