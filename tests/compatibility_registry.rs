@@ -6,12 +6,17 @@ fn range(start: u64, end: u64) -> ByteRange {
 }
 
 fn patch(program: u8, bank: Option<(u8, u8)>) -> PatchEvidence {
+    let (msb, lsb) = bank.map_or((None, None), |(msb, lsb)| (Some(msb), Some(lsb)));
+    patch_fields(program, msb, lsb)
+}
+
+fn patch_fields(program: u8, msb: Option<u8>, lsb: Option<u8>) -> PatchEvidence {
     PatchEvidence {
         source_ordinal: 4,
         source_range: range(40, 48),
         decoded_program: program,
-        decoded_bank_msb: bank.map(|value| value.0),
-        decoded_bank_lsb: bank.map(|value| value.1),
+        decoded_bank_msb: msb,
+        decoded_bank_lsb: lsb,
     }
 }
 
@@ -97,6 +102,26 @@ fn program_patch() -> PatchExpectation {
         decoded_bank_msb: None,
         decoded_bank_lsb: None,
         translation: PatchTranslationPolicy::ProgramOnly { program: 7 },
+    }
+}
+
+fn banked_patch(bank: Option<(u8, u8)>, program: u8) -> PatchExpectation {
+    let (msb, lsb) = bank.map_or((None, None), |(msb, lsb)| (Some(msb), Some(lsb)));
+    banked_patch_fields(msb, lsb, program)
+}
+
+fn banked_patch_fields(msb: Option<u8>, lsb: Option<u8>, program: u8) -> PatchExpectation {
+    PatchExpectation {
+        source_ordinal: 4,
+        source_range: range(40, 48),
+        decoded_program: program,
+        decoded_bank_msb: msb,
+        decoded_bank_lsb: lsb,
+        translation: PatchTranslationPolicy::BankSelectAndProgram {
+            msb: 81,
+            lsb: 2,
+            program: 7,
+        },
     }
 }
 
@@ -268,6 +293,65 @@ fn program_and_banked_patch_policies_match_exactly() {
         )
         .expect("assessment");
     assert!(matches!(result, ProfileMatch::Matched { .. }));
+}
+
+#[test]
+fn banked_policy_accepts_absent_or_matching_banks_but_rejects_contradictions() {
+    let absent_registry = exact_registry(vec![banked_patch(None, 7)]);
+    assert!(matches!(
+        absent_registry
+            .assess(&evidence_with(track(None, vec![patch(7, None)])), 0)
+            .expect("assessment"),
+        ProfileMatch::Matched { .. }
+    ));
+
+    let matching_registry = exact_registry(vec![banked_patch(Some((81, 2)), 7)]);
+    assert!(matches!(
+        matching_registry
+            .assess(
+                &evidence_with(track(None, vec![patch(7, Some((81, 2)))])),
+                0
+            )
+            .expect("assessment"),
+        ProfileMatch::Matched { .. }
+    ));
+
+    let absent_expectation_registry = exact_registry(vec![banked_patch(None, 7)]);
+    for observed in [Some((80, 2)), Some((81, 3)), Some((80, 3))] {
+        assert!(matches!(
+            absent_expectation_registry
+                .assess(&evidence_with(track(None, vec![patch(7, observed)])), 0)
+                .expect("assessment"),
+            ProfileMatch::Rejected {
+                reason: ProfileMismatchReason::PatchPolicyMismatch,
+                ..
+            }
+        ));
+    }
+
+    for (msb, lsb) in [(Some(81), None), (None, Some(2))] {
+        let registry = exact_registry(vec![banked_patch_fields(msb, lsb, 7)]);
+        assert!(matches!(
+            registry
+                .assess(
+                    &evidence_with(track(None, vec![patch_fields(7, msb, lsb)])),
+                    0
+                )
+                .expect("assessment"),
+            ProfileMatch::Matched { .. }
+        ));
+    }
+
+    let wrong_program_registry = exact_registry(vec![banked_patch(None, 7)]);
+    assert!(matches!(
+        wrong_program_registry
+            .assess(&evidence_with(track(None, vec![patch(8, None)])), 0)
+            .expect("assessment"),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::PatchPolicyMismatch,
+            ..
+        }
+    ));
 }
 
 #[test]

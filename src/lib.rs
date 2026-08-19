@@ -6,6 +6,7 @@ pub mod app_service;
 pub mod channel_pressure;
 pub mod comparison;
 pub mod compatibility;
+pub mod compatibility_profiles;
 pub mod controller;
 #[allow(dead_code)]
 pub(crate) mod identification;

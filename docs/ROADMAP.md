@@ -290,6 +290,8 @@ committed or specified.
       identity, Descriptor166 bounds, deterministic decoded families, and the
       bounded generic Patch subset are complete without readiness or export
       integration.
+- [x] Implement UI0C3's isolated authenticated Ode compatibility profile and
+      exact-match regression without wiring AppService readiness or export.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

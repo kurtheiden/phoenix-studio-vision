@@ -30,7 +30,7 @@ profile policy, and export remain later phases.
 | Conservative generic Patch observations | Yes | Shared walker extraction; app-service tests and audit | PASS | Only ordinal, range, and direct program. |
 | Observed channel | No | Deliberately absent | PASS | Requires later generic or authenticated routing evidence. |
 | Generic bank semantics | No | Optional Patch fields remain `None` | PASS | Not required by the UI0C2 contract. |
-| Complete compatibility-match evidence | No | `evidence_complete = false` | PASS | This flag means profile-match completeness, not adapter completion. |
+| Generic policy completeness assertion | No | `evidence_complete = false` | PASS | AppService does not assert authenticated policy; the matched profile supplies it. |
 | Readiness/profile/export integration | No | Explicitly deferred | PASS | UI0C3/UI0D responsibilities. |
 
 # Source provenance
@@ -93,11 +93,10 @@ track labels, or Patch observations.
 
 # Evidence-complete semantics
 
-`TrackEvidence.evidence_complete` remains false because it denotes all evidence
-required for an exact compatibility-profile match, including routing/policy
-facts. Its value does not mean that the UI0C2 adapter failed to provide every
-fact that is safely generic today. The registry continues to reject incomplete
-evidence safely.
+`TrackEvidence.evidence_complete` remains false in generic AppService output
+because the service does not assert authenticated routing or policy. A matched
+profile validates the explicit structural/Patch evidence and supplies its own
+complete resolved policy; generic evidence alone still cannot promote readiness.
 
 # Failure semantics
 
@@ -158,3 +157,9 @@ changes are required by this audit.
 
 Checkpoint the complete UI0C2 ProfileEvidence adapter implementation before
 beginning UI0C3 authenticated compatibility-profile migration.
+
+# UI0C3 handoff
+
+The isolated profile migration may consume this evidence through the generic
+registry. AppService still reports conservative UI0B readiness until a later
+assessment-handoff task explicitly adds revalidation and policy selection.

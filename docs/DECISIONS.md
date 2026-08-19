@@ -898,7 +898,23 @@ inferred.
 The accumulated UI0C2A–UI0C2D work now provides the complete conservative
 ProfileEvidence bridge intended for this milestone: exact Descriptor166 bounds,
 bounded-walker family/count inventory, and the audited generic Patch subset.
-`evidence_complete` remains false because it gates exact profile matching, not
-adapter construction. Channel routing, bank semantics, the unsupported
+`evidence_complete` remains false in generic AppService evidence because that
+service does not assert authenticated policy completeness. The profile matcher
+validates explicit structural/Patch fields while the resolved profile supplies
+authenticated routing. Channel routing, bank semantics, the unsupported
 120-byte profile, authenticated profile migration, registry assessment, and
 export remain intentionally later work.
+
+## 2026-08-19: isolate the authenticated Ode profile
+
+**Status:** Implemented; AppService handoff deferred
+
+The exact Ode research manifest, channels, and four authenticated Patch
+translations live only in `compatibility_profiles`. Generic modules remain
+target-independent. A built-in registry match returns a resolved policy, but
+inspection readiness and export remain unchanged until a separately designed
+handoff adds source revalidation.
+
+The banked-policy matcher has explicit regressions for absent, matching,
+partial, and contradictory observed bank values; absent generic evidence never
+acts as permission to ignore a contradictory observed value.

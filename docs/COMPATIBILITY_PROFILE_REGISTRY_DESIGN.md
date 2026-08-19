@@ -380,3 +380,9 @@ The later evidence slices established the reusable Descriptor166 bounds and
 bounded-walker facts, so the adapter handoff is complete. Evidence remains
 non-matchable until a later phase supplies authenticated routing and complete
 profile policy; this is intentional registry isolation, not an adapter gap.
+
+# UI0C3 status
+
+The authenticated Ode policy is now represented by an isolated compiled-in
+profile module. Generic registry matching remains the sole validation path;
+AppService readiness and export integration remain deferred.

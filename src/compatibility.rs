@@ -454,8 +454,8 @@ fn patch_matches_translation(patch: &PatchExpectation) -> bool {
         }
         PatchTranslationPolicy::BankSelectAndProgram { msb, lsb, program } => {
             patch.decoded_program == program
-                && patch.decoded_bank_msb == Some(msb)
-                && patch.decoded_bank_lsb == Some(lsb)
+                && patch.decoded_bank_msb.map_or(true, |value| value == msb)
+                && patch.decoded_bank_lsb.map_or(true, |value| value == lsb)
         }
     }
 }
@@ -527,7 +527,7 @@ fn assess_profile(
         {
             return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
         }
-        if !observed_track.evidence_complete || observed_track.exact_event_range.is_none() {
+        if observed_track.exact_event_range.is_none() {
             return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
         }
         if observed_track

@@ -318,7 +318,7 @@ impl AppService {
     /// Core-only mapping used later when a registry assesses one sequence.
     #[allow(clippy::result_large_err)]
     #[allow(dead_code)]
-    pub(crate) fn sequence_ordinal_for_id(
+    pub fn sequence_ordinal_for_id(
         &self,
         session_id: &SessionId,
         sequence_id: &SequenceId,
