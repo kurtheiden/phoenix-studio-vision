@@ -735,6 +735,11 @@ order, and returns complete Format 1 bytes plus adapter-derived reports only
 after every conductor/track step succeeds. It contains no authenticated proof
 constants or file I/O.
 
+The D2 concrete manifest and Patch expectations remain entirely in focused
+authenticated integration coverage. That integration validates all nine rows
+before invoking D1 once; no Ode value or authenticated channel is promoted into
+generic production code.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

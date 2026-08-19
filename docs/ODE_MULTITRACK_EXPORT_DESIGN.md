@@ -368,7 +368,7 @@ future multi-sequence workflow wording without defining CLI/UI behavior.
    multitrack inputs and transactional assembly over existing Phase A/B APIs;
    test ordering, aggregate reports, complete-failure behavior, and ten-track
    synthetic Format 1 construction.
-2. **D2 — authenticated Ode integration:** define the caller-supplied manifest
+2. **D2 — authenticated Ode integration (IMPLEMENTED):** define the caller-supplied manifest
    contract and proof-local nine-row value/Patch classifications; structurally
    validate, walk, flatten, and adapt all rows in one pass.
 3. **D3 — independent comparison:** extend the independent test parser to all
@@ -410,5 +410,5 @@ outside reusable assembly.
 
 # Single recommended next step
 
-Implement D2's authenticated Ode nine-row manifest validation and exact
-walk/flatten integration as proof policy feeding the reusable assembler.
+Implement D3's independent full ten-track normalized comparison against the
+authenticated Studio Vision reference, still entirely in memory.

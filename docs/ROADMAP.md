@@ -236,8 +236,11 @@ committed or specified.
       ordered/empty/duplicate tracks, all supported event families, aggregate
       reports, whole-sequence failure, and independent synthetic SMF parsing;
       no Ode manifest or authentic artifact is coupled to production code.
-- [ ] Implement Phase D2 authenticated Ode manifest validation and nine-track
-      exact walk/flatten integration as proof policy feeding D1.
+- [x] Implement Phase D2 authenticated Ode manifest validation and nine-track
+      exact walk/flatten integration as proof policy feeding D1; produce and
+      structurally validate a complete ten-track Format 1 result in memory.
+- [ ] Implement Phase D3 independent full ten-track normalized comparison
+      against the authenticated Studio Vision MIDI export.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

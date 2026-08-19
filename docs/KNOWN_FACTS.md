@@ -68,6 +68,12 @@ not establish a file signature, structure, or parser behavior.
   adapter-derived reports, and returns no successful bytes when any later
   track or Patch translation fails. Independent synthetic parsing verifies
   complete Format 1 structure without authentic-project coupling.
+- Authenticated D2 integration now validates Experiment 007's locked source
+  hash, Ode sequence identity, nine descriptor/pair/range/channel rows, four
+  Patch expectations, and all nine exact walks before invoking D1 once. The
+  resulting in-memory Format 1 file has 10 tracks in locked order and the
+  expected channel sets; its report totals 1,312 logical source events, 1,308
+  Notes/Note Offs, two bank pairs, four Programs, one Tempo, and one Meter.
 - Synthetic tests independently parse a complete generated two-track SMF and
   verify header/chunk bounds, delta VLQs, legal explicit messages, final EOTs,
   and exact file consumption. No authentic MIDI artifact is generated.
