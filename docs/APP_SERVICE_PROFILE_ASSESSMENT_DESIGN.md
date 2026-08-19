@@ -209,10 +209,11 @@ transactional authenticated MIDI export.
 
 # UI0C4 gate
 
-The design is ready when all sequences are independently assessable, policies
-are session-private and sequence-keyed, NoMatch/Rejected/Ambiguous outcomes are
-distinct, source identity is authoritative, and export-time revalidation is
-mandatory. Readiness remains an explicit later projection.
+The assessment, revalidation, and readiness-projection slices are ready when
+all sequences are independently assessable, policies are session-private and
+sequence-keyed, NoMatch/Rejected/Ambiguous outcomes are distinct, source
+identity is authoritative, exact matches project safely, and export-time
+revalidation remains mandatory.
 
 # Unknowns
 
@@ -222,8 +223,8 @@ Neither affects the single-sequence assessment handoff.
 
 # Single recommended next step
 
-Implement UI0C4A: inject/own the registry, assess every inspected `SequenceId`,
-and retain private per-sequence outcomes without changing readiness or export.
+Design the UI0D export handoff around immediate UI0C4B revalidation and fresh
+owned source bytes.
 
 # UI0C4B source revalidation
 

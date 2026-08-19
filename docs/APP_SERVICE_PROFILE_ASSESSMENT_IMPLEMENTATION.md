@@ -95,11 +95,12 @@ current built-in match, verify all other sequences are non-matched, and confirm
 the target policy is private while the public summary remains conservative.
 An injected empty registry confirms every sequence becomes NoMatch.
 
-# Readiness freeze
+# Readiness projection
 
-UI0C4A does not alter readiness, readiness reasons, project overall readiness,
-or `export_capability`. The matched target is still not Ready; readiness
-projection belongs to UI0C4C.
+UI0C4A assessment remains private until UI0C4C. The projection now maps only a
+complete matched assessment to `Ready`, `ValidatedCompatibilityProfile`, and a
+safe `ProfileCapability`; NoMatch, Rejected, and RegistryError retain generic
+readiness. Fresh UI0C4B revalidation remains mandatory before export.
 
 # Export isolation
 
@@ -125,9 +126,9 @@ semantics.
 
 # Explicit exclusions
 
-No app-contract change, readiness promotion, export capability, revalidation,
-parser change, dependency, UI, FFI, serialization, or channel inference is part
-of UI0C4A.
+No app-contract change, export implementation, revalidation change, parser
+change, dependency, UI, FFI, serialization, or channel inference is part of
+UI0C4A/UI0C4C.
 
 # UI0C4A gate
 
@@ -138,8 +139,8 @@ app-facing readiness/export behavior remains frozen.
 
 # Single recommended next step
 
-Implement UI0C4B fresh source revalidation and stale-policy refusal without
-performing export or projecting Ready status.
+Design the UI0D export handoff around immediate UI0C4B revalidation and fresh
+owned source bytes.
 
 # UI0C4B implementation status
 

@@ -134,5 +134,5 @@ refused conservatively.
 
 # Single recommended next step
 
-Implement UI0C4C readiness projection using only independently revalidated
-compatibility assessments, while preserving mixed-project semantics.
+Design the UI0D export handoff around immediate UI0C4B revalidation and fresh
+owned source bytes.

@@ -252,7 +252,7 @@ fn optional_authentic_fixture_preserves_structural_sequence_order() {
 }
 
 #[test]
-fn optional_authentic_fixture_assesses_each_sequence_without_projecting_readiness() {
+fn optional_authentic_fixture_projects_readiness_per_sequence() {
     let path = PathBuf::from(
         "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline",
     );
@@ -269,19 +269,28 @@ fn optional_authentic_fixture_assesses_each_sequence_without_projecting_readines
             .assessment_for_sequence(&response.session_id, &sequence.sequence_id)
             .expect("every discovered sequence must have an assessment");
         assert_eq!(status.capability.is_some(), status.has_resolved_policy);
-        assert_ne!(sequence.readiness, Readiness::Ready);
-        assert!(sequence.export_capability.is_none());
         if sequence.display_name == "Ode to Clarke" {
             assert_eq!(status.match_kind, SequenceAssessmentKind::Matched);
             assert!(status.has_resolved_policy);
+            assert_eq!(sequence.readiness, Readiness::Ready);
+            assert_eq!(
+                sequence.readiness_reason.code,
+                phoenix::app_contract::ReadinessReasonCode::ValidatedCompatibilityProfile
+            );
+            assert!(sequence.export_capability.is_some());
             matched += 1;
         } else {
             assert_ne!(status.match_kind, SequenceAssessmentKind::Matched);
             assert!(!status.has_resolved_policy);
+            assert_ne!(sequence.readiness, Readiness::Ready);
+            assert!(sequence.export_capability.is_none());
         }
     }
     assert_eq!(matched, 1);
-    assert_ne!(response.project.overall_readiness, Readiness::Ready);
+    assert_eq!(
+        response.project.overall_readiness,
+        Readiness::PartiallySupported
+    );
 }
 
 #[test]

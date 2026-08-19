@@ -940,3 +940,13 @@ UI0C4B requires fresh path bytes, exact size/SHA-256 identity, fresh parsing and
 evidence, same structural ordinal, registry reassessment, and equivalent
 resolved policy before a future exporter may use policy. The successful handoff
 owns the freshly checked bytes; stale inspection policy is never authorization.
+
+## 2026-08-19: project exact compatibility matches into readiness
+
+**Status:** Implemented; export remains deferred
+
+UI0C4C projects only complete per-`SequenceId` matches to `Ready`, the stable
+validated-profile reason, and safe capability. Non-matches retain generic
+readiness. Project `Ready` requires every discovered sequence to be Ready;
+mixed projects remain `PartiallySupported`. UI0C4B freshness remains mandatory
+before export.

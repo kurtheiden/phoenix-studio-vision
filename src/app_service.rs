@@ -285,7 +285,43 @@ impl AppService {
             },
         );
         self.assess_session(&session_id);
-        Ok(response)
+        self.project_readiness(&session_id);
+        self.sessions
+            .get(&session_id)
+            .map(|session| session.response.clone())
+            .ok_or_else(|| self.unknown_session(AppOperation::InspectProject))
+    }
+
+    fn project_readiness(&mut self, session_id: &SessionId) {
+        let Some(session) = self.sessions.get_mut(session_id) else {
+            return;
+        };
+        for summary in &mut session.response.sequences {
+            let Some(assessment) = session.assessments.get(&summary.sequence_id) else {
+                continue;
+            };
+            project_sequence_readiness(summary, assessment);
+        }
+        session.response.warnings.retain(|warning| {
+            !(warning.scope == WarningScope::Sequence
+                && warning.code == "missing_channel_routing"
+                && session
+                    .response
+                    .sequences
+                    .get(warning.source_order as usize)
+                    .is_some_and(|summary| summary.readiness == Readiness::Ready))
+        });
+        for (index, summary) in session.response.sequences.iter_mut().enumerate() {
+            summary.warning_count = session
+                .response
+                .warnings
+                .iter()
+                .filter(|warning| {
+                    warning.scope == WarningScope::Sequence && warning.source_order == index as u32
+                })
+                .count() as u32;
+        }
+        session.response.project.overall_readiness = overall_readiness(&session.response.sequences);
     }
 
     fn assess_session(&mut self, session_id: &SessionId) {
@@ -1163,6 +1199,20 @@ fn owned_range(range: &std::ops::Range<usize>) -> Option<ByteRange> {
     .ok()
 }
 
+fn project_sequence_readiness(summary: &mut SequenceSummary, assessment: &SequenceAssessment) {
+    if assessment.match_state == SequenceMatchState::Matched && assessment.resolved_policy.is_some()
+    {
+        if let Some(capability) = assessment.capability.clone() {
+            summary.readiness = Readiness::Ready;
+            summary.readiness_reason = ReadinessReason::new(
+                ReadinessReasonCode::ValidatedCompatibilityProfile,
+                "This sequence matches a validated compatibility profile.",
+            );
+            summary.export_capability = Some(capability);
+        }
+    }
+}
+
 fn profile_evidence_from_structure(
     source_sha256: &str,
     source_byte_size: u64,
@@ -1225,16 +1275,21 @@ fn identification_summary(
 }
 
 fn overall_readiness(sequences: &[SequenceSummary]) -> Readiness {
-    if sequences.iter().any(|s| s.readiness == Readiness::Ready) {
+    if sequences.is_empty() {
+        return Readiness::Unknown;
+    }
+    if sequences.iter().all(|s| s.readiness == Readiness::Ready) {
         Readiness::Ready
-    } else if sequences
-        .iter()
-        .any(|s| s.readiness == Readiness::PartiallySupported)
-    {
+    } else if sequences.iter().any(|s| {
+        matches!(
+            s.readiness,
+            Readiness::Ready | Readiness::PartiallySupported
+        )
+    }) {
         Readiness::PartiallySupported
     } else if sequences
         .iter()
-        .any(|s| s.readiness == Readiness::Unsupported)
+        .all(|s| s.readiness == Readiness::Unsupported)
     {
         Readiness::Unsupported
     } else {
@@ -1245,6 +1300,47 @@ fn overall_readiness(sequences: &[SequenceSummary]) -> Readiness {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn summary(readiness: Readiness) -> SequenceSummary {
+        SequenceSummary {
+            sequence_id: SequenceId::new("sequence"),
+            display_name: "Sequence".into(),
+            readiness,
+            readiness_reason: ReadinessReason::new(
+                ReadinessReasonCode::MissingChannelRouting,
+                "generic",
+            ),
+            musical_track_count: Some(1),
+            supported_event_families: Vec::new(),
+            warning_count: 0,
+            export_capability: None,
+            diagnostics_available: true,
+        }
+    }
+
+    fn matched_assessment() -> SequenceAssessment {
+        SequenceAssessment {
+            structural_ordinal: 0,
+            generic_readiness: Readiness::PartiallySupported,
+            match_state: SequenceMatchState::Matched,
+            capability: Some(crate::app_contract::ProfileCapability {
+                profile_id: "profile".into(),
+                profile_version: 1,
+                display_label: "Validated profile".into(),
+            }),
+            resolved_policy: Some(ResolvedProfilePolicy {
+                profile_id: crate::compatibility::ProfileId::new("profile"),
+                profile_version: crate::compatibility::ProfileVersion::new(1),
+                sequence: crate::compatibility::ResolvedSequenceIdentity {
+                    structural_ordinal: 0,
+                    sequence_range: ByteRange::new(0, 0).unwrap(),
+                },
+                tracks: Vec::new(),
+            }),
+            diagnostic_code: None,
+            technical_detail: None,
+        }
+    }
 
     #[test]
     fn empty_walk_has_empty_inventory() {
@@ -1274,5 +1370,66 @@ mod tests {
         assert_eq!(families, vec![EvidenceEventFamily::Note]);
         assert_eq!(count, 2);
         assert!(patch_evidence.is_empty());
+    }
+
+    #[test]
+    fn matched_projection_sets_ready_reason_and_safe_capability() {
+        let mut sequence = summary(Readiness::PartiallySupported);
+        project_sequence_readiness(&mut sequence, &matched_assessment());
+        assert_eq!(sequence.readiness, Readiness::Ready);
+        assert_eq!(
+            sequence.readiness_reason.code,
+            ReadinessReasonCode::ValidatedCompatibilityProfile
+        );
+        assert_eq!(
+            sequence
+                .export_capability
+                .as_ref()
+                .map(|capability| capability.profile_id.as_str()),
+            Some("profile")
+        );
+    }
+
+    #[test]
+    fn nonmatched_projection_preserves_generic_readiness_and_capability_absence() {
+        let mut sequence = summary(Readiness::PartiallySupported);
+        let mut assessment = matched_assessment();
+        assessment.match_state = SequenceMatchState::NoMatch;
+        assessment.capability = None;
+        assessment.resolved_policy = None;
+        project_sequence_readiness(&mut sequence, &assessment);
+        assert_eq!(sequence.readiness, Readiness::PartiallySupported);
+        assert_eq!(
+            sequence.readiness_reason.code,
+            ReadinessReasonCode::MissingChannelRouting
+        );
+        assert!(sequence.export_capability.is_none());
+    }
+
+    #[test]
+    fn overall_readiness_handles_empty_all_ready_and_mixed_projects() {
+        assert_eq!(overall_readiness(&[]), Readiness::Unknown);
+        assert_eq!(
+            overall_readiness(&[summary(Readiness::Ready), summary(Readiness::Ready)]),
+            Readiness::Ready
+        );
+        assert_eq!(
+            overall_readiness(&[
+                summary(Readiness::Ready),
+                summary(Readiness::PartiallySupported)
+            ]),
+            Readiness::PartiallySupported
+        );
+        assert_eq!(
+            overall_readiness(&[
+                summary(Readiness::Unsupported),
+                summary(Readiness::Unsupported)
+            ]),
+            Readiness::Unsupported
+        );
+        assert_eq!(
+            overall_readiness(&[summary(Readiness::Unsupported), summary(Readiness::Unknown)]),
+            Readiness::Unknown
+        );
     }
 }

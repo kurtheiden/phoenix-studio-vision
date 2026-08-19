@@ -299,6 +299,8 @@ committed or specified.
       readiness/export behavior frozen.
 - [x] Implement UI0C4B one-shot source revalidation and stale-policy refusal;
       keep readiness and export projection deferred.
+- [x] Implement UI0C4C per-sequence readiness projection and mixed-project
+      aggregation; keep UI0D export deferred.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

@@ -213,3 +213,11 @@ inspection DTOs. Core rereads and hashes the file, reparses it, rebuilds owned
 evidence, and reruns the registry for the original structural sequence ordinal.
 Only an equivalent fresh policy and fresh owned bytes are eligible for a later
 export handoff; stale session policy is never treated as authorization.
+
+## UI0C4C readiness projection
+
+After inspection-time assessment, only a complete matched `SequenceAssessment`
+projects its exact `SequenceSummary` to `Ready` with
+`ValidatedCompatibilityProfile` and safe `ProfileCapability`. Other sequences
+retain generic readiness. Project readiness is `Ready` only when all discovered
+sequences are Ready; mixed usable projects remain `PartiallySupported`.
