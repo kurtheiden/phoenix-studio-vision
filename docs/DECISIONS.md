@@ -950,3 +950,14 @@ validated-profile reason, and safe capability. Non-matches retain generic
 readiness. Project `Ready` requires every discovered sequence to be Ready;
 mixed projects remain `PartiallySupported`. UI0C4B freshness remains mandatory
 before export.
+
+## 2026-08-19: design the UI0D export handoff
+
+**Status:** Designed; implementation deferred
+
+The existing `ExportSequenceRequest`/`ExportSequenceResponse` contract is the
+service boundary. Export must invoke UI0C4B immediately, convert from its same
+fresh owned bytes and resolved policy through `assemble_multitrack_sequence`,
+then commit one complete SMF under the caller's destination/collision policy.
+Readiness never authorizes export by itself, and sibling sequences remain
+independent.

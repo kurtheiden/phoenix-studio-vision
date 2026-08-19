@@ -301,6 +301,8 @@ committed or specified.
       keep readiness and export projection deferred.
 - [x] Implement UI0C4C per-sequence readiness projection and mixed-project
       aggregation; keep UI0D export deferred.
+- [x] Design UI0D's fresh-revalidated export handoff, conversion boundary, and
+      destination/report ownership; defer implementation.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
