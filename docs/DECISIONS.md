@@ -761,6 +761,23 @@ The bounded Ode cycle is complete without broadening claims to arbitrary
 projects, general routing, unsupported families, original sound recreation,
 or a user-facing export workflow.
 
+## 2026-08-19: use a native macOS thin client over Phoenix Core
+
+**Status:** Designed; implementation deferred
+
+Use SwiftUI with focused AppKit interop for the first macOS desktop prototype,
+calling Phoenix Core through a small versioned C-compatible application-service
+boundary. Swift owns user-selected URLs, window state, presentation, standard
+panels, accessibility, and Finder interaction. Rust owns identification,
+inspection, readiness, conversion policy, transactional export, validation,
+reports, and technical errors.
+
+Inspect one file at a time. Permit real export only for an explicitly labeled
+compatibility profile whose complete provenance policy validates in Core;
+arbitrary projects remain inspectable but receive no enabled Export action.
+Authenticated offsets/channels never enter Swift or generic parser modules.
+General channel derivation is not a prerequisite for the shell architecture.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

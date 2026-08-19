@@ -251,6 +251,13 @@ committed or specified.
       expected musical tracks appeared and the sequence looked and sounded
       correct during playback, with no problem reported. The bounded Ode
       multitrack proof cycle is complete.
+- [x] Design the macOS desktop prototype as a native SwiftUI/AppKit thin client
+      over a versioned Phoenix Core application-service boundary, with one-file
+      inspection and export restricted to exact validated compatibility
+      profiles.
+- [ ] Design and implement UI0: owned app-facing Core DTOs, readiness/errors,
+      compatibility-profile isolation, cancellation, and sandbox-safe I/O
+      ownership before creating the desktop shell.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

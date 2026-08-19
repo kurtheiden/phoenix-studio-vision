@@ -424,3 +424,8 @@ blocker for arbitrary sequences and production-general export.
 
 Preserve the completed bounded Ode proof; choose the next export scope in a
 separate evidence-bounded task.
+
+For desktop integration, keep this export pipeline behind a future owned
+application-service API. Swift must receive only readiness, report, warning,
+error, and output DTOs; it must not construct decoded events, choose channels,
+classify Patch data, or call serializer primitives directly.
