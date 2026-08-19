@@ -500,6 +500,22 @@ pub fn serialize_end_of_track() -> [u8; 3] {
 pub fn serialize_musical_track(
     events: &[ScheduledEvent],
 ) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_musical_track_payload(None, events)
+}
+
+/// Serializes a named musical track. The Track Name meta event is emitted at
+/// tick zero before the ordered channel messages, and EOT remains mandatory.
+pub fn serialize_named_musical_track(
+    name: &[u8],
+    events: &[ScheduledEvent],
+) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_musical_track_payload(Some(name), events)
+}
+
+fn serialize_musical_track_payload(
+    name: Option<&[u8]>,
+    events: &[ScheduledEvent],
+) -> Result<SerializedTrack, SmfSerializeError> {
     let mut ordered = events.to_vec();
     ordered.sort_by_key(|event| {
         (
@@ -510,6 +526,10 @@ pub fn serialize_musical_track(
     });
 
     let mut payload = Vec::new();
+    if let Some(name) = name {
+        payload.push(0);
+        payload.extend_from_slice(&serialize_track_name(name)?);
+    }
     let mut previous_tick = 0_u32;
     for event in &ordered {
         let delta = event.absolute_tick.checked_sub(previous_tick).ok_or(

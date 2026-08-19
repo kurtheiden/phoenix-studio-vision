@@ -33,6 +33,23 @@ not establish a file signature, structure, or parser behavior.
   Pitch Bend, Track Name, initial Tempo, Time Signature, and automatic EOT.
   It uses four-byte-limited MIDI VLQs, deterministic absolute-tick ordering,
   and private EOT-safe track construction without Studio Vision dependencies.
+- The provenance-locked Ode Track 3 proof structurally derives and exactly
+  walks `0x031300..0x031564`, yielding one Patch and 84 Notes. Phoenix and the
+  authenticated Studio Vision track 6 match one-for-one for every Note's
+  channel, pitch, start, end, and attack velocity; all 82 explicit reference
+  Note Off release velocities also match. Two historical endings use Note On
+  velocity zero, while Phoenix preserves the decoded release velocities in
+  explicit Note Offs.
+- The resulting 856-byte Format 1, PPQN-480, two-track proof has SHA-256
+  `6b6553566eeee1e5e47ffe24b3ed4d0fdc7fed933d7f40811778ac6bb4108317`.
+  Its channel-1 CC0=81, CC32=2, Program=29 at tick 480 and its initial
+  Tempo/Meter match the authenticated export under independent parsing.
+- On 2026-08-19 the user opened the proof in Logic Pro 12. Logic displayed the
+  expected single musical track as `Track 3`; playback continued correctly
+  while instrument patches were changed, with no audible glitches or obvious
+  timing, hanging-note, or misplaced-note problems observed. This validates
+  the bounded one-track proof in that DAW and does not establish multitrack or
+  full-sequence export.
 - Synthetic tests independently parse a complete generated two-track SMF and
   verify header/chunk bounds, delta VLQs, legal explicit messages, final EOTs,
   and exact file consumption. No authentic MIDI artifact is generated.

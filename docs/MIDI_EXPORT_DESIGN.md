@@ -374,7 +374,7 @@ shared channel blocker.
 2. **B — decoded adapter and scheduler (IMPLEMENTED):** identity 480 mapping, Note Off
    generation, all direct event-family mappings, policy/report/errors, using
    synthetic decoded values.
-3. **C — one authentic `Ode to Clarke` Track 3 proof:** structural navigation,
+3. **C — one authentic `Ode to Clarke` Track 3 proof (COMPLETE):** structural navigation,
    exact walk, authenticated channel override, Program/bank policy, independent
    normalized comparison, and DAW smoke test.
 4. **D — strict `Ode to Clarke` multitrack Format 1:** conductor track, names,
@@ -420,6 +420,6 @@ blocker for arbitrary sequences and production-general export.
 
 # Single recommended next step
 
-Design Phase C's one-track authentic proof integration, including manifest-key
-validation and decoded Patch/Note flattening, without yet adding CLI/file
-writing or broad sequence export.
+Design Phase D's strict Ode multitrack export without generalizing the
+unresolved channel source. Phase C's automated comparison and user-observed
+Logic Pro 12 structure/playback validation both pass.

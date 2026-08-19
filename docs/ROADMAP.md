@@ -220,6 +220,16 @@ committed or specified.
       scheduling, direct Controller/Pressure/Bend mapping, strict classified
       Patch handling, Meter/Tempo policy, transactional reports/errors, and
       synthetic in-memory Format 1 integration only.
+- [x] Complete the automated Phase C authentic Ode Track 3 proof: validate the
+      hash-and-range manifest, walk one Patch plus 84 Notes exactly, serialize
+      a two-track Format 1 SMF, independently compare every Note and supported
+      conductor/Patch field, and re-open the research artifact from disk.
+- [x] Validate the Ode Track 3 Phoenix proof manually in Logic Pro 12: the
+      expected single `Track 3` opened and played without audible glitches,
+      obvious timing errors, hanging notes, misplaced notes, or interruption
+      while changing instrument patches. Phase C is complete.
+- [ ] Design strict Ode multitrack Phase D without treating the proof manifest
+      as general Studio Vision channel-format knowledge.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

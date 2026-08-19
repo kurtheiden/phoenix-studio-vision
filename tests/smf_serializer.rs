@@ -1,8 +1,8 @@
 use phoenix::smf::{
     encode_midi_vlq, serialize_channel_message, serialize_conductor_track, serialize_end_of_track,
-    serialize_format1, serialize_musical_track, serialize_set_tempo, serialize_time_signature,
-    serialize_track_name, ChannelMessage, MidiChannel, MidiDataByte, ScheduledEvent,
-    SmfSerializeError, TimeSignature, MAX_MIDI_VLQ,
+    serialize_format1, serialize_musical_track, serialize_named_musical_track, serialize_set_tempo,
+    serialize_time_signature, serialize_track_name, ChannelMessage, MidiChannel, MidiDataByte,
+    ScheduledEvent, SmfSerializeError, TimeSignature, MAX_MIDI_VLQ,
 };
 
 fn channel(value: u8) -> MidiChannel {
@@ -212,6 +212,27 @@ fn tiny_track_has_checked_length_and_one_final_eot() {
         1
     );
     assert!(track.as_bytes().ends_with(&[0, 0xff, 0x2f, 0]));
+}
+
+#[test]
+fn named_musical_track_places_name_at_tick_zero_before_messages() {
+    let track = serialize_named_musical_track(
+        b"Track 3",
+        &[event(
+            480,
+            0,
+            ChannelMessage::ProgramChange {
+                channel: channel(1),
+                program: data(29),
+            },
+        )],
+    )
+    .unwrap();
+
+    assert_eq!(
+        track.as_bytes(),
+        b"MTrk\0\0\0\x13\0\xff\x03\x07Track 3\x83\x60\xc0\x1d\0\xff\x2f\0"
+    );
 }
 
 #[test]

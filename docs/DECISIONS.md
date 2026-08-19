@@ -699,6 +699,21 @@ as `MacRomanDeferred` pending an explicit encoding implementation decision.
 Synthetic tests alone cover all mappings and complete in-memory Format 1
 integration; no authentic artifact or manifest is used.
 
+## 2026-08-19: isolate the first authentic proof in provenance-locked test integration
+
+**Status:** Implemented; automated and user-observed Logic Pro 12 validation pass
+
+Keep the Ode Track 3 project hash, structural ranges, channel override, and
+Patch classification in focused authentic integration coverage, outside the
+generic parser, adapter, and serializer. Validate every manifest key before
+adaptation and fail on any unsupported event or comparison mismatch.
+
+Permit the general SMF serializer to add a caller-supplied Track Name at tick
+zero to a musical track; this is MIDI infrastructure and contains no Studio
+Vision policy. Write the permanent research proof only through an explicit
+test-owned action after the in-memory normalized comparison passes. Do not
+turn that action into CLI behavior.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted
