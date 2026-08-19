@@ -456,3 +456,12 @@ is marked Ready because routing and compatibility profiles remain unresolved.
 
 Design UI0C's Core-only compatibility-profile registry seam without embedding
 authenticated Ode constants in generic service or contract modules.
+
+# UI0C registry seam
+
+The planned registry is Core-only and declarative. It matches exact project
+provenance plus internal structural sequence/track evidence, then returns only
+the existing `ProfileCapability` and validated readiness through the app
+contract. Channel assignments, Patch translations, ranges, and resolved policy
+handles remain private. A mismatch never falls back to a guessed policy, and
+export-time revalidation is mandatory.

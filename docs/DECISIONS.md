@@ -822,3 +822,16 @@ backward VLQ boundaries are ambiguous. The post-row-143 bytes begin with a
 syntactically consumable VLQ but an out-of-range property byte, so the bounded
 note model stops without calling the bytes a footer, terminator, or complete
 track framing.
+
+## 2026-08-19: keep compatibility profiles Core-only and declarative
+
+**Status:** Designed; UI0C implementation deferred
+
+Use an immutable compiled-in registry queried only after generic inspection.
+Profiles match exact project hash/size, parser profile, sequence identity, and
+complete structural track manifests before returning a capability. Authenticated
+channel and Patch policy remains in a private resolved handle; names never
+trigger Ready and no fallback policy is allowed. Multiple matches are an
+ambiguity error, and export must re-read, re-hash, reparse, and re-match. The
+existing UI0A `ProfileCapability`/readiness DTOs are sufficient; no policy
+internals cross into the app contract.

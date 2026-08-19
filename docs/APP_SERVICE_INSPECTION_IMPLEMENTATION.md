@@ -149,3 +149,10 @@ seam while preserving existing parser semantics.
 
 Design UI0C's Core-only compatibility-profile registry seam without embedding
 Ode constants in the generic service or contract modules.
+
+# UI0C handoff
+
+UI0C should add registry assessment after generic parsing while preserving the
+current conservative UI0B result for no-match and rejected profiles. Only a
+complete exact match may change a sequence to Ready; the frontend must remain
+unaware of profile internals.

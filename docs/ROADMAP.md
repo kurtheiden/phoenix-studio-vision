@@ -264,8 +264,12 @@ committed or specified.
 - [x] Implement UI0B: synchronous path-based AppService inspection, opaque
       sessions, conservative sequence readiness, bounded diagnostics, and
       source-identity retention without export or profile guessing.
-- [ ] Design UI0C: isolate the Core-only compatibility-profile registry before
-      enabling any application-facing export operation.
+- [x] Design UI0C: isolate the Core-only compatibility-profile registry before
+      enabling any application-facing export operation; use exact provenance,
+      structural manifests, immutable policy handles, and export-time
+      revalidation without exposing internals to the UI.
+- [ ] Implement UI0C1: generic registry/profile/match types and synthetic
+      tests before migrating the authenticated Ode policy.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

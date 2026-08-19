@@ -397,6 +397,7 @@ DTOs before transport or Swift code.
 
 # Single recommended next step
 
-Design UI0's application-facing Rust service contract and versioned owned DTOs,
-including readiness, error/report schemas, compatibility-profile isolation,
-cancellation, and sandbox-safe file-I/O ownership—without creating UI code yet.
+UI0C's Core-only compatibility registry should be designed before enabling any
+application-facing Export action. It must match exact provenance and internal
+structural evidence, while exposing only the existing capability/readiness DTOs
+to the desktop client.
