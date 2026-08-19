@@ -1,8 +1,8 @@
-//! Evidence-first comparison of complete Standard MIDI File track chunks.
+//! Standard MIDI File inspection and pure Format 1 serialization primitives.
 //!
-//! This module treats every declared `MTrk` payload as an opaque byte sequence.
-//! It does not decode MIDI events or assign musical meaning to chunk order,
-//! content, or equality.
+//! The comparison API treats declared `MTrk` payloads as opaque bytes. The
+//! serializer API accepts only validated MIDI-domain values; it has no Studio
+//! Vision parser, routing, channel-inference, or filesystem dependencies.
 
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -11,6 +11,7 @@ const HEADER_IDENTIFIER: &[u8; 4] = b"MThd";
 const TRACK_IDENTIFIER: &[u8; 4] = b"MTrk";
 const CHUNK_HEADER_LENGTH: usize = 8;
 const REQUIRED_HEADER_PAYLOAD_LENGTH: u32 = 6;
+pub const MAX_MIDI_VLQ: u32 = 0x0fff_ffff;
 
 /// Identifies which supplied file produced a comparison error.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -253,6 +254,356 @@ fn read_u16(data: &[u8], offset: usize) -> Option<u16> {
 fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
     let bytes: [u8; 4] = data.get(offset..offset + 4)?.try_into().ok()?;
     Some(u32::from_be_bytes(bytes))
+}
+
+/// Errors produced while validating or serializing MIDI-domain values.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SmfSerializeError {
+    InvalidChannel { value: u8 },
+    InvalidDataByte { value: u8 },
+    InvalidPpqn { value: u16 },
+    InvalidTempo { mpqn: u32 },
+    InvalidTimeSignatureNumerator { value: u8 },
+    MidiVlqOverflow { value: u32 },
+    TrackCountOverflow { count: usize },
+    TrackPayloadLengthOverflow { length: usize },
+    SmfLengthOverflow,
+    InternalNonmonotonicOrdering { previous_tick: u32, tick: u32 },
+}
+
+impl fmt::Display for SmfSerializeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "cannot serialize SMF: {self:?}")
+    }
+}
+
+impl std::error::Error for SmfSerializeError {}
+
+/// A human-facing MIDI channel in the inclusive range 1 through 16.
+///
+/// The status nibble is deliberately private so callers never pass a raw
+/// zero-based channel where a human channel is expected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MidiChannel(u8);
+
+impl MidiChannel {
+    pub fn new(value: u8) -> Result<Self, SmfSerializeError> {
+        if (1..=16).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(SmfSerializeError::InvalidChannel { value })
+        }
+    }
+
+    pub fn get(self) -> u8 {
+        self.0
+    }
+
+    fn status_nibble(self) -> u8 {
+        self.0 - 1
+    }
+}
+
+/// One validated seven-bit MIDI data byte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MidiDataByte(u8);
+
+impl MidiDataByte {
+    pub fn new(value: u8) -> Result<Self, SmfSerializeError> {
+        if value <= 0x7f {
+            Ok(Self(value))
+        } else {
+            Err(SmfSerializeError::InvalidDataByte { value })
+        }
+    }
+
+    pub fn get(self) -> u8 {
+        self.0
+    }
+}
+
+/// The explicit-status channel voice messages supported by the first writer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChannelMessage {
+    NoteOff {
+        channel: MidiChannel,
+        key: MidiDataByte,
+        release_velocity: MidiDataByte,
+    },
+    NoteOn {
+        channel: MidiChannel,
+        key: MidiDataByte,
+        attack_velocity: MidiDataByte,
+    },
+    ControlChange {
+        channel: MidiChannel,
+        controller: MidiDataByte,
+        value: MidiDataByte,
+    },
+    ProgramChange {
+        channel: MidiChannel,
+        program: MidiDataByte,
+    },
+    ChannelPressure {
+        channel: MidiChannel,
+        pressure: MidiDataByte,
+    },
+    PitchBend {
+        channel: MidiChannel,
+        lsb: MidiDataByte,
+        msb: MidiDataByte,
+    },
+}
+
+/// One MIDI-domain channel message scheduled at an absolute tick.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScheduledEvent {
+    pub absolute_tick: u32,
+    pub stable_ordinal: u64,
+    pub message: ChannelMessage,
+}
+
+/// Validated initial time-signature metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TimeSignature {
+    numerator: MidiDataByte,
+    denominator_exponent: MidiDataByte,
+    clocks_per_click: MidiDataByte,
+    thirty_seconds_per_quarter: MidiDataByte,
+}
+
+impl TimeSignature {
+    pub fn new(
+        numerator: MidiDataByte,
+        denominator_exponent: MidiDataByte,
+        clocks_per_click: MidiDataByte,
+        thirty_seconds_per_quarter: MidiDataByte,
+    ) -> Result<Self, SmfSerializeError> {
+        if numerator.get() == 0 {
+            return Err(SmfSerializeError::InvalidTimeSignatureNumerator { value: 0 });
+        }
+        Ok(Self {
+            numerator,
+            denominator_exponent,
+            clocks_per_click,
+            thirty_seconds_per_quarter,
+        })
+    }
+}
+
+/// An `MTrk` chunk made only by this module, with exactly one final EOT.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SerializedTrack {
+    bytes: Vec<u8>,
+}
+
+impl SerializedTrack {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+/// Encodes one SMF delta-time or meta-length VLQ.
+pub fn encode_midi_vlq(value: u32) -> Result<Vec<u8>, SmfSerializeError> {
+    if value > MAX_MIDI_VLQ {
+        return Err(SmfSerializeError::MidiVlqOverflow { value });
+    }
+    let mut buffer = [0_u8; 4];
+    let mut index = buffer.len() - 1;
+    buffer[index] = (value & 0x7f) as u8;
+    let mut remaining = value >> 7;
+    while remaining != 0 {
+        index -= 1;
+        buffer[index] = ((remaining & 0x7f) as u8) | 0x80;
+        remaining >>= 7;
+    }
+    Ok(buffer[index..].to_vec())
+}
+
+/// Serializes one channel message with an explicit status byte.
+pub fn serialize_channel_message(message: &ChannelMessage) -> Vec<u8> {
+    match message {
+        ChannelMessage::NoteOff {
+            channel,
+            key,
+            release_velocity,
+        } => vec![
+            0x80 | channel.status_nibble(),
+            key.get(),
+            release_velocity.get(),
+        ],
+        ChannelMessage::NoteOn {
+            channel,
+            key,
+            attack_velocity,
+        } => vec![
+            0x90 | channel.status_nibble(),
+            key.get(),
+            attack_velocity.get(),
+        ],
+        ChannelMessage::ControlChange {
+            channel,
+            controller,
+            value,
+        } => vec![
+            0xb0 | channel.status_nibble(),
+            controller.get(),
+            value.get(),
+        ],
+        ChannelMessage::ProgramChange { channel, program } => {
+            vec![0xc0 | channel.status_nibble(), program.get()]
+        }
+        ChannelMessage::ChannelPressure { channel, pressure } => {
+            vec![0xd0 | channel.status_nibble(), pressure.get()]
+        }
+        ChannelMessage::PitchBend { channel, lsb, msb } => {
+            vec![0xe0 | channel.status_nibble(), lsb.get(), msb.get()]
+        }
+    }
+}
+
+pub fn serialize_track_name(name: &[u8]) -> Result<Vec<u8>, SmfSerializeError> {
+    let length = u32::try_from(name.len())
+        .map_err(|_| SmfSerializeError::MidiVlqOverflow { value: u32::MAX })?;
+    let mut bytes = vec![0xff, 0x03];
+    bytes.extend_from_slice(&encode_midi_vlq(length)?);
+    bytes.extend_from_slice(name);
+    Ok(bytes)
+}
+
+pub fn serialize_set_tempo(mpqn: u32) -> Result<Vec<u8>, SmfSerializeError> {
+    if mpqn == 0 || mpqn > 0x00ff_ffff {
+        return Err(SmfSerializeError::InvalidTempo { mpqn });
+    }
+    let bytes = mpqn.to_be_bytes();
+    Ok(vec![0xff, 0x51, 0x03, bytes[1], bytes[2], bytes[3]])
+}
+
+pub fn serialize_time_signature(signature: TimeSignature) -> Vec<u8> {
+    vec![
+        0xff,
+        0x58,
+        0x04,
+        signature.numerator.get(),
+        signature.denominator_exponent.get(),
+        signature.clocks_per_click.get(),
+        signature.thirty_seconds_per_quarter.get(),
+    ]
+}
+
+pub fn serialize_end_of_track() -> [u8; 3] {
+    [0xff, 0x2f, 0x00]
+}
+
+/// Serializes a musical track, sorting by explicit policy and appending EOT at
+/// the latest event tick. Callers cannot supply EOT events.
+pub fn serialize_musical_track(
+    events: &[ScheduledEvent],
+) -> Result<SerializedTrack, SmfSerializeError> {
+    let mut ordered = events.to_vec();
+    ordered.sort_by_key(|event| {
+        (
+            event.absolute_tick,
+            message_priority(&event.message),
+            event.stable_ordinal,
+        )
+    });
+
+    let mut payload = Vec::new();
+    let mut previous_tick = 0_u32;
+    for event in &ordered {
+        let delta = event.absolute_tick.checked_sub(previous_tick).ok_or(
+            SmfSerializeError::InternalNonmonotonicOrdering {
+                previous_tick,
+                tick: event.absolute_tick,
+            },
+        )?;
+        payload.extend_from_slice(&encode_midi_vlq(delta)?);
+        payload.extend_from_slice(&serialize_channel_message(&event.message));
+        previous_tick = event.absolute_tick;
+    }
+    payload.push(0);
+    payload.extend_from_slice(&serialize_end_of_track());
+    make_track_chunk(payload)
+}
+
+/// Constructs the fixed first-version conductor track at tick zero.
+pub fn serialize_conductor_track(
+    name: &[u8],
+    mpqn: u32,
+    signature: TimeSignature,
+) -> Result<SerializedTrack, SmfSerializeError> {
+    let mut payload = vec![0];
+    payload.extend_from_slice(&serialize_track_name(name)?);
+    payload.push(0);
+    payload.extend_from_slice(&serialize_set_tempo(mpqn)?);
+    payload.push(0);
+    payload.extend_from_slice(&serialize_time_signature(signature));
+    payload.push(0);
+    payload.extend_from_slice(&serialize_end_of_track());
+    make_track_chunk(payload)
+}
+
+/// Writes a complete Format 1 SMF from already serialized tracks.
+pub fn serialize_format1(
+    ppqn: u16,
+    tracks: &[SerializedTrack],
+) -> Result<Vec<u8>, SmfSerializeError> {
+    if ppqn == 0 || ppqn & 0x8000 != 0 {
+        return Err(SmfSerializeError::InvalidPpqn { value: ppqn });
+    }
+    if tracks.is_empty() || tracks.len() > usize::from(u16::MAX) {
+        return Err(SmfSerializeError::TrackCountOverflow {
+            count: tracks.len(),
+        });
+    }
+    let track_count = tracks.len() as u16;
+    let total_tracks_length = tracks.iter().try_fold(0_usize, |sum, track| {
+        sum.checked_add(track.bytes.len())
+            .ok_or(SmfSerializeError::SmfLengthOverflow)
+    })?;
+    let capacity = 14_usize
+        .checked_add(total_tracks_length)
+        .ok_or(SmfSerializeError::SmfLengthOverflow)?;
+    let mut bytes = Vec::with_capacity(capacity);
+    bytes.extend_from_slice(HEADER_IDENTIFIER);
+    bytes.extend_from_slice(&6_u32.to_be_bytes());
+    bytes.extend_from_slice(&1_u16.to_be_bytes());
+    bytes.extend_from_slice(&track_count.to_be_bytes());
+    bytes.extend_from_slice(&ppqn.to_be_bytes());
+    for track in tracks {
+        bytes.extend_from_slice(&track.bytes);
+    }
+    Ok(bytes)
+}
+
+fn message_priority(message: &ChannelMessage) -> u8 {
+    match message {
+        ChannelMessage::ControlChange { controller, .. } if controller.get() == 0 => 1,
+        ChannelMessage::ControlChange { controller, .. } if controller.get() == 32 => 2,
+        ChannelMessage::ProgramChange { .. } => 3,
+        ChannelMessage::ControlChange { .. } => 4,
+        ChannelMessage::PitchBend { .. } => 5,
+        ChannelMessage::ChannelPressure { .. } => 6,
+        ChannelMessage::NoteOff { .. } => 7,
+        ChannelMessage::NoteOn { .. } => 8,
+    }
+}
+
+fn make_track_chunk(payload: Vec<u8>) -> Result<SerializedTrack, SmfSerializeError> {
+    let payload_length = u32::try_from(payload.len()).map_err(|_| {
+        SmfSerializeError::TrackPayloadLengthOverflow {
+            length: payload.len(),
+        }
+    })?;
+    let capacity = CHUNK_HEADER_LENGTH
+        .checked_add(payload.len())
+        .ok_or(SmfSerializeError::SmfLengthOverflow)?;
+    let mut bytes = Vec::with_capacity(capacity);
+    bytes.extend_from_slice(TRACK_IDENTIFIER);
+    bytes.extend_from_slice(&payload_length.to_be_bytes());
+    bytes.extend_from_slice(&payload);
+    Ok(SerializedTrack { bytes })
 }
 
 #[cfg(test)]

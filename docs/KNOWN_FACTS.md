@@ -12,6 +12,30 @@ not establish a file signature, structure, or parser behavior.
   Notes, 272 Controllers, and 102 Pitch Bend events.
 - One explicit `d0` entry derives the Track 9 Pressure run; nine explicit `e0`
   entries derive all Track 14 Bend runs. No run-end table or scan is used.
+- Authenticated Studio Vision exports declare division 480, and correlated
+  decoded positions/durations use the same 480-units-per-quarter tick basis;
+  the supported 166-profile export mapping is therefore lossless identity.
+- Current decoded Note, Controller, Channel Pressure, Pitch Bend, and Patch
+  representations do not contain the exported MIDI channel. The observed
+  source entry discriminators are not channel-bearing statuses, and Controller
+  context remains opaque.
+- Independent parsing of `Ode to Clarke Multi All` establishes one channel per
+  musical SMF track: Track 1=1, Track 2=2, sys100loops=10, Track 4=10, Track
+  5=10, Track 3=1, Track 6=10, Track 3 #2=15, and Track 7=10. Equal descriptor/
+  pair counts bind these to Ode pair ordinals 0 through 8.
+- No relative byte or high/low nibble in the nine complete 166-byte Ode track
+  descriptors matches every one-based or zero-based authenticated channel.
+  General SVP channel storage remains unknown. A hash-and-range-locked
+  per-track manifest is sufficient policy for the first Ode export proof but
+  is not Studio Vision format knowledge.
+- The `smf` module now implements pure Format 1 serialization for validated
+  PPQN, explicit Note Off/On, Control Change, Program Change, Channel Pressure,
+  Pitch Bend, Track Name, initial Tempo, Time Signature, and automatic EOT.
+  It uses four-byte-limited MIDI VLQs, deterministic absolute-tick ordering,
+  and private EOT-safe track construction without Studio Vision dependencies.
+- Synthetic tests independently parse a complete generated two-track SMF and
+  verify header/chunk bounds, delta VLQs, legal explicit messages, final EOTs,
+  and exact file consumption. No authentic MIDI artifact is generated.
 - The walker returns output only after exact event-range consumption and
   rejects unknown branches at the current cursor.
 

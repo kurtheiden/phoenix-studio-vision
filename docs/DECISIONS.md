@@ -625,6 +625,60 @@ contract. Authentic Track 9 and Track 14 consume exactly with the established
 their runs. Shared single-event primitives preserve the previous exact-run
 decoder APIs and tests.
 
+## 2026-08-19: design first MIDI export as Format 1 with an explicit adapter
+
+**Status:** Accepted design
+
+Use SMF Format 1 for one Studio Vision sequence, with a conductor track for
+sequence name, initial Tempo, and initial Meter and one SMF track per included
+validated musical track. An export adapter, not the parser or serializer,
+converts decoded Phoenix representations, schedules explicit release-velocity
+Note Offs, resolves channel/text/Meter/Patch policy, and produces a report.
+Use the authenticated 480-position-unit to 480-PPQN identity mapping; do not
+generalize it to other profiles.
+
+Choose `Ode to Clarke` as the first authentic target and direct SMF
+serialization as the initial implementation approach. The implementation gate
+remains partial because current decoded representations do not expose MIDI
+channel. Missing channel is an error; no default channel is permitted. A
+proven per-track override can support the authentic proof without becoming a
+parser fact. Unsupported nonempty structures or events fail the first export,
+and no omission is silent.
+
+## 2026-08-19: use a provenance-locked Ode channel manifest for the proof
+
+**Status:** Accepted research consequence
+
+Independent parsing establishes that all nine `Ode to Clarke Multi All`
+musical tracks use exactly one channel and maps them ordinally to the nine
+authenticated descriptor/pair bindings. Exhaustive relative-byte and nibble
+tests find no direct channel field in the 166-byte descriptors; Patch/device
+and sequence-local routing relationships remain unresolved.
+
+For the first authentic proof only, permit an immutable channel manifest keyed
+by the exact project SHA-256, sequence range/name, descriptor ordinal/range,
+pair ordinal, primary range, and event range. Never select it by filename or
+track label, never default a missing channel, and never describe the manifest
+as parser knowledge. This resolves the first-target channel gate without
+claiming general Studio Vision routing support.
+
+## 2026-08-19: implement Phase A as pure direct SMF serialization
+
+**Status:** Implemented
+
+Extend the existing `smf` module with MIDI-domain Format 1 primitives rather
+than adding a MIDI dependency or a second conflicting module. Public channels
+are human-numbered 1 through 16; seven-bit data is validated by type. Musical
+tracks accept absolute scheduled channel messages, apply the explicit same-tick
+priority plus stable ordinal, convert checked deltas, and automatically append
+one final EOT. A separate conductor helper fixes tick-zero name/Tempo/Meter/EOT
+order.
+
+Keep `SerializedTrack` construction private so EOT cannot be omitted or
+duplicated. Emit explicit statuses only. The serializer imports no Studio
+Vision modules, performs no channel inference or file I/O, and contains no Ode
+manifest values. Synthetic byte-exact tests include an independent SMF parser.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

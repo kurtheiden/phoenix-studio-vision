@@ -204,9 +204,17 @@ committed or specified.
 - [x] Implement the designed mixed-event walker and validate exact no-scan
       walks of all 184 Bells Track 9 and 601 Bells Track 14 events before
       beginning MIDI writer/export integration.
-- [ ] Design MIDI writer/export integration over the proven sequence,
+- [x] Design MIDI writer/export integration over the proven sequence,
       Meter/Tempo, and mixed-event representations without broadening binary
       parsing or adding unsupported event families.
+- [x] Correlate authenticated `Ode to Clarke` export channels with bounded
+      descriptor/routing fields: no direct descriptor byte/nibble survives all
+      tracks; preserve a complete hash-and-range-locked nine-track manifest as
+      proof policy, not Studio Vision format knowledge.
+- [x] Implement Phase A pure SMF Format 1 primitives with validated MIDI-domain
+      types, explicit statuses, bounded VLQs/lengths, deterministic same-tick
+      ordering, automatic EOT, conductor construction, and independent
+      synthetic parsing. No parser, manifest, CLI, or artifact integration.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
