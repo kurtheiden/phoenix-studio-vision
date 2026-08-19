@@ -228,8 +228,16 @@ committed or specified.
       expected single `Track 3` opened and played without audible glitches,
       obvious timing errors, hanging notes, misplaced notes, or interruption
       while changing instrument patches. Phase C is complete.
-- [ ] Design strict Ode multitrack Phase D without treating the proof manifest
-      as general Studio Vision channel-format knowledge.
+- [x] Design strict Ode multitrack Phase D: all nine ranges walk, all 1,308
+      Notes match the reference, four Patches have explicit safe policy, and no
+      required unsupported musical event exists. Keep the complete manifest as
+      caller-supplied proof policy rather than channel-format knowledge.
+- [x] Implement Phase D1 pure transactional multitrack sequence assembly with
+      ordered/empty/duplicate tracks, all supported event families, aggregate
+      reports, whole-sequence failure, and independent synthetic SMF parsing;
+      no Ode manifest or authentic artifact is coupled to production code.
+- [ ] Implement Phase D2 authenticated Ode manifest validation and nine-track
+      exact walk/flatten integration as proof policy feeding D1.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

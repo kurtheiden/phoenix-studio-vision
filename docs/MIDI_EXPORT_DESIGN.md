@@ -377,8 +377,9 @@ shared channel blocker.
 3. **C — one authentic `Ode to Clarke` Track 3 proof (COMPLETE):** structural navigation,
    exact walk, authenticated channel override, Program/bank policy, independent
    normalized comparison, and DAW smoke test.
-4. **D — strict `Ode to Clarke` multitrack Format 1:** conductor track, names,
-   all established bindings/channels, empty-track and unsupported-data checks.
+4. **D — strict `Ode to Clarke` multitrack Format 1 (D1 IMPLEMENTED):** reusable
+   transactional sequence assembly is complete; authenticated manifest
+   integration and full normalized comparison remain.
 5. **E — `Bells for her` family coverage:** Controller, Pressure, Bend, and
    authenticated multitrack comparison.
 6. **F — CLI/file writing:** only after the pure conversion succeeds; atomic
@@ -420,6 +421,5 @@ blocker for arbitrary sequences and production-general export.
 
 # Single recommended next step
 
-Design Phase D's strict Ode multitrack export without generalizing the
-unresolved channel source. Phase C's automated comparison and user-observed
-Logic Pro 12 structure/playback validation both pass.
+Implement Phase D2's authenticated Ode manifest validation and nine-track
+walk/flatten integration as proof policy feeding the generic assembler.

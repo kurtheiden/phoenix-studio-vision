@@ -7,6 +7,7 @@ pub mod controller;
 pub mod meter;
 pub mod midi_export;
 pub mod mixed_event;
+pub mod multitrack_export;
 pub mod opening;
 pub mod patch;
 pub mod pitch_bend;

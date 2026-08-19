@@ -714,6 +714,27 @@ Vision policy. Write the permanent research proof only through an explicit
 test-owned action after the in-memory normalized comparison passes. Do not
 turn that action into CLI behavior.
 
+## 2026-08-19: supply Phase D proof policy to reusable sequence assembly
+
+**Status:** Accepted; reusable D1 assembly implemented
+
+Build Phase D around a pure transactional multitrack assembler that consumes a
+caller-supplied manifest/policy. Keep the concrete Ode project/reference
+hashes, nine structural rows, channel overrides, and Patch classifications in
+authenticated proof integration. This permits parsed routing to replace the
+manifest later without changing sequence assembly or MIDI serialization.
+
+Emit musical tracks in validated descriptor order. For Ode this exactly equals
+pair order and the authenticated Studio Vision export order. Fail the complete
+sequence on a missing, extra, mismatched, unsupported, or failed row; never
+return a successful partial multitrack file.
+
+The implemented `multitrack_export` module follows this boundary. It accepts
+only decoded events and explicit MIDI-domain policy, preserves caller track
+order, and returns complete Format 1 bytes plus adapter-derived reports only
+after every conductor/track step succeeds. It contains no authenticated proof
+constants or file I/O.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

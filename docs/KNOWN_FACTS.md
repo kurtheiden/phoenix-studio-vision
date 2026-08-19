@@ -50,6 +50,24 @@ not establish a file signature, structure, or parser behavior.
   timing, hanging-note, or misplaced-note problems observed. This validates
   the bounded one-track proof in that DAW and does not establish multitrack or
   full-sequence export.
+- Read-only Phase D inventory confirms all nine Ode event ranges walk exactly:
+  1,312 logical events comprising 1,308 Notes and four Patch events, with no
+  ordinary Controller, Channel Pressure, Pitch Bend, or other mixed family.
+  All 1,308 Notes match the authenticated reference one-for-one for pitch,
+  start, end/duration, and attack; all 1,291 explicit reference Note Off
+  releases match, while 17 historical velocity-zero endings carry no release
+  value to compare.
+- The authenticated Ode reference has no later Tempo/Meter, SysEx, or other
+  unsupported channel event. Its additional SMPTE Offset and Instrument Name
+  metas and uniform tick-94,080 EOT padding are metadata/policy differences,
+  not missing musical events. Descriptor order, pair order, and reference
+  musical-track order agree across all nine ASCII-named tracks.
+- The reusable `multitrack_export` layer now assembles one adapted conductor
+  plus arbitrary caller-ordered decoded musical tracks transactionally. It
+  preserves empty tracks and duplicate names/channels, aggregates only
+  adapter-derived reports, and returns no successful bytes when any later
+  track or Patch translation fails. Independent synthetic parsing verifies
+  complete Format 1 structure without authentic-project coupling.
 - Synthetic tests independently parse a complete generated two-track SMF and
   verify header/chunk bounds, delta VLQs, legal explicit messages, final EOTs,
   and exact file consumption. No authentic MIDI artifact is generated.
