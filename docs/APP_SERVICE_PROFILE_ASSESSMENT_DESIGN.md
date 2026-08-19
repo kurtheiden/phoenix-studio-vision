@@ -225,6 +225,14 @@ Neither affects the single-sequence assessment handoff.
 Implement UI0C4A: inject/own the registry, assess every inspected `SequenceId`,
 and retain private per-sequence outcomes without changing readiness or export.
 
+# UI0C4B source revalidation
+
+The assessment handoff is now followed by a separate one-shot revalidation
+boundary. Before any future export use, Core rereads the stored path, compares
+fresh size and SHA-256, reparses, rebuilds evidence, reassesses the same
+structural ordinal, and requires equivalent profile identity and resolved
+policy. The fresh validated result owns the bytes it was checked against.
+
 # UI0C4A implementation status
 
 The assessment/storage slice is implemented: AppService owns the built-in or

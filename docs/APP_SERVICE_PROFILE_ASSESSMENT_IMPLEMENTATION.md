@@ -140,3 +140,12 @@ app-facing readiness/export behavior remains frozen.
 
 Implement UI0C4B fresh source revalidation and stale-policy refusal without
 performing export or projecting Ready status.
+
+# UI0C4B implementation status
+
+AppService now provides an explicit Core-only revalidation operation. It
+rereads the stored source path, requires exact size/SHA-256 identity, rebuilds
+Descriptor166 evidence, reruns the registry for the retained structural
+ordinal, and compares the fresh policy with the inspection policy. Missing,
+mutated, structurally changed, unmatched, ambiguous, or policy-different
+sources are refused; readiness and export remain frozen.

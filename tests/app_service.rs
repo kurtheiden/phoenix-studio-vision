@@ -2,7 +2,7 @@ use phoenix::app_contract::{
     AppErrorCategory, AppOperation, DiagnosticsLevel, InspectProjectRequest, Readiness,
     CONTRACT_VERSION,
 };
-use phoenix::app_service::{AppService, SequenceAssessmentKind};
+use phoenix::app_service::{AppService, SequenceAssessmentKind, SequenceRevalidationKind};
 use phoenix::compatibility::CompatibilityRegistry;
 use phoenix::compatibility::EvidenceEventFamily;
 use phoenix::mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventTimingBasis};
@@ -304,4 +304,108 @@ fn injected_empty_registry_assesses_all_sequences_as_no_match() {
         assert!(!status.has_resolved_policy);
         assert!(status.capability.is_none());
     }
+}
+
+fn authentic_fixture() -> Option<PathBuf> {
+    let path = PathBuf::from(
+        "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline",
+    );
+    path.is_file().then_some(path)
+}
+
+fn target_sequence(
+    response: &phoenix::app_contract::InspectProjectResponse,
+) -> &phoenix::app_contract::SequenceSummary {
+    response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Ode to Clarke")
+        .expect("authenticated target sequence")
+}
+
+#[test]
+fn revalidation_accepts_unchanged_owned_source() {
+    let Some(source) = authentic_fixture() else {
+        return;
+    };
+    let bytes = fs::read(&source).expect("fixture bytes");
+    let path = temp_file(&bytes);
+    let mut service = AppService::new();
+    let response = service
+        .inspect_project(request(&path, DiagnosticsLevel::Full))
+        .expect("copy should inspect");
+    let sequence = target_sequence(&response);
+    let status = service
+        .revalidate_sequence_policy(&response.session_id, &sequence.sequence_id)
+        .expect("unchanged source should revalidate");
+    assert_eq!(status.kind, SequenceRevalidationKind::Validated);
+    let (_, _, inspected_hash) = service
+        .source_identity(&response.session_id)
+        .expect("source identity");
+    assert_eq!(
+        status.source_sha256.as_deref(),
+        Some(inspected_hash.as_str())
+    );
+    fs::remove_file(path).ok();
+}
+
+#[test]
+fn revalidation_rejects_same_size_mutation_and_missing_source() {
+    let Some(source) = authentic_fixture() else {
+        return;
+    };
+    let bytes = fs::read(&source).expect("fixture bytes");
+    let path = temp_file(&bytes);
+    let mut service = AppService::new();
+    let response = service
+        .inspect_project(request(&path, DiagnosticsLevel::Full))
+        .expect("copy should inspect");
+    let sequence_id = target_sequence(&response).sequence_id.clone();
+    let mut changed = bytes;
+    changed[0] ^= 1;
+    fs::write(&path, changed).expect("same-size mutation");
+    let error = service
+        .revalidate_sequence_policy(&response.session_id, &sequence_id)
+        .expect_err("same-size mutation must be refused");
+    assert_eq!(error.category, AppErrorCategory::ExportValidationFailed);
+    assert_eq!(error.diagnostic_code, "source_identity_changed");
+
+    fs::write(&path, fs::read(&source).expect("restore bytes")).expect("restore source");
+    fs::remove_file(&path).expect("remove source");
+    let error = service
+        .revalidate_sequence_policy(&response.session_id, &sequence_id)
+        .expect_err("missing source must be refused");
+    assert_eq!(error.category, AppErrorCategory::FileUnreadable);
+    assert_eq!(error.diagnostic_code, "source_revalidation_failed");
+}
+
+#[test]
+fn revalidation_refuses_unmatched_sequence_and_cross_session_identity() {
+    let Some(source) = authentic_fixture() else {
+        return;
+    };
+    let bytes = fs::read(&source).expect("fixture bytes");
+    let path = temp_file(&bytes);
+    let mut service = AppService::new();
+    let first = service
+        .inspect_project(request(&path, DiagnosticsLevel::Full))
+        .expect("first inspection");
+    let second = service
+        .inspect_project(request(&path, DiagnosticsLevel::Full))
+        .expect("second inspection");
+    let other = first
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name != "Ode to Clarke")
+        .expect("unmatched sequence");
+    let error = service
+        .revalidate_sequence_policy(&first.session_id, &other.sequence_id)
+        .expect_err("unmatched sequence must not gain authority");
+    assert_eq!(error.diagnostic_code, "no_validated_profile_policy");
+    let target = target_sequence(&first);
+    let error = service
+        .revalidate_sequence_policy(&second.session_id, &target.sequence_id)
+        .expect_err("a sequence id from another session must not resolve");
+    assert_eq!(error.diagnostic_code, "unknown_sequence");
+    fs::remove_file(path).ok();
 }

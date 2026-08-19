@@ -205,3 +205,11 @@ AppService reuses the bounded mixed-event walker over validated Descriptor166
 ranges. It records canonical family presence and logical counts while retaining
 `patch_evidence` empty, `observed_channel` unset, conservative readiness, and no
 export capability.
+
+## UI0C4B source revalidation
+
+The stored inspection path can be explicitly revalidated without changing the
+inspection DTOs. Core rereads and hashes the file, reparses it, rebuilds owned
+evidence, and reruns the registry for the original structural sequence ordinal.
+Only an equivalent fresh policy and fresh owned bytes are eligible for a later
+export handoff; stale session policy is never treated as authorization.

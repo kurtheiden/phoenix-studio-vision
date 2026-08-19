@@ -931,3 +931,12 @@ against retained evidence, storing `SequenceId`-keyed resolved policies
 privately. UI0C4A will not change readiness; a later projection may do so only
 for exact matches. Export must reread, rehash, reparse, remap, and reassess the
 selected sequence before using any stored policy.
+
+## 2026-08-19: implement one-shot source revalidation
+
+**Status:** Implemented; export and readiness projection deferred
+
+UI0C4B requires fresh path bytes, exact size/SHA-256 identity, fresh parsing and
+evidence, same structural ordinal, registry reassessment, and equivalent
+resolved policy before a future exporter may use policy. The successful handoff
+owns the freshly checked bytes; stale inspection policy is never authorization.

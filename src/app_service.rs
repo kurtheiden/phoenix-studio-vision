@@ -21,6 +21,7 @@ use crate::mixed_event::{
     MixedEventTimingBasis,
 };
 use crate::sequence_container::{parse_project_166, TrackAssociations};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -61,6 +62,37 @@ pub struct SequenceAssessmentStatus {
     pub capability: Option<crate::app_contract::ProfileCapability>,
     pub has_resolved_policy: bool,
     pub diagnostic_code: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SequenceRevalidationKind {
+    Validated,
+    NoStoredPolicy,
+    SourceUnreadable,
+    SourceIdentityChanged,
+    SequenceIdentityChanged,
+    ProfileNoLongerMatches,
+    ProfileRejected,
+    RegistryError,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SequenceRevalidationStatus {
+    pub kind: SequenceRevalidationKind,
+    pub source_sha256: Option<String>,
+    pub capability: Option<crate::app_contract::ProfileCapability>,
+    pub diagnostic_code: String,
+}
+
+/// Fresh, owned state that may be handed to a later Core export operation.
+/// It is only constructed after source identity, structure, and policy have
+/// all been revalidated in one call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FreshValidatedSequence {
+    pub(crate) source_bytes: Vec<u8>,
+    pub(crate) source_sha256: String,
+    pub(crate) structural_ordinal: u32,
+    pub(crate) resolved_policy: ResolvedProfilePolicy,
 }
 
 #[derive(Clone)]
@@ -371,7 +403,9 @@ impl AppService {
 
     #[allow(clippy::result_large_err)]
     #[allow(dead_code)]
-    pub(crate) fn resolved_policy_for_sequence(
+    /// Inspection-time policy only. Future authorization must use
+    /// `revalidated_policy_for_sequence` instead.
+    pub(crate) fn inspected_policy_for_sequence(
         &self,
         session_id: &SessionId,
         sequence_id: &SequenceId,
@@ -385,6 +419,224 @@ impl AppService {
             .get(sequence_id)
             .map(|assessment| assessment.resolved_policy.clone())
             .ok_or_else(|| self.unknown_sequence(session_id, sequence_id))
+    }
+
+    /// Re-read and revalidate one inspected sequence against the current
+    /// source on disk. This operation never changes readiness or performs
+    /// export; it is the only Core path that may produce fresh policy state.
+    #[allow(clippy::result_large_err)]
+    pub fn revalidate_sequence_policy(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<SequenceRevalidationStatus, AppError> {
+        let fresh = self.revalidated_policy_for_sequence(session_id, sequence_id)?;
+        let capability = self
+            .sessions
+            .get(session_id)
+            .and_then(|session| session.assessments.get(sequence_id))
+            .and_then(|assessment| assessment.capability.clone());
+        Ok(SequenceRevalidationStatus {
+            kind: SequenceRevalidationKind::Validated,
+            source_sha256: Some(fresh.source_sha256),
+            capability,
+            diagnostic_code: "source_revalidated".into(),
+        })
+    }
+
+    /// Internal handoff for a future exporter. The returned bytes and policy
+    /// belong to the same successful revalidation call, avoiding a stale
+    /// policy or a second source read at the export boundary.
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn revalidated_policy_for_sequence(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<FreshValidatedSequence, AppError> {
+        let (
+            source_path,
+            inspected_sha256,
+            inspected_size,
+            ordinal,
+            stored_capability,
+            stored_policy,
+        ) = {
+            let session = self
+                .sessions
+                .get(session_id)
+                .ok_or_else(|| self.unknown_session(AppOperation::GetDiagnostics))?;
+            let assessment = session
+                .assessments
+                .get(sequence_id)
+                .ok_or_else(|| self.unknown_sequence(session_id, sequence_id))?;
+            let Some(policy) = assessment.resolved_policy.clone() else {
+                return Err(self.error(
+                    AppErrorCategory::ExportValidationFailed,
+                    "This sequence has no freshly validated compatibility policy.",
+                    "the inspection assessment did not retain a matched profile policy".into(),
+                    AppOperation::GetDiagnostics,
+                    "no_validated_profile_policy",
+                    Some(session_id.clone()),
+                    Some(sequence_id.clone()),
+                ));
+            };
+            (
+                session.source_path.clone(),
+                session.source_sha256.clone(),
+                session.response.project.byte_size,
+                assessment.structural_ordinal,
+                assessment.capability.clone(),
+                policy,
+            )
+        };
+
+        let fresh_bytes = fs::read(&source_path).map_err(|error| {
+            self.error(
+                AppErrorCategory::FileUnreadable,
+                "Phoenix could not re-read the inspected source.",
+                error.to_string(),
+                AppOperation::GetDiagnostics,
+                "source_revalidation_failed",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            )
+        })?;
+        let fresh_size = u64::try_from(fresh_bytes.len()).map_err(|_| {
+            self.error(
+                AppErrorCategory::ExportValidationFailed,
+                "Phoenix could not validate the current source identity.",
+                "fresh source byte length exceeds compatibility evidence range".into(),
+                AppOperation::GetDiagnostics,
+                "source_identity_changed",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            )
+        })?;
+        let fresh_sha256 = sha256_hex(&fresh_bytes);
+        if fresh_size != inspected_size || fresh_sha256 != inspected_sha256 {
+            return Err(self.error(
+                AppErrorCategory::ExportValidationFailed,
+                "The inspected source changed and cannot use its old policy.",
+                "fresh source size or SHA-256 differs from the inspection identity".into(),
+                AppOperation::GetDiagnostics,
+                "source_identity_changed",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            ));
+        }
+
+        let parsed = parse_project_166(&fresh_bytes).map_err(|error| {
+            self.error(
+                AppErrorCategory::ExportValidationFailed,
+                "The current source no longer has the inspected structure.",
+                error.to_string(),
+                AppOperation::GetDiagnostics,
+                "source_revalidation_failed",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            )
+        })?;
+        let structure =
+            build_structure_snapshot(&parsed.sequences, &fresh_bytes).ok_or_else(|| {
+                self.error(
+                    AppErrorCategory::ExportValidationFailed,
+                    "The current source no longer has the inspected structure.",
+                    "fresh structural evidence conversion was incomplete".into(),
+                    AppOperation::GetDiagnostics,
+                    "source_sequence_identity_changed",
+                    Some(session_id.clone()),
+                    Some(sequence_id.clone()),
+                )
+            })?;
+        if !structure
+            .sequences
+            .iter()
+            .any(|sequence| sequence.structural_ordinal == ordinal)
+        {
+            return Err(self.error(
+                AppErrorCategory::ExportValidationFailed,
+                "The selected sequence no longer exists in the source.",
+                "fresh evidence does not contain the inspected structural ordinal".into(),
+                AppOperation::GetDiagnostics,
+                "source_sequence_identity_changed",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            ));
+        }
+        let evidence = profile_evidence_from_structure(&fresh_sha256, fresh_size, &structure);
+        let Some(registry) = self.registry.clone() else {
+            return Err(self.error(
+                AppErrorCategory::ExportValidationFailed,
+                "Phoenix could not validate the compatibility policy.",
+                self.registry_error
+                    .clone()
+                    .unwrap_or_else(|| "compatibility registry unavailable".into()),
+                AppOperation::GetDiagnostics,
+                "profile_registry_configuration",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            ));
+        };
+        let fresh_match = registry.assess(&evidence, ordinal).map_err(|error| {
+            self.error(
+                AppErrorCategory::ExportValidationFailed,
+                "Phoenix could not validate the compatibility policy.",
+                format!("{error:?}"),
+                AppOperation::GetDiagnostics,
+                "profile_ambiguous_match",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            )
+        })?;
+        let (fresh_capability, fresh_policy) = match fresh_match {
+            ProfileMatch::Matched {
+                capability,
+                resolved_policy,
+            } => (capability, resolved_policy),
+            ProfileMatch::NoMatch => {
+                return Err(self.error(
+                    AppErrorCategory::ExportValidationFailed,
+                    "The current source no longer matches its inspected profile.",
+                    "fresh compatibility assessment returned no match".into(),
+                    AppOperation::GetDiagnostics,
+                    "profile_no_longer_matches",
+                    Some(session_id.clone()),
+                    Some(sequence_id.clone()),
+                ))
+            }
+            ProfileMatch::Rejected { reason, .. } => {
+                return Err(self.error(
+                    AppErrorCategory::ExportValidationFailed,
+                    "The current source no longer matches its inspected profile.",
+                    "fresh compatibility assessment rejected the profile candidate".into(),
+                    AppOperation::GetDiagnostics,
+                    reason.diagnostic_code(),
+                    Some(session_id.clone()),
+                    Some(sequence_id.clone()),
+                ))
+            }
+        };
+        if stored_capability.as_ref() != Some(&fresh_capability)
+            || fresh_policy.profile_id != stored_policy.profile_id
+            || fresh_policy.profile_version != stored_policy.profile_version
+            || fresh_policy != stored_policy
+        {
+            return Err(self.error(
+                AppErrorCategory::ExportValidationFailed,
+                "The current compatibility policy differs from the inspected policy.",
+                "fresh profile identity or resolved policy is not equivalent".into(),
+                AppOperation::GetDiagnostics,
+                "profile_policy_changed",
+                Some(session_id.clone()),
+                Some(sequence_id.clone()),
+            ));
+        }
+        Ok(FreshValidatedSequence {
+            source_bytes: fresh_bytes,
+            source_sha256: fresh_sha256,
+            structural_ordinal: ordinal,
+            resolved_policy: fresh_policy,
+        })
     }
 
     #[allow(clippy::result_large_err)]
@@ -467,40 +719,11 @@ impl AppService {
                 None,
             )
         })?;
-        Ok(ProfileEvidence {
-            source_sha256: session.source_sha256.clone(),
+        Ok(profile_evidence_from_structure(
+            &session.source_sha256,
             source_byte_size,
-            parser_profile: structure.parser_profile.clone(),
-            sequences: structure
-                .sequences
-                .iter()
-                .map(|sequence| SequenceEvidence {
-                    structural_ordinal: sequence.structural_ordinal,
-                    sequence_range: sequence.sequence_range,
-                    name_bytes: sequence.name_bytes.clone(),
-                    name_range: sequence.name_range,
-                    descriptor_count: sequence.descriptor_count,
-                    pair_count: sequence.pair_count,
-                    tracks: sequence
-                        .tracks
-                        .iter()
-                        .map(|track| TrackEvidence {
-                            descriptor_ordinal: track.descriptor_ordinal,
-                            descriptor_range: track.descriptor_range,
-                            pair_ordinal: track.pair_ordinal,
-                            primary_range: track.primary_range,
-                            exact_event_range: track.exact_event_range,
-                            label_bytes: track.label_bytes.clone(),
-                            decoded_event_families: track.decoded_event_families.clone(),
-                            decoded_event_count: track.decoded_event_count,
-                            patch_evidence: track.patch_evidence.clone(),
-                            observed_channel: None,
-                            evidence_complete: false,
-                        })
-                        .collect(),
-                })
-                .collect(),
-        })
+            structure,
+        ))
     }
 
     /// Core-only mapping used later when a registry assesses one sequence.
@@ -938,6 +1161,51 @@ fn owned_range(range: &std::ops::Range<usize>) -> Option<ByteRange> {
         u64::try_from(range.end).ok()?,
     )
     .ok()
+}
+
+fn profile_evidence_from_structure(
+    source_sha256: &str,
+    source_byte_size: u64,
+    structure: &InspectedProjectStructure,
+) -> ProfileEvidence {
+    ProfileEvidence {
+        source_sha256: source_sha256.to_owned(),
+        source_byte_size,
+        parser_profile: structure.parser_profile.clone(),
+        sequences: structure
+            .sequences
+            .iter()
+            .map(|sequence| SequenceEvidence {
+                structural_ordinal: sequence.structural_ordinal,
+                sequence_range: sequence.sequence_range,
+                name_bytes: sequence.name_bytes.clone(),
+                name_range: sequence.name_range,
+                descriptor_count: sequence.descriptor_count,
+                pair_count: sequence.pair_count,
+                tracks: sequence
+                    .tracks
+                    .iter()
+                    .map(|track| TrackEvidence {
+                        descriptor_ordinal: track.descriptor_ordinal,
+                        descriptor_range: track.descriptor_range,
+                        pair_ordinal: track.pair_ordinal,
+                        primary_range: track.primary_range,
+                        exact_event_range: track.exact_event_range,
+                        label_bytes: track.label_bytes.clone(),
+                        decoded_event_families: track.decoded_event_families.clone(),
+                        decoded_event_count: track.decoded_event_count,
+                        patch_evidence: track.patch_evidence.clone(),
+                        observed_channel: None,
+                        evidence_complete: false,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn identification_summary(

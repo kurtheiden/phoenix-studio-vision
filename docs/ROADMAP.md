@@ -297,6 +297,8 @@ committed or specified.
       defer implementation and readiness projection.
 - [x] Implement UI0C4A per-sequence compatibility assessment storage with
       readiness/export behavior frozen.
+- [x] Implement UI0C4B one-shot source revalidation and stale-policy refusal;
+      keep readiness and export projection deferred.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
