@@ -798,6 +798,20 @@ Core alone matches explicit compatibility profiles and selects channel/Patch
 policy. Arbitrary projects remain inspectable but do not receive Export. All
 processing is local and diagnostics never expose arbitrary raw bytes.
 
+## 2026-08-19: implement UI0B as conservative inspection-only service
+
+**Status:** Implemented; export/profile matching deferred
+
+`AppService` owns path-based inspection sessions and translates existing Finder
+identification plus the established 166-byte parser into owned UI0A DTOs. A
+readable unrecognized file returns a safe assessment rather than an operation
+failure; unreadable files return typed `FileUnreadable`. Parsed sequences are
+reported in structural order but remain `PartiallySupported` with
+`MissingChannelRouting` until a complete Core compatibility profile exists.
+Sessions retain path, bytes, size, and SHA-256 for future revalidation. No Ode
+constants, channel inference, export writing, FFI, or serialization dependency
+was introduced.
+
 ## 2026-08-09: keep Track 7 boundary claims conservative
 
 **Status:** Accepted

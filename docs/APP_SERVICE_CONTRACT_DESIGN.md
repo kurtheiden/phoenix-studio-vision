@@ -443,8 +443,16 @@ That is one bounded implementation decision, not a parser/export blocker.
 - Whether Core or a host process owns all destination writes in a signed app.
 - Session expiry limits and future multi-window scheduling.
 
+# UI0A/UI0B status
+
+UI0A is implemented as owned Rust DTOs and deterministic contract tests.
+UI0B now provides the synchronous `AppService` inspection/session layer: it
+reads one path, hashes and identifies the input using existing helpers,
+structurally parses only the established `Descriptor166` profile, enumerates
+owned sequence summaries, and returns bounded diagnostics. No generic sequence
+is marked Ready because routing and compatibility profiles remain unresolved.
+
 # Single recommended next step
 
-Implement UI0A only: owned Rust domain DTOs/enums for API info, sessions,
-project/sequence summaries, readiness, warnings, diagnostics, export request,
-response, and error envelopes—without FFI or UI code.
+Design UI0C's Core-only compatibility-profile registry seam without embedding
+authenticated Ode constants in generic service or contract modules.

@@ -111,9 +111,10 @@ separate dependency/ABI decision.
 
 # Explicit exclusions
 
-No file inspection, session store, compatibility matcher, channel/Patch policy,
-MIDI serialization, export I/O, cancellation registry, progress callbacks,
-Swift/Xcode code, CLI behavior, or Ode-specific constant exists here.
+This DTO module contains no file inspection, session store, compatibility
+matcher, channel/Patch policy, MIDI serialization, export I/O, cancellation
+registry, progress callbacks, Swift/Xcode code, CLI behavior, or Ode-specific
+constant. UI0B's separate `AppService` consumes these DTOs for inspection only.
 
 # Tests
 
@@ -129,7 +130,13 @@ PASS: all DTOs are owned, versioned, deterministic, strongly typed, transport
 independent, parser-free, and free of authenticated target constants. Existing
 tests remain green; no Cargo dependency changed.
 
+# UI0B handoff
+
+The owned contract is now consumed by the separate UI0B `AppService` layer,
+which supplies path inspection, opaque sessions, conservative readiness, and
+bounded diagnostics without changing this transport-independent model.
+
 # Single recommended next step
 
-Implement UI0B application-service inspection/session/readiness mapping without
-adding FFI, serialization dependencies, or UI code.
+Design UI0C's Core-only compatibility-profile registry seam without adding
+authenticated target constants to generic service or contract code.

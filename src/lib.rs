@@ -2,9 +2,14 @@
 
 pub mod analysis;
 pub mod app_contract;
+pub mod app_service;
 pub mod channel_pressure;
 pub mod comparison;
 pub mod controller;
+#[allow(dead_code)]
+pub(crate) mod identification;
+#[allow(dead_code)]
+pub(crate) mod inspection;
 pub mod meter;
 pub mod midi_export;
 pub mod mixed_event;

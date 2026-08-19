@@ -259,8 +259,13 @@ committed or specified.
       identities, readiness/reason codes, diagnostics, compatibility-profile
       isolation, export request/report, errors, JSON-over-C ABI direction,
       cancellation/progress seam, and sandbox-safe path ownership.
-- [ ] Implement UI0A: owned app-facing Core DTOs and deterministic contract
+- [x] Implement UI0A: owned app-facing Core DTOs and deterministic contract
       tests before creating the desktop shell or FFI.
+- [x] Implement UI0B: synchronous path-based AppService inspection, opaque
+      sessions, conservative sequence readiness, bounded diagnostics, and
+      source-identity retention without export or profile guessing.
+- [ ] Design UI0C: isolate the Core-only compatibility-profile registry before
+      enabling any application-facing export operation.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
