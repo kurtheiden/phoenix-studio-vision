@@ -309,13 +309,16 @@ committed or specified.
 - [x] Implement UI0D2 crate-internal in-memory export preparation through
       operation-aware fresh revalidation, UI0D1 conversion, and transactional
       assembly; defer destination commit and public response to UI0D3.
+- [x] Implement UI0D3 public single-sequence destination commit with checked
+      response mapping, deterministic no-overwrite collision handling, and
+      same-directory hard-link publication.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
       Controller, Pitch Bend, Tempo/Meter, or SysEx recovery value.
 
-This milestone is diagnostic only. It does not establish general Studio Vision
-parsing or emit MIDI.
+This milestone remains compatibility-profile gated and does not establish
+general Studio Vision parsing.
 
 ## Long-term product vision
 

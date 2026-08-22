@@ -1,14 +1,16 @@
-//! Owned application-service operations for project inspection.
+//! Owned application-service operations for project inspection and export.
 //!
 //! This layer owns file/session state, translates parser results into
-//! application DTOs, and prepares authorized exports in memory. It does not
-//! expose parser structures or commit export destinations.
+//! application DTOs, prepares authorized exports in memory, and commits the
+//! public single-sequence export destination transaction. It does not expose
+//! parser structures or own broader UI/FFI behavior.
 
 use crate::app_contract::{
-    ApiInfo, AppError, AppErrorCategory, AppOperation, Diagnostics, DiagnosticsLevel,
-    EventFamilySummary, ExportSequenceRequest, InspectProjectRequest, InspectProjectResponse,
-    ProfileCapability, ProjectSummary, Readiness, ReadinessReason, ReadinessReasonCode, SequenceId,
-    SequenceSummary, SessionId, Warning, WarningScope, WarningSeverity, CONTRACT_VERSION,
+    ApiInfo, AppError, AppErrorCategory, AppOperation, CollisionPolicy, Diagnostics,
+    DiagnosticsLevel, EventFamilySummary, ExportCounts as AppExportCounts, ExportSequenceRequest,
+    ExportSequenceResponse, InspectProjectRequest, InspectProjectResponse, ProfileCapability,
+    ProjectSummary, Readiness, ReadinessReason, ReadinessReasonCode, SequenceId, SequenceSummary,
+    SessionId, ValidationStatus, Warning, WarningScope, WarningSeverity, CONTRACT_VERSION,
 };
 use crate::compatibility::{
     ByteRange, CompatibilityRegistry, EvidenceEventFamily, ParserProfileId, PatchEvidence,
@@ -17,6 +19,7 @@ use crate::compatibility::{
 use crate::export_handoff::build_conversion_ready_sequence;
 use crate::identification::{identify, read_finder_metadata};
 use crate::inspection::inspect;
+use crate::midi_export::ExportWarning;
 use crate::mixed_event::{
     walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
     MixedEventTimingBasis,
@@ -25,8 +28,11 @@ use crate::multitrack_export::{assemble_multitrack_sequence, MultitrackExportRes
 use crate::sequence_container::{parse_project_166, TrackAssociations};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum SequenceMatchState {
@@ -108,6 +114,66 @@ pub(crate) struct PreparedExportSequence {
     pub(crate) sequence_display_name: String,
     pub(crate) compatibility_profile: ProfileCapability,
     pub(crate) result: MultitrackExportResult,
+}
+
+const EXPORT_CANDIDATE_LIMIT: usize = 10_000;
+const EXPORT_TEMP_ATTEMPT_LIMIT: usize = 128;
+const EXPORT_TEMP_PREFIX: &str = ".phoenix-export-";
+static NEXT_EXPORT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+struct ExportResponsePreflight {
+    session_id: SessionId,
+    sequence_id: SequenceId,
+    sequence_display_name: String,
+    compatibility_profile: ProfileCapability,
+    musical_track_count: u32,
+    total_smf_track_count: u32,
+    counts: AppExportCounts,
+    warnings: Vec<Warning>,
+    cleanup_warning_source_order: u32,
+    untranslated_metadata_count: u64,
+}
+
+#[derive(Clone, Copy)]
+struct ExportLimits {
+    candidate_count: usize,
+    temp_attempt_count: usize,
+}
+
+trait ExportFileSystem {
+    type TempFile: Write;
+
+    fn destination_is_dir(&self, path: &Path) -> io::Result<bool>;
+    fn create_temp(&self, path: &Path) -> io::Result<Self::TempFile>;
+    fn sync_temp(&self, file: &Self::TempFile) -> io::Result<()>;
+    fn hard_link(&self, temp: &Path, candidate: &Path) -> io::Result<()>;
+    fn remove_temp(&self, path: &Path) -> io::Result<()>;
+}
+
+struct RealExportFileSystem;
+
+impl ExportFileSystem for RealExportFileSystem {
+    type TempFile = File;
+
+    fn destination_is_dir(&self, path: &Path) -> io::Result<bool> {
+        fs::metadata(path).map(|metadata| metadata.is_dir())
+    }
+
+    fn create_temp(&self, path: &Path) -> io::Result<Self::TempFile> {
+        OpenOptions::new().write(true).create_new(true).open(path)
+    }
+
+    fn sync_temp(&self, file: &Self::TempFile) -> io::Result<()> {
+        file.sync_all()
+    }
+
+    fn hard_link(&self, temp: &Path, candidate: &Path) -> io::Result<()> {
+        fs::hard_link(temp, candidate)
+    }
+
+    fn remove_temp(&self, path: &Path) -> io::Result<()> {
+        fs::remove_file(path)
+    }
 }
 
 #[derive(Clone)]
@@ -601,6 +667,349 @@ impl AppService {
             compatibility_profile,
             result,
         })
+    }
+
+    /// Prepare, commit, and report one single-sequence MIDI export.
+    #[allow(clippy::result_large_err)]
+    pub fn export_sequence(
+        &self,
+        request: ExportSequenceRequest,
+    ) -> Result<ExportSequenceResponse, AppError> {
+        self.export_sequence_with_file_system(
+            &request,
+            &RealExportFileSystem,
+            ExportLimits {
+                candidate_count: EXPORT_CANDIDATE_LIMIT,
+                temp_attempt_count: EXPORT_TEMP_ATTEMPT_LIMIT,
+            },
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn export_sequence_with_file_system<F: ExportFileSystem>(
+        &self,
+        request: &ExportSequenceRequest,
+        file_system: &F,
+        limits: ExportLimits,
+    ) -> Result<ExportSequenceResponse, AppError> {
+        let prepared = self.prepare_export_sequence(request)?;
+        self.commit_prepared_export(request, prepared, file_system, limits)
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn commit_prepared_export<F: ExportFileSystem>(
+        &self,
+        request: &ExportSequenceRequest,
+        prepared: PreparedExportSequence,
+        file_system: &F,
+        limits: ExportLimits,
+    ) -> Result<ExportSequenceResponse, AppError> {
+        let mut response = self.preflight_export_response(&prepared)?;
+        let normalized_stem =
+            normalize_export_filename_stem(&request.filename_stem).ok_or_else(|| {
+                self.export_error(
+                    request,
+                    AppErrorCategory::ExportValidationFailed,
+                    "Phoenix could not use this MIDI filename.",
+                    "filename_stem is empty or contains a forbidden filename component value"
+                        .into(),
+                    "invalid_filename_stem",
+                )
+            })?;
+        let destination = PathBuf::from(&request.destination_folder);
+        match file_system.destination_is_dir(&destination) {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(self.export_error(
+                    request,
+                    AppErrorCategory::OutputIoFailed,
+                    "Phoenix could not use the selected destination folder.",
+                    "the supplied destination exists but is not a directory".into(),
+                    "invalid_destination_folder",
+                ))
+            }
+            Err(error) => {
+                return Err(self.export_error(
+                    request,
+                    AppErrorCategory::OutputIoFailed,
+                    "Phoenix could not use the selected destination folder.",
+                    bounded_io_detail(&error),
+                    "invalid_destination_folder",
+                ))
+            }
+        }
+
+        let (temp_path, mut temp_file) = self.allocate_export_temp(
+            request,
+            file_system,
+            &destination,
+            limits.temp_attempt_count,
+        )?;
+        if let Err(error) = temp_file.write_all(&prepared.result.smf_bytes) {
+            drop(temp_file);
+            return Err(self.export_error_with_temp_cleanup(
+                request,
+                file_system,
+                &temp_path,
+                AppErrorCategory::OutputIoFailed,
+                "Phoenix could not write the MIDI export.",
+                bounded_io_detail(&error),
+                "output_write_failed",
+            ));
+        }
+        if let Err(error) = temp_file.flush() {
+            drop(temp_file);
+            return Err(self.export_error_with_temp_cleanup(
+                request,
+                file_system,
+                &temp_path,
+                AppErrorCategory::OutputIoFailed,
+                "Phoenix could not synchronize the MIDI export.",
+                bounded_io_detail(&error),
+                "output_sync_failed",
+            ));
+        }
+        if let Err(error) = file_system.sync_temp(&temp_file) {
+            drop(temp_file);
+            return Err(self.export_error_with_temp_cleanup(
+                request,
+                file_system,
+                &temp_path,
+                AppErrorCategory::OutputIoFailed,
+                "Phoenix could not synchronize the MIDI export.",
+                bounded_io_detail(&error),
+                "output_sync_failed",
+            ));
+        }
+        drop(temp_file);
+
+        let candidate_count = match request.collision_policy {
+            CollisionPolicy::FailIfExists => 1,
+            CollisionPolicy::GenerateUniqueName => limits.candidate_count,
+        };
+        let mut committed = None;
+        for candidate_index in 0..candidate_count {
+            let filename = export_candidate_filename(&normalized_stem, candidate_index);
+            let candidate = destination.join(filename);
+            let Some(output_path) = candidate.to_str().map(str::to_owned) else {
+                return Err(self.export_error_with_temp_cleanup(
+                    request,
+                    file_system,
+                    &temp_path,
+                    AppErrorCategory::OutputIoFailed,
+                    "Phoenix could not use the selected destination folder.",
+                    "the output path is not representable as UTF-8".into(),
+                    "invalid_destination_folder",
+                ));
+            };
+            match file_system.hard_link(&temp_path, &candidate) {
+                Ok(()) => {
+                    committed = Some((candidate, output_path));
+                    break;
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    if request.collision_policy == CollisionPolicy::FailIfExists {
+                        return Err(self.export_error_with_temp_cleanup(
+                            request,
+                            file_system,
+                            &temp_path,
+                            AppErrorCategory::DestinationExists,
+                            "A file already exists at the selected destination.",
+                            "the final candidate was occupied at no-overwrite publication".into(),
+                            "destination_exists",
+                        ));
+                    }
+                }
+                Err(error) => {
+                    return Err(self.export_error_with_temp_cleanup(
+                        request,
+                        file_system,
+                        &temp_path,
+                        AppErrorCategory::OutputIoFailed,
+                        "Phoenix could not commit the MIDI export.",
+                        bounded_io_detail(&error),
+                        "output_commit_failed",
+                    ));
+                }
+            }
+        }
+        let Some((committed_path, output_path)) = committed else {
+            return Err(self.export_error_with_temp_cleanup(
+                request,
+                file_system,
+                &temp_path,
+                AppErrorCategory::DestinationExists,
+                "Phoenix could not find an unused MIDI filename.",
+                format!("all {candidate_count} deterministic candidates were occupied"),
+                "destination_name_exhausted",
+            ));
+        };
+
+        if let Err(error) = file_system.remove_temp(&temp_path) {
+            response.warnings.push(Warning {
+                code: "temporary_cleanup_failed".into(),
+                message: "The MIDI export succeeded, but Phoenix could not remove a private temporary filesystem entry.".into(),
+                technical_detail: Some(format!(
+                    "temporary filename {}; {}",
+                    temp_path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("<unrepresentable>"),
+                    bounded_io_detail(&error)
+                )),
+                scope: WarningScope::Sequence,
+                severity: WarningSeverity::Caution,
+                diagnostic_ref: None,
+                source_order: response.cleanup_warning_source_order,
+            });
+        }
+
+        debug_assert_eq!(committed_path.to_str(), Some(output_path.as_str()));
+        Ok(ExportSequenceResponse {
+            session_id: response.session_id,
+            sequence_id: response.sequence_id,
+            sequence_display_name: response.sequence_display_name,
+            output_path,
+            compatibility_profile: Some(response.compatibility_profile),
+            musical_track_count: response.musical_track_count,
+            total_smf_track_count: response.total_smf_track_count,
+            counts: response.counts,
+            warnings: response.warnings,
+            untranslated_metadata_count: response.untranslated_metadata_count,
+            validation_status: ValidationStatus::Validated,
+        })
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn preflight_export_response(
+        &self,
+        prepared: &PreparedExportSequence,
+    ) -> Result<ExportResponsePreflight, AppError> {
+        let overflow = || {
+            self.error(
+                AppErrorCategory::InternalError,
+                "Phoenix could not represent the completed export report.",
+                "an in-memory export report count exceeds the public contract width".into(),
+                AppOperation::ExportSequence,
+                "export_response_overflow",
+                Some(prepared.session_id.clone()),
+                Some(prepared.sequence_id.clone()),
+            )
+        };
+        let report = &prepared.result.report;
+        let musical_track_count =
+            u32::try_from(report.musical_track_count).map_err(|_| overflow())?;
+        let total_smf_track_count =
+            u32::try_from(report.total_smf_track_count).map_err(|_| overflow())?;
+        let untranslated_metadata_count =
+            u64::try_from(report.untranslated_metadata.len()).map_err(|_| overflow())?;
+        let cleanup_warning_source_order =
+            u32::try_from(report.warnings.len()).map_err(|_| overflow())?;
+        let mut warnings = Vec::with_capacity(report.warnings.len() + 1);
+        for (index, warning) in report.warnings.iter().enumerate() {
+            let source_order = u32::try_from(index).map_err(|_| overflow())?;
+            warnings.push(map_export_warning(warning, source_order));
+        }
+        let totals = &report.totals;
+        Ok(ExportResponsePreflight {
+            session_id: prepared.session_id.clone(),
+            sequence_id: prepared.sequence_id.clone(),
+            sequence_display_name: prepared.sequence_display_name.clone(),
+            compatibility_profile: prepared.compatibility_profile.clone(),
+            musical_track_count,
+            total_smf_track_count,
+            counts: AppExportCounts {
+                notes: totals.notes,
+                generated_note_offs: totals.generated_note_offs,
+                controllers: totals.controllers,
+                bank_select_msb: totals.bank_select_msb,
+                bank_select_lsb: totals.bank_select_lsb,
+                programs: totals.program_changes,
+                pressure: totals.channel_pressure,
+                pitch_bend: totals.pitch_bend,
+                tempo: totals.tempo,
+                meter: totals.meter,
+            },
+            warnings,
+            cleanup_warning_source_order,
+            untranslated_metadata_count,
+        })
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn allocate_export_temp<F: ExportFileSystem>(
+        &self,
+        request: &ExportSequenceRequest,
+        file_system: &F,
+        destination: &Path,
+        attempt_count: usize,
+    ) -> Result<(PathBuf, F::TempFile), AppError> {
+        for _ in 0..attempt_count {
+            let path = destination.join(next_export_temp_filename());
+            match file_system.create_temp(&path) {
+                Ok(file) => return Ok((path, file)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(self.export_error(
+                        request,
+                        AppErrorCategory::OutputIoFailed,
+                        "Phoenix could not allocate a temporary export file.",
+                        bounded_io_detail(&error),
+                        "temporary_file_allocation_failed",
+                    ))
+                }
+            }
+        }
+        Err(self.export_error(
+            request,
+            AppErrorCategory::OutputIoFailed,
+            "Phoenix could not allocate a temporary export file.",
+            format!("all {attempt_count} private temporary names were occupied"),
+            "temporary_file_allocation_failed",
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn export_error_with_temp_cleanup<F: ExportFileSystem>(
+        &self,
+        request: &ExportSequenceRequest,
+        file_system: &F,
+        temp_path: &Path,
+        category: AppErrorCategory,
+        display_message: &str,
+        mut technical_message: String,
+        diagnostic_code: &str,
+    ) -> AppError {
+        if let Err(cleanup) = file_system.remove_temp(temp_path) {
+            technical_message.push_str("; temporary cleanup also failed: ");
+            technical_message.push_str(&bounded_io_detail(&cleanup));
+        }
+        self.export_error(
+            request,
+            category,
+            display_message,
+            technical_message,
+            diagnostic_code,
+        )
+    }
+
+    fn export_error(
+        &self,
+        request: &ExportSequenceRequest,
+        category: AppErrorCategory,
+        display_message: &str,
+        technical_message: String,
+        diagnostic_code: &str,
+    ) -> AppError {
+        self.error(
+            category,
+            display_message,
+            technical_message,
+            AppOperation::ExportSequence,
+            diagnostic_code,
+            Some(request.session_id.clone()),
+            Some(request.sequence_id.clone()),
+        )
     }
 
     /// Internal handoff for a future exporter. The returned bytes and policy
@@ -1419,6 +1828,83 @@ fn identification_summary(
     }
 }
 
+fn normalize_export_filename_stem(filename_stem: &str) -> Option<String> {
+    let stem = if filename_stem
+        .get(filename_stem.len().saturating_sub(4)..)
+        .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".mid"))
+    {
+        &filename_stem[..filename_stem.len() - 4]
+    } else {
+        filename_stem
+    };
+    (!stem.is_empty()
+        && stem != "."
+        && stem != ".."
+        && !stem.contains('/')
+        && !stem.contains('\\')
+        && !stem.contains('\0'))
+    .then(|| stem.to_owned())
+}
+
+fn export_candidate_filename(normalized_stem: &str, candidate_index: usize) -> String {
+    if candidate_index == 0 {
+        format!("{normalized_stem}.mid")
+    } else {
+        format!("{normalized_stem} {}.mid", candidate_index + 1)
+    }
+}
+
+fn next_export_temp_filename() -> String {
+    let counter = NEXT_EXPORT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    format!(
+        "{EXPORT_TEMP_PREFIX}{}-{timestamp}-{counter}.tmp",
+        std::process::id()
+    )
+}
+
+fn bounded_io_detail(error: &io::Error) -> String {
+    const MAX_CHARS: usize = 512;
+    let detail = error.to_string();
+    if detail.chars().count() <= MAX_CHARS {
+        detail
+    } else {
+        detail.chars().take(MAX_CHARS).collect()
+    }
+}
+
+fn map_export_warning(warning: &ExportWarning, source_order: u32) -> Warning {
+    let (code, message, technical_detail) = match warning {
+        ExportWarning::MeterClocksFallback {
+            source_third_payload,
+            used,
+        } => (
+            "meter_clocks_fallback",
+            "Phoenix used the standard MIDI clocks-per-click value for this sequence.",
+            format!("source clocks-per-click {source_third_payload}; used {used}"),
+        ),
+        ExportWarning::MeterThirtySecondsFallback {
+            source_fourth_payload,
+            used,
+        } => (
+            "meter_thirty_seconds_fallback",
+            "Phoenix used the standard MIDI notated-32nd-notes value for this sequence.",
+            format!("source notated 32nd notes {source_fourth_payload}; used {used}"),
+        ),
+    };
+    Warning {
+        code: code.into(),
+        message: message.into(),
+        technical_detail: Some(technical_detail),
+        scope: WarningScope::Sequence,
+        severity: WarningSeverity::Caution,
+        diagnostic_ref: None,
+        source_order,
+    }
+}
+
 fn overall_readiness(sequences: &[SequenceSummary]) -> Readiness {
     if sequences.is_empty() {
         return Readiness::Unknown;
@@ -1450,6 +1936,11 @@ mod tests {
         CompatibilityProfile, PatchExpectation, PatchTranslationPolicy, ProfileId, ProfileVersion,
         ProjectExpectation, SequenceExpectation, TrackChannelPolicy, TrackExpectation, TrackKey,
     };
+    use crate::midi_export::{ExportCounts as MidiExportCounts, UntranslatedMetadata};
+    use crate::multitrack_export::{MultitrackExportReport, MultitrackExportResult};
+    use std::cell::{Cell, RefCell};
+    use std::collections::VecDeque;
+    use std::rc::Rc;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1466,6 +1957,130 @@ mod tests {
         ));
         fs::write(&path, bytes).unwrap();
         path
+    }
+
+    fn portable_directory() -> PathBuf {
+        static NEXT_DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let id = NEXT_DIRECTORY_ID.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("phoenix-ui0d3-{}-{nonce}-{id}", std::process::id()));
+        fs::create_dir(&path).unwrap();
+        path
+    }
+
+    fn temp_entries(directory: &Path) -> Vec<PathBuf> {
+        fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(EXPORT_TEMP_PREFIX))
+            })
+            .collect()
+    }
+
+    #[derive(Default)]
+    struct FaultExportFileSystem {
+        create_errors: RefCell<VecDeque<io::ErrorKind>>,
+        hard_link_errors: RefCell<VecDeque<io::ErrorKind>>,
+        remove_errors: RefCell<VecDeque<io::ErrorKind>>,
+        sync_errors: RefCell<VecDeque<io::ErrorKind>>,
+        fail_write: Cell<bool>,
+        fail_flush: Cell<bool>,
+        destination_calls: Cell<usize>,
+        create_calls: Cell<usize>,
+        write_calls: Rc<Cell<usize>>,
+        sync_calls: Cell<usize>,
+        hard_link_calls: Cell<usize>,
+        remove_calls: Cell<usize>,
+    }
+
+    #[derive(Debug)]
+    struct FaultTempFile {
+        file: File,
+        fail_write: bool,
+        fail_flush: bool,
+        write_calls: Rc<Cell<usize>>,
+    }
+
+    impl Write for FaultTempFile {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.write_calls.set(self.write_calls.get() + 1);
+            if self.fail_write {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "injected write failure",
+                ))
+            } else {
+                self.file.write(buffer)
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            if self.fail_flush {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "injected flush failure",
+                ))
+            } else {
+                self.file.flush()
+            }
+        }
+    }
+
+    impl ExportFileSystem for FaultExportFileSystem {
+        type TempFile = FaultTempFile;
+
+        fn destination_is_dir(&self, path: &Path) -> io::Result<bool> {
+            self.destination_calls.set(self.destination_calls.get() + 1);
+            fs::metadata(path).map(|metadata| metadata.is_dir())
+        }
+
+        fn create_temp(&self, path: &Path) -> io::Result<Self::TempFile> {
+            self.create_calls.set(self.create_calls.get() + 1);
+            if let Some(kind) = self.create_errors.borrow_mut().pop_front() {
+                return Err(io::Error::from(kind));
+            }
+            let file = OpenOptions::new().write(true).create_new(true).open(path)?;
+            Ok(FaultTempFile {
+                file,
+                fail_write: self.fail_write.get(),
+                fail_flush: self.fail_flush.get(),
+                write_calls: Rc::clone(&self.write_calls),
+            })
+        }
+
+        fn sync_temp(&self, file: &Self::TempFile) -> io::Result<()> {
+            self.sync_calls.set(self.sync_calls.get() + 1);
+            if let Some(kind) = self.sync_errors.borrow_mut().pop_front() {
+                Err(io::Error::from(kind))
+            } else {
+                file.file.sync_all()
+            }
+        }
+
+        fn hard_link(&self, temp: &Path, candidate: &Path) -> io::Result<()> {
+            self.hard_link_calls.set(self.hard_link_calls.get() + 1);
+            if let Some(kind) = self.hard_link_errors.borrow_mut().pop_front() {
+                Err(io::Error::from(kind))
+            } else {
+                fs::hard_link(temp, candidate)
+            }
+        }
+
+        fn remove_temp(&self, path: &Path) -> io::Result<()> {
+            self.remove_calls.set(self.remove_calls.get() + 1);
+            if let Some(kind) = self.remove_errors.borrow_mut().pop_front() {
+                Err(io::Error::from(kind))
+            } else {
+                fs::remove_file(path)
+            }
+        }
     }
 
     fn portable_registry(bytes: &[u8]) -> CompatibilityRegistry {
@@ -1775,6 +2390,645 @@ mod tests {
         let error = service.prepare_export_sequence(&request).unwrap_err();
         assert_eq!(error.diagnostic_code, "source_revalidation_failed");
         assert_eq!(error.operation, AppOperation::ExportSequence);
+    }
+
+    fn ui0d3_request(
+        response: &InspectProjectResponse,
+        destination: &Path,
+        filename_stem: &str,
+        collision_policy: CollisionPolicy,
+    ) -> ExportSequenceRequest {
+        let mut request = export_request(
+            response.session_id.clone(),
+            response.sequences[0].sequence_id.clone(),
+        );
+        request.destination_folder = destination.to_string_lossy().into_owned();
+        request.filename_stem = filename_stem.into();
+        request.collision_policy = collision_policy;
+        request
+    }
+
+    fn prepared_report(warnings: Vec<ExportWarning>) -> PreparedExportSequence {
+        PreparedExportSequence {
+            session_id: SessionId::new("prepared-session"),
+            sequence_id: SequenceId::new("prepared-sequence"),
+            sequence_display_name: "Prepared Sequence".into(),
+            compatibility_profile: ProfileCapability {
+                profile_id: "prepared-profile".into(),
+                profile_version: 7,
+                display_label: "Prepared Profile".into(),
+            },
+            result: MultitrackExportResult {
+                smf_bytes: b"prepared-smf".to_vec(),
+                report: MultitrackExportReport {
+                    sequence_name: b"Prepared Sequence".to_vec(),
+                    musical_track_count: 9,
+                    total_smf_track_count: 10,
+                    tracks: Vec::new(),
+                    totals: MidiExportCounts {
+                        notes: 1,
+                        generated_note_offs: 2,
+                        controllers: 3,
+                        bank_select_msb: 4,
+                        bank_select_lsb: 5,
+                        program_changes: 6,
+                        channel_pressure: 7,
+                        pitch_bend: 8,
+                        tempo: 9,
+                        meter: 10,
+                    },
+                    warnings,
+                    untranslated_metadata: vec![UntranslatedMetadata::ControllerContext {
+                        source_ordinal: 11,
+                    }],
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn ui0d3_public_export_writes_exact_bytes_and_maps_response() {
+        let (service, source, inspection) = portable_service();
+        let destination = portable_directory();
+        let request = ui0d3_request(
+            &inspection,
+            &destination,
+            "Song.MID",
+            CollisionPolicy::FailIfExists,
+        );
+        let expected = service.prepare_export_sequence(&request).unwrap();
+
+        let response = service.export_sequence(request).unwrap();
+        let output = destination.join("Song.mid");
+        assert_eq!(response.output_path, output.to_string_lossy());
+        assert_eq!(fs::read(&output).unwrap(), expected.result.smf_bytes);
+        assert_eq!(response.session_id, expected.session_id);
+        assert_eq!(response.sequence_id, expected.sequence_id);
+        assert_eq!(
+            response.sequence_display_name,
+            expected.sequence_display_name
+        );
+        assert_eq!(
+            response.compatibility_profile,
+            Some(expected.compatibility_profile)
+        );
+        assert_eq!(response.musical_track_count, 2);
+        assert_eq!(response.total_smf_track_count, 3);
+        assert_eq!(response.counts.notes, 2);
+        assert_eq!(response.counts.programs, 1);
+        assert_eq!(response.counts.bank_select_msb, 1);
+        assert_eq!(response.counts.bank_select_lsb, 1);
+        assert_eq!(response.validation_status, ValidationStatus::Validated);
+        assert!(response.warnings.is_empty());
+        assert!(temp_entries(&destination).is_empty());
+
+        fs::remove_dir_all(destination).unwrap();
+        fs::remove_file(source).unwrap();
+    }
+
+    #[test]
+    fn ui0d3_preparation_precedes_destination_and_filename_rules_are_exact() {
+        assert_eq!(
+            normalize_export_filename_stem("Song").as_deref(),
+            Some("Song")
+        );
+        assert_eq!(
+            normalize_export_filename_stem("Song.mid").as_deref(),
+            Some("Song")
+        );
+        assert_eq!(
+            normalize_export_filename_stem("Song.MID").as_deref(),
+            Some("Song")
+        );
+        assert_eq!(
+            normalize_export_filename_stem("Song.mid.mid").as_deref(),
+            Some("Song.mid")
+        );
+        assert_eq!(export_candidate_filename("Song.mid", 0), "Song.mid.mid");
+        assert_eq!(
+            normalize_export_filename_stem("embedded.mid.name").as_deref(),
+            Some("embedded.mid.name")
+        );
+        assert_eq!(
+            normalize_export_filename_stem(" Song ").as_deref(),
+            Some(" Song ")
+        );
+        for invalid in ["", ".mid", ".MID", ".", "..", "a/b", "a\\b", "a\0b"] {
+            assert_eq!(normalize_export_filename_stem(invalid), None, "{invalid:?}");
+        }
+
+        let (service, source, inspection) = portable_service();
+        let missing = source.with_extension("destination-must-not-exist");
+        let mut request =
+            ui0d3_request(&inspection, &missing, "Song", CollisionPolicy::FailIfExists);
+        request.contract_version += 1;
+        let error = service.export_sequence(request).unwrap_err();
+        assert_eq!(error.diagnostic_code, "contract_version_mismatch");
+        assert_eq!(error.operation, AppOperation::ExportSequence);
+        assert!(!missing.exists());
+
+        let invalid_stem =
+            ui0d3_request(&inspection, &missing, ".mid", CollisionPolicy::FailIfExists);
+        let error = service.export_sequence(invalid_stem).unwrap_err();
+        assert_eq!(error.category, AppErrorCategory::ExportValidationFailed);
+        assert_eq!(error.diagnostic_code, "invalid_filename_stem");
+        assert_eq!(error.operation, AppOperation::ExportSequence);
+        assert!(!missing.exists());
+        fs::remove_file(source).unwrap();
+    }
+
+    #[test]
+    fn ui0d3_invalid_destinations_and_directory_symlink_are_bounded() {
+        let (service, source, inspection) = portable_service();
+        let missing = source.with_extension("missing-directory");
+        let request = ui0d3_request(&inspection, &missing, "Song", CollisionPolicy::FailIfExists);
+        let error = service.export_sequence(request).unwrap_err();
+        assert_eq!(error.category, AppErrorCategory::OutputIoFailed);
+        assert_eq!(error.diagnostic_code, "invalid_destination_folder");
+        assert_eq!(error.operation, AppOperation::ExportSequence);
+
+        let request = ui0d3_request(&inspection, &source, "Song", CollisionPolicy::FailIfExists);
+        let error = service.export_sequence(request).unwrap_err();
+        assert_eq!(error.diagnostic_code, "invalid_destination_folder");
+
+        #[cfg(unix)]
+        {
+            let destination = portable_directory();
+            let symlink = destination.with_extension("symlink");
+            std::os::unix::fs::symlink(&destination, &symlink).unwrap();
+            let request = ui0d3_request(
+                &inspection,
+                &symlink,
+                "Symlink Song",
+                CollisionPolicy::FailIfExists,
+            );
+            let response = service.export_sequence(request).unwrap();
+            assert_eq!(fs::read(response.output_path).unwrap()[..4], *b"MThd");
+            fs::remove_file(symlink).unwrap();
+            fs::remove_dir_all(destination).unwrap();
+        }
+        fs::remove_file(source).unwrap();
+    }
+
+    #[test]
+    fn ui0d3_collision_policies_preserve_existing_entries_and_choose_lowest_gap() {
+        let (service, source, inspection) = portable_service();
+        let fail_directory = portable_directory();
+        let occupied = fail_directory.join("Song.mid");
+        fs::write(&occupied, b"preserve-me").unwrap();
+        let request = ui0d3_request(
+            &inspection,
+            &fail_directory,
+            "Song",
+            CollisionPolicy::FailIfExists,
+        );
+        let error = service.export_sequence(request).unwrap_err();
+        assert_eq!(error.category, AppErrorCategory::DestinationExists);
+        assert_eq!(error.diagnostic_code, "destination_exists");
+        assert_eq!(fs::read(&occupied).unwrap(), b"preserve-me");
+        assert!(temp_entries(&fail_directory).is_empty());
+
+        let unique_directory = portable_directory();
+        fs::write(unique_directory.join("Song.mid"), b"base").unwrap();
+        fs::write(unique_directory.join("Song 3.mid"), b"three").unwrap();
+        let request = ui0d3_request(
+            &inspection,
+            &unique_directory,
+            "Song.mid",
+            CollisionPolicy::GenerateUniqueName,
+        );
+        let response = service.export_sequence(request).unwrap();
+        assert_eq!(
+            response.output_path,
+            unique_directory.join("Song 2.mid").to_string_lossy()
+        );
+        assert_eq!(
+            fs::read(unique_directory.join("Song.mid")).unwrap(),
+            b"base"
+        );
+        assert_eq!(
+            fs::read(unique_directory.join("Song 3.mid")).unwrap(),
+            b"three"
+        );
+
+        let base_directory = portable_directory();
+        let response = service
+            .export_sequence(ui0d3_request(
+                &inspection,
+                &base_directory,
+                "Song",
+                CollisionPolicy::GenerateUniqueName,
+            ))
+            .unwrap();
+        assert_eq!(
+            response.output_path,
+            base_directory.join("Song.mid").to_string_lossy()
+        );
+
+        let third_directory = portable_directory();
+        fs::write(third_directory.join("Song.mid"), b"base").unwrap();
+        fs::write(third_directory.join("Song 2.mid"), b"two").unwrap();
+        let response = service
+            .export_sequence(ui0d3_request(
+                &inspection,
+                &third_directory,
+                "Song",
+                CollisionPolicy::GenerateUniqueName,
+            ))
+            .unwrap();
+        assert_eq!(
+            response.output_path,
+            third_directory.join("Song 3.mid").to_string_lossy()
+        );
+
+        fs::remove_dir_all(fail_directory).unwrap();
+        fs::remove_dir_all(unique_directory).unwrap();
+        fs::remove_dir_all(base_directory).unwrap();
+        fs::remove_dir_all(third_directory).unwrap();
+        fs::remove_file(source).unwrap();
+    }
+
+    #[test]
+    fn ui0d3_public_operation_id_is_inert() {
+        let (service, source, inspection) = portable_service();
+        let first_directory = portable_directory();
+        let second_directory = portable_directory();
+        let first = ui0d3_request(
+            &inspection,
+            &first_directory,
+            "Song",
+            CollisionPolicy::FailIfExists,
+        );
+        let mut second = ui0d3_request(
+            &inspection,
+            &second_directory,
+            "Song",
+            CollisionPolicy::FailIfExists,
+        );
+        second.operation_id = Some(OperationId::new("ignored-token"));
+        let first_response = service.export_sequence(first).unwrap();
+        let second_response = service.export_sequence(second).unwrap();
+        assert_eq!(
+            fs::read(first_response.output_path).unwrap(),
+            fs::read(second_response.output_path).unwrap()
+        );
+        assert_eq!(first_response.counts, second_response.counts);
+        assert_eq!(first_response.warnings, second_response.warnings);
+        assert_eq!(
+            first_response.compatibility_profile,
+            second_response.compatibility_profile
+        );
+        fs::remove_dir_all(first_directory).unwrap();
+        fs::remove_dir_all(second_directory).unwrap();
+        fs::remove_file(source).unwrap();
+    }
+
+    #[test]
+    fn ui0d3_response_preflight_maps_all_counts_and_warnings() {
+        let prepared = prepared_report(vec![
+            ExportWarning::MeterClocksFallback {
+                source_third_payload: 12,
+                used: 24,
+            },
+            ExportWarning::MeterThirtySecondsFallback {
+                source_fourth_payload: 6,
+                used: 8,
+            },
+        ]);
+        let preflight = AppService::new()
+            .preflight_export_response(&prepared)
+            .unwrap();
+        assert_eq!(preflight.musical_track_count, 9);
+        assert_eq!(preflight.total_smf_track_count, 10);
+        assert_eq!(preflight.untranslated_metadata_count, 1);
+        assert_eq!(preflight.cleanup_warning_source_order, 2);
+        assert_eq!(
+            preflight.counts,
+            AppExportCounts {
+                notes: 1,
+                generated_note_offs: 2,
+                controllers: 3,
+                bank_select_msb: 4,
+                bank_select_lsb: 5,
+                programs: 6,
+                pressure: 7,
+                pitch_bend: 8,
+                tempo: 9,
+                meter: 10,
+            }
+        );
+        assert_eq!(preflight.warnings[0].code, "meter_clocks_fallback");
+        assert_eq!(preflight.warnings[0].severity, WarningSeverity::Caution);
+        assert_eq!(preflight.warnings[0].scope, WarningScope::Sequence);
+        assert_eq!(preflight.warnings[0].source_order, 0);
+        assert_eq!(
+            preflight.warnings[0].message,
+            "Phoenix used the standard MIDI clocks-per-click value for this sequence."
+        );
+        assert_eq!(
+            preflight.warnings[0].technical_detail.as_deref(),
+            Some("source clocks-per-click 12; used 24")
+        );
+        assert_eq!(preflight.warnings[1].code, "meter_thirty_seconds_fallback");
+        assert_eq!(preflight.warnings[1].source_order, 1);
+        assert_eq!(
+            preflight.warnings[1].message,
+            "Phoenix used the standard MIDI notated-32nd-notes value for this sequence."
+        );
+        assert_eq!(
+            preflight.warnings[1].technical_detail.as_deref(),
+            Some("source notated 32nd notes 6; used 8")
+        );
+        assert!(preflight
+            .warnings
+            .iter()
+            .all(|warning| warning.diagnostic_ref.is_none()));
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn ui0d3_response_overflow_precedes_every_filesystem_operation() {
+        let service = AppService::new();
+        let mut prepared = prepared_report(Vec::new());
+        prepared.result.report.musical_track_count = u32::MAX as usize + 1;
+        let expected_session_id = prepared.session_id.clone();
+        let expected_sequence_id = prepared.sequence_id.clone();
+        let request = ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: expected_session_id.clone(),
+            sequence_id: expected_sequence_id.clone(),
+            destination_folder: "/must/not/be/accessed/ui0d3-overflow".into(),
+            filename_stem: "Overflow".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        };
+        let file_system = FaultExportFileSystem::default();
+
+        let error = service
+            .commit_prepared_export(
+                &request,
+                prepared,
+                &file_system,
+                ExportLimits {
+                    candidate_count: 10_000,
+                    temp_attempt_count: 128,
+                },
+            )
+            .unwrap_err();
+
+        assert_eq!(error.category, AppErrorCategory::InternalError);
+        assert_eq!(error.diagnostic_code, "export_response_overflow");
+        assert_eq!(error.operation, AppOperation::ExportSequence);
+        assert_eq!(error.session_id, Some(expected_session_id));
+        assert_eq!(error.sequence_id, Some(expected_sequence_id));
+        assert_eq!(file_system.destination_calls.get(), 0);
+        assert_eq!(file_system.create_calls.get(), 0);
+        assert_eq!(file_system.write_calls.get(), 0);
+        assert_eq!(file_system.sync_calls.get(), 0);
+        assert_eq!(file_system.hard_link_calls.get(), 0);
+        assert_eq!(file_system.remove_calls.get(), 0);
+    }
+
+    #[test]
+    fn ui0d3_temp_allocation_retries_only_collisions_and_is_bounded() {
+        let service = AppService::new();
+        let destination = portable_directory();
+        let request = export_request(SessionId::new("s"), SequenceId::new("q"));
+        let retry = FaultExportFileSystem::default();
+        retry
+            .create_errors
+            .borrow_mut()
+            .extend([io::ErrorKind::AlreadyExists, io::ErrorKind::AlreadyExists]);
+        let (path, file) = service
+            .allocate_export_temp(&request, &retry, &destination, 3)
+            .unwrap();
+        drop(file);
+        assert_eq!(retry.create_calls.get(), 3);
+        fs::remove_file(path).unwrap();
+
+        let exhausted = FaultExportFileSystem::default();
+        exhausted
+            .create_errors
+            .borrow_mut()
+            .extend(std::iter::repeat(io::ErrorKind::AlreadyExists).take(128));
+        let error = service
+            .allocate_export_temp(&request, &exhausted, &destination, 128)
+            .unwrap_err();
+        assert_eq!(error.diagnostic_code, "temporary_file_allocation_failed");
+        assert_eq!(exhausted.create_calls.get(), 128);
+
+        let immediate = FaultExportFileSystem::default();
+        immediate.create_errors.borrow_mut().extend([
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::AlreadyExists,
+        ]);
+        let error = service
+            .allocate_export_temp(&request, &immediate, &destination, 128)
+            .unwrap_err();
+        assert_eq!(error.diagnostic_code, "temporary_file_allocation_failed");
+        assert_eq!(immediate.create_calls.get(), 1);
+        fs::remove_dir_all(destination).unwrap();
+    }
+
+    #[test]
+    fn ui0d3_write_sync_and_publication_failures_keep_primary_errors() {
+        let service = AppService::new();
+        for (stage, diagnostic) in [
+            ("write", "output_write_failed"),
+            ("flush", "output_sync_failed"),
+            ("sync", "output_sync_failed"),
+            ("publish", "output_commit_failed"),
+        ] {
+            let destination = portable_directory();
+            let prepared = prepared_report(Vec::new());
+            let request = ExportSequenceRequest {
+                contract_version: CONTRACT_VERSION,
+                session_id: prepared.session_id.clone(),
+                sequence_id: prepared.sequence_id.clone(),
+                destination_folder: destination.to_string_lossy().into_owned(),
+                filename_stem: "Failure".into(),
+                collision_policy: CollisionPolicy::FailIfExists,
+                operation_id: None,
+            };
+            let file_system = FaultExportFileSystem::default();
+            match stage {
+                "write" => file_system.fail_write.set(true),
+                "flush" => file_system.fail_flush.set(true),
+                "sync" => file_system
+                    .sync_errors
+                    .borrow_mut()
+                    .push_back(io::ErrorKind::Other),
+                "publish" => file_system
+                    .hard_link_errors
+                    .borrow_mut()
+                    .push_back(io::ErrorKind::PermissionDenied),
+                _ => unreachable!(),
+            }
+            file_system
+                .remove_errors
+                .borrow_mut()
+                .push_back(io::ErrorKind::PermissionDenied);
+            let error = service
+                .commit_prepared_export(
+                    &request,
+                    prepared,
+                    &file_system,
+                    ExportLimits {
+                        candidate_count: 10_000,
+                        temp_attempt_count: 128,
+                    },
+                )
+                .unwrap_err();
+            assert_eq!(error.category, AppErrorCategory::OutputIoFailed);
+            assert_eq!(error.diagnostic_code, diagnostic);
+            assert_eq!(error.operation, AppOperation::ExportSequence);
+            assert!(error.technical_message.contains("cleanup also failed"));
+            assert!(!destination.join("Failure.mid").exists());
+            for temp in temp_entries(&destination) {
+                fs::remove_file(temp).unwrap();
+            }
+            fs::remove_dir(destination).unwrap();
+        }
+    }
+
+    #[test]
+    fn ui0d3_publication_collisions_retry_and_exhaust_without_rewriting() {
+        let service = AppService::new();
+        let destination = portable_directory();
+        assert_eq!(EXPORT_CANDIDATE_LIMIT, 10_000);
+        assert_eq!(export_candidate_filename("Race", 9_999), "Race 10000.mid");
+        let prepared = prepared_report(Vec::new());
+        let request = ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: prepared.session_id.clone(),
+            sequence_id: prepared.sequence_id.clone(),
+            destination_folder: destination.to_string_lossy().into_owned(),
+            filename_stem: "Race".into(),
+            collision_policy: CollisionPolicy::GenerateUniqueName,
+            operation_id: None,
+        };
+        let file_system = FaultExportFileSystem::default();
+        file_system
+            .hard_link_errors
+            .borrow_mut()
+            .push_back(io::ErrorKind::AlreadyExists);
+        let response = service
+            .commit_prepared_export(
+                &request,
+                prepared,
+                &file_system,
+                ExportLimits {
+                    candidate_count: 3,
+                    temp_attempt_count: 3,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            response.output_path,
+            destination.join("Race 2.mid").to_string_lossy()
+        );
+        assert_eq!(file_system.hard_link_calls.get(), 2);
+        assert_eq!(file_system.write_calls.get(), 1);
+
+        let fail_prepared = prepared_report(Vec::new());
+        let fail_request = ExportSequenceRequest {
+            collision_policy: CollisionPolicy::FailIfExists,
+            ..request.clone()
+        };
+        let fail_file_system = FaultExportFileSystem::default();
+        fail_file_system
+            .hard_link_errors
+            .borrow_mut()
+            .push_back(io::ErrorKind::AlreadyExists);
+        let error = service
+            .commit_prepared_export(
+                &fail_request,
+                fail_prepared,
+                &fail_file_system,
+                ExportLimits {
+                    candidate_count: 3,
+                    temp_attempt_count: 3,
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.category, AppErrorCategory::DestinationExists);
+        assert_eq!(error.diagnostic_code, "destination_exists");
+        assert!(!destination.join("Race.mid").exists());
+
+        let exhausted_prepared = prepared_report(Vec::new());
+        let exhausted = FaultExportFileSystem::default();
+        exhausted
+            .hard_link_errors
+            .borrow_mut()
+            .extend(std::iter::repeat(io::ErrorKind::AlreadyExists).take(3));
+        let error = service
+            .commit_prepared_export(
+                &request,
+                exhausted_prepared,
+                &exhausted,
+                ExportLimits {
+                    candidate_count: 3,
+                    temp_attempt_count: 3,
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.category, AppErrorCategory::DestinationExists);
+        assert_eq!(error.diagnostic_code, "destination_name_exhausted");
+        assert_eq!(exhausted.hard_link_calls.get(), 3);
+        assert_eq!(exhausted.write_calls.get(), 1);
+        fs::remove_dir_all(destination).unwrap();
+    }
+
+    #[test]
+    fn ui0d3_post_publication_cleanup_failure_preserves_output_and_warns() {
+        let service = AppService::new();
+        let destination = portable_directory();
+        let prepared = prepared_report(vec![ExportWarning::MeterClocksFallback {
+            source_third_payload: 12,
+            used: 24,
+        }]);
+        let expected_bytes = prepared.result.smf_bytes.clone();
+        let request = ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: prepared.session_id.clone(),
+            sequence_id: prepared.sequence_id.clone(),
+            destination_folder: destination.to_string_lossy().into_owned(),
+            filename_stem: "Committed".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        };
+        let file_system = FaultExportFileSystem::default();
+        file_system
+            .remove_errors
+            .borrow_mut()
+            .push_back(io::ErrorKind::PermissionDenied);
+        let response = service
+            .commit_prepared_export(
+                &request,
+                prepared,
+                &file_system,
+                ExportLimits {
+                    candidate_count: 10_000,
+                    temp_attempt_count: 128,
+                },
+            )
+            .unwrap();
+        let output = destination.join("Committed.mid");
+        assert!(output.exists());
+        assert_eq!(fs::read(&output).unwrap(), expected_bytes);
+        assert_eq!(response.output_path, output.to_string_lossy());
+        assert_eq!(response.validation_status, ValidationStatus::Validated);
+        assert_eq!(response.warnings.len(), 2);
+        let warning = &response.warnings[1];
+        assert_eq!(warning.code, "temporary_cleanup_failed");
+        assert_eq!(warning.severity, WarningSeverity::Caution);
+        assert_eq!(warning.scope, WarningScope::Sequence);
+        assert_eq!(warning.source_order, 1);
+        assert_eq!(warning.message, "The MIDI export succeeded, but Phoenix could not remove a private temporary filesystem entry.");
+        assert!(warning.diagnostic_ref.is_none());
+        assert_eq!(temp_entries(&destination).len(), 1);
+
+        fs::remove_dir_all(destination).unwrap();
     }
 
     fn summary(readiness: Readiness) -> SequenceSummary {

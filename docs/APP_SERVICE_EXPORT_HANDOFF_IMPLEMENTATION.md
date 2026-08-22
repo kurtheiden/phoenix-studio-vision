@@ -1,9 +1,9 @@
 # Objective
 
-UI0D1 implements the internal conversion-ready boundary described by the
-export-handoff design. It consumes one UI0C4B `FreshValidatedSequence` and
-produces owned MIDI-domain values suitable for the existing pure
-`MultitrackSequenceInput` assembler.
+UI0D implements the export-handoff design from one UI0C4B
+`FreshValidatedSequence` through conversion-ready adaptation, in-memory
+assembly, and the public no-overwrite destination transaction. This document
+records the implemented UI0D1, UI0D2, and UI0D3 boundaries.
 
 # Implemented boundary
 
@@ -88,9 +88,9 @@ orchestration and invoking this handoff after explicit fresh revalidation.
 
 # UI0D1 gate
 
-The owned conversion-ready handoff is implemented and reviewable. The next
-step is UI0D2 service orchestration, which must keep UI0C4B revalidation as the
-only export-authorization path.
+At the UI0D1 gate, the owned conversion-ready handoff was complete and UI0D2
+service orchestration remained next. UI0D2 subsequently preserved UI0C4B as
+the only export-authorization path.
 
 # UI0D2 in-memory preparation
 
@@ -134,5 +134,53 @@ rename files, or construct an `output_path`. Those remain UI0D3.
 
 # Single recommended next step
 
-Implement UI0D3 public destination commit around the prepared in-memory result,
-including collision policy, atomic writing, and `ExportSequenceResponse`.
+Review and commit the completed UI0D3 public destination transaction. Do not
+broaden it into UI, FFI, batch, overwrite, audio, or DAW behavior.
+
+# UI0D3 public destination commit
+
+`AppService::export_sequence` owns the existing request and calls
+`prepare_export_sequence(&request)` before filename validation or destination
+access. It then preflights checked track/metadata/warning widths, maps every
+assembler count and meter fallback warning, and retains one additional warning
+index for exceptional private-temp cleanup. No source is reread, reparsed,
+rematched, or reassembled after UI0D2.
+
+One final case-insensitive `.mid` suffix is normalized before the conservative
+single-component stem validation. The destination must already resolve to a
+directory; Phoenix creates no directories. `FailIfExists` has one candidate,
+while `GenerateUniqueName` tries the deterministic base through candidate
+10,000.
+
+The destination transaction allocates one private same-directory file with
+`create_new`, retrying at most 128 `AlreadyExists` collisions. It writes the
+prepared SMF once, flushes, calls `sync_all`, closes the handle, and publishes
+with `std::fs::hard_link`. Ordinary rename is not used. Hard-link success is
+the irreversible no-overwrite commit point.
+
+Pre-publication failure attempts temp cleanup while retaining the primary
+bounded diagnostic. Post-publication cleanup failure never removes the final
+candidate or changes export success; it appends the sequence-scoped Caution
+warning `temporary_cleanup_failed`. The public response is built after commit
+with the actual path, prepared identity/profile, checked report mapping, and
+`ValidationStatus::Validated`. Production performs no output reread.
+
+# UI0D3 portable coverage and exclusions
+
+The fixture-independent public-success regression rereads the committed MIDI
+and proves exact byte equality with the prepared SMF. Collision/naming tests
+independently prove destination selection and no-overwrite behavior, while the
+post-publication cleanup-failure regression also verifies preserved final
+bytes. Additional coverage includes response mapping,
+preparation-before-destination ordering, filename normalization/refusal,
+missing/non-directory and symlinked destinations, final-publication collision
+retry and bounded exhaustion, temp allocation bounds,
+write/flush/sync/publication failures, retained primary errors when cleanup
+also fails, warning/count mapping, and inert `operation_id`. A private
+filesystem seam is limited to create/write/sync/link/remove fault injection;
+ordinary paths use real temporary directories and files.
+
+UI0D3 adds no overwrite policy, GUI/Swift/FFI, save-dialog integration, batch
+or cancellation semantics, parser/profile expansion, inferred routing, Patch
+defaults, audio recovery, DAW export, or instrument remapping. Authentic Ode
+fixtures are not required for UI0D3 correctness.

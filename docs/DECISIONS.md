@@ -1048,3 +1048,20 @@ and untranslated-metadata count. Existing meter fallback warnings become
 sequence-scoped `Caution` warnings with stable codes `meter_clocks_fallback`
 and `meter_thirty_seconds_fallback`. `operation_id` remains reserved and has no
 UI0D3 behavior.
+
+## 2026-08-22: implement UI0D3 public destination commit and response
+
+**Status:** Implemented
+
+`AppService::export_sequence` now delegates all authorization and assembly to
+UI0D2 before any destination access, preflights every fallible response width,
+and commits the already assembled SMF through the designed same-directory
+exclusive-temp and hard-link transaction. It never uses replacement-prone
+rename, rereads output in production, or redoes source/profile/conversion work.
+
+The implementation preserves deterministic no-overwrite collision behavior,
+the irreversible hard-link commit point, bounded operation-aware errors, and
+successful-response `temporary_cleanup_failed` reporting without removing the
+committed candidate. Portable real-filesystem and private fault-seam tests cover
+the destination transaction and response mapping; external authentic fixtures
+remain optional and are not required.

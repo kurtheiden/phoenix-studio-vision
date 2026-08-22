@@ -341,7 +341,11 @@ the injection remains below the public contract; absence of partial final
 artifacts and cleanup of Phoenix temporary names in ordinary success and
 pre-publication failures where cleanup succeeds; operation metadata;
 warning/count mapping; and `operation_id` independence. Every successful write
-is reread by the test and compared byte-for-byte with the prepared SMF.
+need not be reread redundantly: the public successful-export regression compares
+the committed MIDI byte-for-byte with the prepared SMF, collision/naming tests
+independently prove destination selection and no-overwrite behavior, and the
+post-publication cleanup-failure regression verifies that the preserved final
+bytes remain exact.
 Authentic Ode coverage remains optional and additive.
 
 The cleanup tests distinguish the commit point explicitly: successful
@@ -449,12 +453,10 @@ speculative parser support.
 
 # Current design status
 
-UI0D1 and UI0D2 are implemented. UI0D3 destination, collision, atomic commit,
-error, and response semantics are now designed; destination output itself is
-not implemented by this document.
+UI0D1, UI0D2, and UI0D3 are implemented. Destination output remains restricted
+to the designed single-sequence, compatibility-profile-gated operation.
 
 # Single recommended next step
 
-Implement UI0D3 public `AppService::export_sequence` using the designed checked
-response mapping and atomic no-overwrite destination commit. Do not add an
-overwrite policy or broaden UI0D beyond single-sequence MIDI export.
+Review and commit the completed UI0D3 public destination transaction. Do not
+add an overwrite policy or broaden UI0D beyond single-sequence MIDI export.
