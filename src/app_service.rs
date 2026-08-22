@@ -8,9 +8,10 @@
 use crate::app_contract::{
     ApiInfo, AppError, AppErrorCategory, AppOperation, CollisionPolicy, Diagnostics,
     DiagnosticsLevel, EventFamilySummary, ExportCounts as AppExportCounts, ExportSequenceRequest,
-    ExportSequenceResponse, InspectProjectRequest, InspectProjectResponse, ProfileCapability,
-    ProjectSummary, Readiness, ReadinessReason, ReadinessReasonCode, SequenceId, SequenceSummary,
-    SessionId, ValidationStatus, Warning, WarningScope, WarningSeverity, CONTRACT_VERSION,
+    ExportSequenceResponse, InspectProjectRequest, InspectProjectResponse, OperationId,
+    ProfileCapability, ProjectSummary, Readiness, ReadinessReason, ReadinessReasonCode, SequenceId,
+    SequenceSummary, SessionId, ValidationStatus, Warning, WarningScope, WarningSeverity,
+    CONTRACT_VERSION,
 };
 use crate::compatibility::{
     ByteRange, CompatibilityRegistry, EvidenceEventFamily, ParserProfileId, PatchEvidence,
@@ -261,6 +262,20 @@ impl AppService {
 
     pub fn session_count(&self) -> usize {
         self.sessions.len()
+    }
+
+    /// Report that synchronous v0 Core operations do not support cancellation.
+    #[allow(clippy::result_large_err)]
+    pub fn cancel_operation(&self, _operation_id: &OperationId) -> Result<(), AppError> {
+        Err(self.error(
+            AppErrorCategory::InternalError,
+            "Phoenix cannot cancel this operation.",
+            "synchronous v0 Core operations do not have a cancellation registry".into(),
+            AppOperation::CancelOperation,
+            "cancellation_not_supported",
+            None,
+            None,
+        ))
     }
 
     #[allow(clippy::result_large_err)]
@@ -3029,6 +3044,194 @@ mod tests {
         assert_eq!(temp_entries(&destination).len(), 1);
 
         fs::remove_dir_all(destination).unwrap();
+    }
+
+    #[test]
+    fn ui0e_public_error_identity_and_context_are_stable() {
+        let mut service = AppService::new();
+        let contract_error = service
+            .inspect_project(InspectProjectRequest {
+                contract_version: CONTRACT_VERSION + 1,
+                source_path: "/not/accessed/ui0e-contract".into(),
+                diagnostics_level: DiagnosticsLevel::None,
+            })
+            .unwrap_err();
+        assert_eq!(contract_error.category, AppErrorCategory::InternalError);
+        assert_eq!(contract_error.diagnostic_code, "contract_version_mismatch");
+        assert_eq!(contract_error.operation, AppOperation::InspectProject);
+
+        let missing_source = portable_directory().join("missing-source");
+        let file_error = service
+            .inspect_project(InspectProjectRequest {
+                contract_version: CONTRACT_VERSION,
+                source_path: missing_source.to_string_lossy().into_owned(),
+                diagnostics_level: DiagnosticsLevel::None,
+            })
+            .unwrap_err();
+        assert_eq!(file_error.category, AppErrorCategory::FileUnreadable);
+        assert_eq!(file_error.diagnostic_code, "file_read_failed");
+        assert_eq!(file_error.operation, AppOperation::InspectProject);
+        fs::remove_dir(missing_source.parent().unwrap()).unwrap();
+
+        let unknown_session_id = SessionId::new("unknown-session");
+        let session_error = service
+            .get_diagnostics(&unknown_session_id, DiagnosticsLevel::Summary)
+            .unwrap_err();
+        assert_eq!(session_error.category, AppErrorCategory::InternalError);
+        assert_eq!(session_error.diagnostic_code, "unknown_session");
+        assert_eq!(session_error.operation, AppOperation::GetDiagnostics);
+        assert_eq!(session_error.session_id, None);
+        assert_eq!(session_error.sequence_id, None);
+
+        let (mut portable, source, inspection) = portable_service();
+        let unknown_sequence_id = SequenceId::new("unknown-sequence");
+        let sequence_error = portable
+            .assessment_for_sequence(&inspection.session_id, &unknown_sequence_id)
+            .unwrap_err();
+        assert_eq!(sequence_error.category, AppErrorCategory::InternalError);
+        assert_eq!(sequence_error.diagnostic_code, "unknown_sequence");
+        assert_eq!(sequence_error.operation, AppOperation::GetDiagnostics);
+        assert_eq!(
+            sequence_error.session_id,
+            Some(inspection.session_id.clone())
+        );
+        assert_eq!(sequence_error.sequence_id, Some(unknown_sequence_id));
+
+        let second_inspection = portable
+            .inspect_project(InspectProjectRequest {
+                contract_version: CONTRACT_VERSION,
+                source_path: source.to_string_lossy().into_owned(),
+                diagnostics_level: DiagnosticsLevel::None,
+            })
+            .unwrap();
+        let cross_session_sequence_id = inspection.sequences[0].sequence_id.clone();
+        let cross_session_error = portable
+            .assessment_for_sequence(&second_inspection.session_id, &cross_session_sequence_id)
+            .unwrap_err();
+        assert_eq!(
+            cross_session_error.category,
+            AppErrorCategory::InternalError
+        );
+        assert_eq!(cross_session_error.diagnostic_code, "unknown_sequence");
+        assert_eq!(cross_session_error.operation, AppOperation::GetDiagnostics);
+        assert_eq!(
+            cross_session_error.session_id,
+            Some(second_inspection.session_id)
+        );
+        assert_eq!(
+            cross_session_error.sequence_id,
+            Some(cross_session_sequence_id)
+        );
+
+        let destination = portable_directory();
+        let invalid_stem = ui0d3_request(
+            &inspection,
+            &destination,
+            ".mid",
+            CollisionPolicy::FailIfExists,
+        );
+        let validation_error = portable.export_sequence(invalid_stem).unwrap_err();
+        assert_eq!(
+            validation_error.category,
+            AppErrorCategory::ExportValidationFailed
+        );
+        assert_eq!(validation_error.diagnostic_code, "invalid_filename_stem");
+        assert_eq!(validation_error.operation, AppOperation::ExportSequence);
+
+        let missing_destination = destination.join("missing");
+        let destination_request = ui0d3_request(
+            &inspection,
+            &missing_destination,
+            "Song",
+            CollisionPolicy::FailIfExists,
+        );
+        let destination_error = portable.export_sequence(destination_request).unwrap_err();
+        assert_eq!(destination_error.category, AppErrorCategory::OutputIoFailed);
+        assert_eq!(
+            destination_error.diagnostic_code,
+            "invalid_destination_folder"
+        );
+        assert_eq!(destination_error.operation, AppOperation::ExportSequence);
+
+        fs::remove_dir(destination).unwrap();
+        fs::remove_file(source).unwrap();
+    }
+
+    #[test]
+    fn ui0e_source_revalidation_code_tuple_distinguishes_failure_categories() {
+        let (unreadable_service, unreadable_path, unreadable_inspection) = portable_service();
+        let unreadable_request = export_request(
+            unreadable_inspection.session_id,
+            unreadable_inspection.sequences[0].sequence_id.clone(),
+        );
+        fs::remove_file(unreadable_path).unwrap();
+        let unreadable = unreadable_service
+            .prepare_export_sequence(&unreadable_request)
+            .unwrap_err();
+        assert_eq!(unreadable.category, AppErrorCategory::FileUnreadable);
+        assert_eq!(unreadable.diagnostic_code, "source_revalidation_failed");
+        assert_eq!(unreadable.operation, AppOperation::ExportSequence);
+
+        let (mut invalid_service, invalid_path, invalid_inspection) = portable_service();
+        let invalid_request = export_request(
+            invalid_inspection.session_id.clone(),
+            invalid_inspection.sequences[0].sequence_id.clone(),
+        );
+        let invalid_bytes = vec![0; fs::read(&invalid_path).unwrap().len()];
+        fs::write(&invalid_path, &invalid_bytes).unwrap();
+        invalid_service
+            .sessions
+            .get_mut(&invalid_inspection.session_id)
+            .unwrap()
+            .source_sha256 = sha256_hex(&invalid_bytes);
+        let invalid = invalid_service
+            .prepare_export_sequence(&invalid_request)
+            .unwrap_err();
+        assert_eq!(invalid.category, AppErrorCategory::ExportValidationFailed);
+        assert_eq!(invalid.diagnostic_code, "source_revalidation_failed");
+        assert_eq!(invalid.operation, AppOperation::ExportSequence);
+        fs::remove_file(invalid_path).unwrap();
+    }
+
+    #[test]
+    fn ui0e_unsupported_cancellation_is_inert_and_preserves_committed_export() {
+        let (service, source, inspection) = portable_service();
+        let destination = portable_directory();
+        let before = service.get_inspection(&inspection.session_id).unwrap();
+        let response = service
+            .export_sequence(ui0d3_request(
+                &inspection,
+                &destination,
+                "Committed",
+                CollisionPolicy::FailIfExists,
+            ))
+            .unwrap();
+        let committed_bytes = fs::read(&response.output_path).unwrap();
+        let session_count = service.session_count();
+
+        for operation_id in [
+            OperationId::new("arbitrary-a"),
+            OperationId::new("arbitrary-b"),
+        ] {
+            let error = service.cancel_operation(&operation_id).unwrap_err();
+            assert_eq!(error.contract_version, CONTRACT_VERSION);
+            assert_eq!(error.category, AppErrorCategory::InternalError);
+            assert_eq!(error.diagnostic_code, "cancellation_not_supported");
+            assert_eq!(error.operation, AppOperation::CancelOperation);
+            assert_eq!(error.session_id, None);
+            assert_eq!(error.sequence_id, None);
+        }
+
+        assert_eq!(service.session_count(), session_count);
+        assert_eq!(
+            service.get_inspection(&inspection.session_id).unwrap(),
+            before
+        );
+        assert_eq!(fs::read(&response.output_path).unwrap(), committed_bytes);
+        assert_eq!(response.validation_status, ValidationStatus::Validated);
+
+        fs::remove_dir_all(destination).unwrap();
+        fs::remove_file(source).unwrap();
     }
 
     fn summary(readiness: Readiness) -> SequenceSummary {

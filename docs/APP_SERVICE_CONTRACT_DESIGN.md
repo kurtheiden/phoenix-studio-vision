@@ -456,10 +456,9 @@ is marked Ready because routing and compatibility profiles remain unresolved.
 
 # Current status and single recommended next step
 
-UI0A through UI0D are implemented. UI0E is now designed in
-`APP_SERVICE_ERROR_CANCELLATION_DESIGN.md` but not implemented. Review that
-stable error/report and explicit unsupported-cancellation contract before
-adding UI0E code. UI0F transport remains deferred.
+UI0A through UI0E are implemented. Review and commit UI0E's stable error/report
+invariants and explicit unsupported-cancellation operation before beginning a
+separate UI0F transport design. UI0F remains deferred.
 
 # UI0C registry seam
 

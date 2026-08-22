@@ -458,6 +458,6 @@ to the designed single-sequence, compatibility-profile-gated operation.
 
 # Single recommended next step
 
-Review the designed UI0E stable error/report and explicit unsupported v0
-cancellation contract. Do not reopen UI0D3 transaction semantics or broaden
-UI0D beyond single-sequence MIDI export.
+Review and commit the implemented UI0E stable error/report invariants and
+explicit unsupported v0 cancellation operation. Do not reopen UI0D3
+transaction semantics or begin the deferred UI0F transport.

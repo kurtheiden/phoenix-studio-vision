@@ -399,6 +399,6 @@ DTOs before transport or Swift code.
 
 # Single recommended next step
 
-Review the designed UI0E stable error/report and explicit v0
-unsupported-cancellation boundary before implementation. Complete UI0E and the
-separate UI0F transport before creating the UI1 native shell.
+Review and commit the implemented UI0E stable error/report and explicit v0
+unsupported-cancellation boundary. UI0F transport remains a separate deferred
+slice that must precede the UI1 native shell.

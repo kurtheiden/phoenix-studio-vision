@@ -1084,3 +1084,20 @@ unknown or running operation was cancelled. Swift must await synchronous Core
 work off the main actor. Any future cooperative design requires a revised or
 negotiated contract and can never delete, hide, or roll back an output after
 UI0D3's successful hard-link commit.
+
+## 2026-08-22: implement UI0E stable contract invariants
+
+**Status:** Implemented
+
+`AppService::cancel_operation` now exposes the designed v0 behavior: every
+opaque operation token returns `InternalError` / `cancellation_not_supported`
+with `CancelOperation`, no session or sequence identity, and no service-state
+mutation. It performs no token lookup and adds no registry, concurrency, or
+genuine cancellation behavior.
+
+Focused portable tests lock representative public error identity tuples,
+unknown-identifier context, the intentional dual-category
+`source_revalidation_failed` code, inert token behavior, and preservation of a
+completed hard-link export. Existing UI0D3 report and warning tests remain the
+source of truth for structured success invariants. UI0F transport remains
+deferred.

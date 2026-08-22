@@ -315,7 +315,7 @@ committed or specified.
 - [x] Design UI0E stable error/report identity, diagnostic-code policy, and an
       explicit unsupported v0 cancellation seam that preserves UI0D3's
       irreversible commit point.
-- [ ] Implement UI0E contract-invariant tests and the explicit
+- [x] Implement UI0E contract-invariant tests and the explicit
       `cancellation_not_supported` operation without adding transport.
 - [ ] Implement UI0F JSON/C ABI only after its separate dependency, allocator,
       symbol, and packaging contract is approved.

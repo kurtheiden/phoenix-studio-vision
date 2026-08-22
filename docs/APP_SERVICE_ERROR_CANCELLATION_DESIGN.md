@@ -239,8 +239,16 @@ serde attributes, C symbol names, allocator ABI, response-buffer ownership, or
 library/XCFramework packaging. Those remain a separate UI0F dependency and ABI
 decision.
 
-# Status and next step
+# Implementation status and next step
 
-UI0E is designed but not implemented. The next step is a focused read-only
-review of this contract before implementing its invariant tests and explicit
-unsupported cancellation operation.
+UI0E is implemented. `AppService::cancel_operation` intentionally leaves its
+opaque token unresolved and always returns `InternalError` /
+`cancellation_not_supported` with `CancelOperation` and no session or sequence
+identity. Focused portable tests lock the representative public error tuples,
+unknown-identifier context, dual-category `source_revalidation_failed` tuple,
+inert operation-token behavior, and preservation of an already committed
+export. Existing UI0D3 tests continue to lock warning order, structured warning
+fields, checked report mapping, and validated-success behavior.
+
+No cancellation registry, concurrency, transport, or UI behavior was added.
+The next step is read-only review and commit of UI0E; UI0F remains deferred.

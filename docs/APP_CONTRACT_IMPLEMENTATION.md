@@ -138,6 +138,6 @@ bounded diagnostics without changing this transport-independent model.
 
 # Single recommended next step
 
-Review the designed UI0E stable error/report and explicit unsupported v0
-cancellation contract before implementing its invariant tests and reserved
-operation. UI0F serialization and ABI work remains separate.
+Review and commit the implemented UI0E stable error/report invariants and
+explicit unsupported v0 cancellation operation. UI0F serialization and ABI
+work remains separate and deferred.
