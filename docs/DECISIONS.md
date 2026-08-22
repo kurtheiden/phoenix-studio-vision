@@ -1006,3 +1006,45 @@ Destination, filename, collision, and operation-identifier request fields do
 not affect preparation. UI0D2 creates no destination state, public response, or
 output file. UI0D3 remains solely responsible for public `export_sequence`,
 atomic destination commit, and `ExportSequenceResponse`.
+
+## 2026-08-22: define UI0D3 destination and response semantics
+
+**Status:** Designed; implementation deferred
+
+UI0D3 calls `prepare_export_sequence` before any destination access, maps every
+fallible response value before commit, validates one conservative filename
+stem and an existing destination directory, then commits the exact assembled
+bytes without overwrite. One final case-insensitive `.mid` suffix is normalized
+to a single canonical `.mid`; stems cannot be empty, `.`, `..`, contain path
+separators, or contain NUL.
+
+`FailIfExists` uses only `<stem>.mid`. `GenerateUniqueName` tries that base and
+then `<stem> 2.mid` through `<stem> 10000.mid`, choosing the lowest candidate
+that can be committed. No policy overwrites. Exhaustion is
+`DestinationExists` / `destination_name_exhausted`.
+
+Ordinary `std::fs::rename` is excluded because it may replace an existing
+destination. UI0D3 instead creates and fully syncs an exclusive same-directory
+temporary file and atomically publishes it with `std::fs::hard_link`. Successful
+hard-link publication is the irreversible commit point. Phoenix then attempts
+to remove the private temporary name but never deletes the committed candidate
+as compensation for cleanup failure. A collision at publication either
+advances unique naming or returns `destination_exists`; other pre-publication
+write, sync, and publication failures retain bounded `OutputIoFailed`
+diagnostics. There is no replacement-prone fallback and no post-write MIDI
+reread in production.
+
+If post-publication temp removal fails, the export remains successful with the
+final candidate preserved and a sequence-scoped `Caution` warning named
+`temporary_cleanup_failed`; the private hard link may remain. Its warning index
+is preflighted together with all assembler warning indices before destination
+access, so response construction cannot fail after commit. Temp-name allocation
+retries at most 128 times only for `AlreadyExists`; any other creation error
+fails immediately as `OutputIoFailed` / `temporary_file_allocation_failed`.
+
+The public response is constructed only after commit and directly maps the
+prepared identity/profile plus checked assembler report counts, warning order,
+and untranslated-metadata count. Existing meter fallback warnings become
+sequence-scoped `Caution` warnings with stable codes `meter_clocks_fallback`
+and `meter_thirty_seconds_fallback`. `operation_id` remains reserved and has no
+UI0D3 behavior.

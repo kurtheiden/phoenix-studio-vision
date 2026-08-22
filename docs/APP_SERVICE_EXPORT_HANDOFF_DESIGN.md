@@ -174,6 +174,188 @@ resolution, and atomic commit of `result.smf_bytes` may UI0D3 construct the
 public `ExportSequenceResponse`, including the real `output_path` and values
 derived from `result.report`.
 
+# UI0D3 destination contract
+
+`filename_stem` is one filename component, not a path. Phoenix removes one
+final case-insensitive `.mid` suffix when present, then requires the remaining
+stem to be non-empty, different from `.` and `..`, and free of `/`, `\`, and
+NUL. Whitespace is otherwise preserved. Phoenix does not repeatedly strip
+suffixes: `Song.mid.mid` has normalized stem `Song.mid` and therefore produces
+candidate `Song.mid.mid`, while `.mid` is invalid. Every candidate receives
+exactly one canonical lowercase `.mid` suffix after normalization.
+
+`destination_folder` must already exist and resolve through normal filesystem
+semantics to a directory. Phoenix does not create it or canonicalize it as an
+authorization mechanism. Relative and absolute paths follow normal Rust/OS
+semantics. A folder symlink that resolves normally to a directory is accepted.
+An existing final entry is a collision whether it is a file, directory, or
+symlink; Phoenix never intentionally replaces it.
+
+`FailIfExists` has one candidate, `<stem>.mid`. A collision returns
+`DestinationExists` / `destination_exists` without modifying the entry.
+`GenerateUniqueName` tries, in order, `<stem>.mid`, `<stem> 2.mid`,
+`<stem> 3.mid`, through `<stem> 10000.mid`. It uses the lowest candidate that
+can be committed without replacement. If all 10,000 candidates collide, it
+returns `DestinationExists` / `destination_name_exhausted`. No current policy
+permits overwrite.
+
+# UI0D3 atomic no-overwrite commit
+
+The Rust standard library has no portable rename-with-no-replace operation:
+`std::fs::rename` may replace an existing destination. UI0D3 therefore uses a
+same-directory hard-link publication strategy and never falls back to ordinary
+rename:
+
+1. Create a Phoenix-owned temporary file in the selected destination directory
+   with `OpenOptions::create_new(true)`. Its private name combines a Phoenix
+   prefix with collision-resistant process/time/counter material; allocation
+   retries at most 128 names.
+2. Write exactly `PreparedExportSequence.result.smf_bytes`, flush, call
+   `sync_all`, and close the file.
+3. Call `std::fs::hard_link(temp, candidate)`. This creates the final directory
+   entry atomically and fails if any entry already occupies the candidate.
+   Because both paths are in one directory, they are on the same filesystem.
+   Successful hard-link publication is the irreversible UI0D3 commit point:
+   the complete, closed, synced bytes are now the committed output at
+   `candidate`.
+4. Attempt to remove the temporary name. Phoenix never removes the committed
+   candidate to compensate for failure of this private-name cleanup.
+
+For `GenerateUniqueName`, an `AlreadyExists` result from the hard-link commit is
+a collision and advances to the next candidate. For `FailIfExists`, it returns
+`destination_exists`. Other hard-link failures are `output_commit_failed`;
+filesystems that cannot create the required hard link are unsupported for that
+attempt rather than receiving a replacement-prone fallback.
+
+Before publication, every failure attempts to remove Phoenix's temporary
+artifact. Failure of that cleanup does not replace the primary error and may be
+included in bounded technical detail; no user-visible final candidate has been
+created. After publication, failure to remove the temporary name does not turn
+the completed export into an error. Phoenix preserves the committed candidate
+unconditionally, leaves the second private hard link when it cannot remove it,
+and returns the otherwise successful response with one additional
+`temporary_cleanup_failed` warning. Preserving the complete recovered output
+takes precedence over hiding or destroying it. `sync_all` defines the file
+durability boundary; portable directory-fsync or stronger crash-consistency is
+not promised.
+
+Temporary names are private implementation details and are never returned as
+`output_path`. Tests identify them by the private Phoenix prefix rather than an
+exact nonce. Phoenix retries at most 128 names only when `create_new` returns
+`AlreadyExists`. Any other creation error fails immediately as
+`OutputIoFailed` / `temporary_file_allocation_failed`; permission, read-only
+filesystem, invalid-path, and unrelated I/O errors are not retried as name
+collisions.
+
+# UI0D3 errors and response mapping
+
+All UI0D3 errors use `AppOperation::ExportSequence` and retain session and
+sequence identity when available:
+
+| Condition | Category | Diagnostic |
+|---|---|---|
+| Invalid filename stem | `ExportValidationFailed` | `invalid_filename_stem` |
+| Missing, unreadable, or non-directory destination folder | `OutputIoFailed` | `invalid_destination_folder` |
+| `FailIfExists` collision | `DestinationExists` | `destination_exists` |
+| All 10,000 unique candidates collide | `DestinationExists` | `destination_name_exhausted` |
+| All 128 temporary names collide, or another temp creation error occurs | `OutputIoFailed` | `temporary_file_allocation_failed` |
+| Byte write failure | `OutputIoFailed` | `output_write_failed` |
+| Flush or `sync_all` failure | `OutputIoFailed` | `output_sync_failed` |
+| Hard-link publication or other pre-success commit failure | `OutputIoFailed` | `output_commit_failed` |
+| Response count/order cannot fit its public integer field | `InternalError` | `export_response_overflow` |
+
+UI0D3 maps the assembler totals exactly: `notes`, `generated_note_offs`,
+`controllers`, `bank_select_msb`, `bank_select_lsb`, `pitch_bend`, `tempo`, and
+`meter` retain their names; internal `program_changes` becomes public
+`programs`, and internal `channel_pressure` becomes public `pressure`.
+Musical and total track counts use checked `usize`-to-`u32` conversion;
+untranslated metadata length and warning source order use checked conversion to
+their public integer types. Any overflow is checked before destination access
+and returns `InternalError` / `export_response_overflow`.
+
+Assembler warnings preserve report order and map without exposing Rust variant
+names:
+
+| Internal warning | Public code | Severity | Scope | Message/technical detail |
+|---|---|---|---|---|
+| `MeterClocksFallback` | `meter_clocks_fallback` | `Caution` | `Sequence` | Message: `Phoenix used the standard MIDI clocks-per-click value for this sequence.` Technical detail: `source clocks-per-click <source>; used <used>`. |
+| `MeterThirtySecondsFallback` | `meter_thirty_seconds_fallback` | `Caution` | `Sequence` | Message: `Phoenix used the standard MIDI notated-32nd-notes value for this sequence.` Technical detail: `source notated 32nd notes <source>; used <used>`. |
+
+Mapped warnings have `diagnostic_ref: None`; `source_order` is their zero-based
+order in `report.warnings`. UI0D3 invents no warning for future internal
+variants. A post-publication temporary cleanup failure appends this service
+warning after every assembler warning:
+
+| Public code | Severity | Scope | Message/technical detail |
+|---|---|---|---|
+| `temporary_cleanup_failed` | `Caution` | `Sequence` | Message: `The MIDI export succeeded, but Phoenix could not remove a private temporary filesystem entry.` Technical detail contains the bounded OS error and may include only the private filename component, not its full path. `diagnostic_ref` is `None`. |
+
+If there are `N` assembler warnings, their source orders are `0` through
+`N - 1` and the possible cleanup warning's source order is `N`. Before any
+destination access, UI0D3 requires `u32::try_from(N)` to succeed. That single
+check proves both every assembler index and the one additional cleanup index
+are representable; failure is `InternalError` /
+`export_response_overflow`. The cleanup warning changes no counts, profile,
+track totals, untranslated-metadata count, output path, or validation status.
+
+The complete operation order is:
+
+```text
+prepare_export_sequence
+    -> checked response-data mapping except output_path
+    -> filename and destination validation
+    -> collision candidate selection/attempt
+    -> atomic no-overwrite hard-link commit
+    -> best-effort private temp-name cleanup
+    -> actual committed UTF-8 output_path
+    -> infallible ExportSequenceResponse construction
+```
+
+The destination originates as UTF-8 `String` and candidates add only the
+documented ASCII suffixes, so the joined output path remains representable by
+the String-based contract. A defensive conversion failure is treated as
+`OutputIoFailed` / `invalid_destination_folder` before commit. `output_path` is
+the actual successfully committed candidate, never a hypothetical base path.
+The response uses `Some(prepared.compatibility_profile)`, mapped report counts
+and warnings, the checked untranslated-metadata count, and
+`ValidationStatus::Validated`. `temporary_cleanup_failed` means only that a
+second private pathname could not be removed; the MIDI export itself succeeded
+and `output_path` remains the committed candidate.
+
+`operation_id` remains an opaque reserved caller token. It has no current role
+in authorization, naming, collision handling, idempotency, cancellation,
+logging contract, or response construction. Production writes the already
+assembled bytes and performs no output reread or MIDI reparse; tests may reread
+the file to verify exact identity.
+
+# UI0D3 test ownership
+
+Portable tests own exact-byte success and complete response mapping; actual
+committed `output_path`; preparation failure before destination access;
+missing, unreadable, and non-directory destinations; every invalid stem and
+single-suffix `.mid` normalization; preserving an existing entry under
+`FailIfExists`; deterministic lowest-gap unique naming; final-commit collision
+retry; bounded unique-name and temporary-name exhaustion through private
+testable helpers; injected write, sync, publication, and cleanup failures where
+the injection remains below the public contract; absence of partial final
+artifacts and cleanup of Phoenix temporary names in ordinary success and
+pre-publication failures where cleanup succeeds; operation metadata;
+warning/count mapping; and `operation_id` independence. Every successful write
+is reread by the test and compared byte-for-byte with the prepared SMF.
+Authentic Ode coverage remains optional and additive.
+
+The cleanup tests distinguish the commit point explicitly: successful
+publication plus successful temp removal is ordinary success without a cleanup
+warning; successful publication plus injected temp-removal failure preserves
+the exact final bytes, never removes the final candidate, and succeeds with
+`temporary_cleanup_failed` appended at source order `N`. They also prove
+response representability was preflighted before publication. Pre-publication
+cleanup failure retains its primary write/sync/publication error, and a
+non-`AlreadyExists` temp-creation error fails immediately without consuming all
+128 attempts. One fully synced temp file is reused without rewriting or
+reassembly across `GenerateUniqueName` publication collisions; candidate
+selection stops at the first successful hard link.
+
 # Failure model
 
 Stable service outcomes are:
@@ -267,12 +449,12 @@ speculative parser support.
 
 # Current design status
 
-UI0D1 is implemented. The UI0D2 prepared-result contract and UI0D3 public
-response ownership are designed; neither orchestration nor destination output
-is implemented by this document.
+UI0D1 and UI0D2 are implemented. UI0D3 destination, collision, atomic commit,
+error, and response semantics are now designed; destination output itself is
+not implemented by this document.
 
 # Single recommended next step
 
-Implement UI0D2 crate-internal `prepare_export_sequence` and
-`PreparedExportSequence`, ending at successful owned in-memory assembly without
-destination access or public response construction.
+Implement UI0D3 public `AppService::export_sequence` using the designed checked
+response mapping and atomic no-overwrite destination commit. Do not add an
+overwrite policy or broaden UI0D beyond single-sequence MIDI export.
