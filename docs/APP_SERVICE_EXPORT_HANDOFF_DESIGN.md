@@ -458,5 +458,6 @@ to the designed single-sequence, compatibility-profile-gated operation.
 
 # Single recommended next step
 
-Review and commit the completed UI0D3 public destination transaction. Do not
-add an overwrite policy or broaden UI0D beyond single-sequence MIDI export.
+Review the designed UI0E stable error/report and explicit unsupported v0
+cancellation contract. Do not reopen UI0D3 transaction semantics or broaden
+UI0D beyond single-sequence MIDI export.

@@ -361,11 +361,13 @@ be added in a later ABI version or polled operation API.
 
 # Cancellation
 
-Accept an optional caller-generated `operation_id` and cooperative cancellation
-registry in the domain design, but do not require a callback ABI in v0. Swift
-can cancel its Task before/after a synchronous call; Core must check the token
-at future bounded stages before committing output. Cancellation never returns
-partial success.
+UI0E resolves v0 cancellation as explicitly unsupported. The optional
+caller-generated `operation_id` remains opaque and inert, and the reserved
+`CancelOperation` returns the stable unsupported result defined in
+`APP_SERVICE_ERROR_CANCELLATION_DESIGN.md`. Swift runs the synchronous call off
+the main actor and awaits completion. A later cooperative design requires a
+contract revision or negotiated capability and must never roll back UI0D3's
+irreversible hard-link commit.
 
 # Thread safety
 
@@ -410,7 +412,7 @@ No tests are added in UI0 design.
    diagnostics mapping.
 3. **UI0C:** Core-only compatibility-profile registry seam.
 4. **UI0D:** path-based transactional export service and collision policy.
-5. **UI0E:** stable error/report mapping and cooperative cancellation seam.
+5. **UI0E:** stable error/report mapping and explicit v0 unsupported-cancellation seam.
 6. **UI0F:** JSON transport plus tiny C ABI and explicit allocator functions.
 7. **UI0G:** contract/FFI fixtures and a future Swift smoke harness.
 
@@ -452,10 +454,12 @@ structurally parses only the established `Descriptor166` profile, enumerates
 owned sequence summaries, and returns bounded diagnostics. No generic sequence
 is marked Ready because routing and compatibility profiles remain unresolved.
 
-# Single recommended next step
+# Current status and single recommended next step
 
-Design UI0C's Core-only compatibility-profile registry seam without embedding
-authenticated Ode constants in generic service or contract modules.
+UI0A through UI0D are implemented. UI0E is now designed in
+`APP_SERVICE_ERROR_CANCELLATION_DESIGN.md` but not implemented. Review that
+stable error/report and explicit unsupported-cancellation contract before
+adding UI0E code. UI0F transport remains deferred.
 
 # UI0C registry seam
 

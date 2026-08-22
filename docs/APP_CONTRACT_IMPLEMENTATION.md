@@ -138,5 +138,6 @@ bounded diagnostics without changing this transport-independent model.
 
 # Single recommended next step
 
-Design UI0C's Core-only compatibility-profile registry seam without adding
-authenticated target constants to generic service or contract code.
+Review the designed UI0E stable error/report and explicit unsupported v0
+cancellation contract before implementing its invariant tests and reserved
+operation. UI0F serialization and ABI work remains separate.

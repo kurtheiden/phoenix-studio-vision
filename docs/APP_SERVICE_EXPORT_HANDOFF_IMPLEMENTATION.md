@@ -134,8 +134,9 @@ rename files, or construct an `output_path`. Those remain UI0D3.
 
 # Single recommended next step
 
-Review and commit the completed UI0D3 public destination transaction. Do not
-broaden it into UI, FFI, batch, overwrite, audio, or DAW behavior.
+Review the designed UI0E stable error/report and explicit unsupported v0
+cancellation contract. Do not broaden the completed UI0D implementation into
+UI, FFI, batch, overwrite, audio, or DAW behavior.
 
 # UI0D3 public destination commit
 

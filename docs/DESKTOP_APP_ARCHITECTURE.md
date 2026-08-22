@@ -216,11 +216,12 @@ state. v0 shows stage text plus indeterminate progress: “Reading file,”
 “Inspecting project,” “Validating sequence,” “Exporting MIDI.” It does not
 invent percentages.
 
-The operation API should accept a cancellation token/checkpoints even if v0
-offers cancellation only before the final atomic write. Hashing large inputs,
-parsing, and future queues can then become incrementally cancellable without
-changing UI state models. Closing/replacing a project cancels or awaits the
-current task safely.
+V0 Core calls are synchronous and run off the main actor. UI0E makes
+`CancelOperation` explicitly unsupported rather than presenting fake
+cancellation, so closing or replacing a project awaits the current call and the
+v0 UI exposes no working Cancel action. A future negotiated cooperative seam
+may add bounded checkpoints, but it can never roll back a successfully
+published export.
 
 # Error presentation
 
@@ -266,13 +267,13 @@ Use one window with four states:
 1. **Welcome/Drop:** app purpose, drop target, Open button.
 2. **Project:** compact summary above a sequence list; selection shows readiness
    reason and counts known from inspection.
-3. **Exporting:** same context, disabled mutations, stage/progress and Cancel
-   where safe.
+3. **Exporting:** same context, disabled mutations, and stage/progress while
+   the synchronous Core call completes; v0 exposes no Cancel action.
 4. **Result/Error:** success report with Reveal in Finder, or actionable error.
 
 Diagnostics is a disclosure/sidebar sheet within this window, not a separate
-research application. A toolbar Open action replaces the current project after
-safe cancellation/confirmation.
+research application. A toolbar Open action replaces the current project only
+after the current Core call completes and any required confirmation.
 
 # Visual principles
 
@@ -328,7 +329,8 @@ the declared policy.
 - choose output folder, safe collision handling, transactional result;
 - counts/warnings report and Reveal in Finder;
 - optional diagnostics panel;
-- background operation state, basic cancellation seam, accessibility baseline.
+- background operation state, a reserved future cancellation seam with no v0
+  cancellation behavior, and an accessibility baseline.
 
 ## Out
 
@@ -397,7 +399,6 @@ DTOs before transport or Swift code.
 
 # Single recommended next step
 
-UI0C's Core-only compatibility registry should be designed before enabling any
-application-facing Export action. It must match exact provenance and internal
-structural evidence, while exposing only the existing capability/readiness DTOs
-to the desktop client.
+Review the designed UI0E stable error/report and explicit v0
+unsupported-cancellation boundary before implementation. Complete UI0E and the
+separate UI0F transport before creating the UI1 native shell.

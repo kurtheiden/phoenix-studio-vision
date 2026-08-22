@@ -1065,3 +1065,22 @@ successful-response `temporary_cleanup_failed` reporting without removing the
 committed candidate. Portable real-filesystem and private fault-seam tests cover
 the destination transaction and response mapping; external authentic fixtures
 remain optional and are not required.
+
+## 2026-08-22: define UI0E stable errors and explicit v0 cancellation behavior
+
+**Status:** Designed; implementation deferred
+
+UI0E reuses the existing owned `AppError`, warning, diagnostics, inspection,
+and export response DTOs. `AppErrorCategory` plus lowercase snake-case
+`diagnostic_code` plus `AppOperation` is the stable machine identity; display
+and technical text are not branching contracts. Existing code meanings and
+operation identity must not drift silently.
+
+V0 cancellation is explicitly unsupported. The synchronous `AppService` has
+no cancellation registry or threading contract, and `operation_id` remains an
+opaque inert token. A future `cancel_operation` returns `InternalError` /
+`cancellation_not_supported` with `CancelOperation` rather than pretending an
+unknown or running operation was cancelled. Swift must await synchronous Core
+work off the main actor. Any future cooperative design requires a revised or
+negotiated contract and can never delete, hide, or roll back an output after
+UI0D3's successful hard-link commit.

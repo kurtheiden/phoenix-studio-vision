@@ -312,6 +312,13 @@ committed or specified.
 - [x] Implement UI0D3 public single-sequence destination commit with checked
       response mapping, deterministic no-overwrite collision handling, and
       same-directory hard-link publication.
+- [x] Design UI0E stable error/report identity, diagnostic-code policy, and an
+      explicit unsupported v0 cancellation seam that preserves UI0D3's
+      irreversible commit point.
+- [ ] Implement UI0E contract-invariant tests and the explicit
+      `cancellation_not_supported` operation without adding transport.
+- [ ] Implement UI0F JSON/C ABI only after its separate dependency, allocator,
+      symbol, and packaging contract is approved.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
