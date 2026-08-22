@@ -961,3 +961,14 @@ fresh owned bytes and resolved policy through `assemble_multitrack_sequence`,
 then commit one complete SMF under the caller's destination/collision policy.
 Readiness never authorizes export by itself, and sibling sequences remain
 independent.
+
+## 2026-08-19: implement the UI0D1 conversion-ready handoff
+
+**Status:** Implemented; service orchestration and output remain deferred
+
+`ConversionReadySequence` owns the fresh sequence metadata, ordered decoded
+events, authenticated channel assignments, and strict Patch policy needed by
+the existing `MultitrackSequenceInput`. It is built only from the same owned
+bytes, evidence, structural ordinal, and resolved policy returned by UI0C4B;
+the handoff performs no path reread, readiness projection, serialization, or
+filesystem write.

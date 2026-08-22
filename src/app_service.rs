@@ -92,6 +92,7 @@ pub(crate) struct FreshValidatedSequence {
     pub(crate) source_bytes: Vec<u8>,
     pub(crate) source_sha256: String,
     pub(crate) structural_ordinal: u32,
+    pub(crate) evidence: ProfileEvidence,
     pub(crate) resolved_policy: ResolvedProfilePolicy,
 }
 
@@ -671,6 +672,7 @@ impl AppService {
             source_bytes: fresh_bytes,
             source_sha256: fresh_sha256,
             structural_ordinal: ordinal,
+            evidence,
             resolved_policy: fresh_policy,
         })
     }

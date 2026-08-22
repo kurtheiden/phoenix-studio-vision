@@ -303,6 +303,9 @@ committed or specified.
       aggregation; keep UI0D export deferred.
 - [x] Design UI0D's fresh-revalidated export handoff, conversion boundary, and
       destination/report ownership; defer implementation.
+- [x] Implement UI0D1's owned conversion-ready handoff from one freshly
+      revalidated sequence into the existing multitrack assembler input;
+      defer service orchestration and filesystem output.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

@@ -8,6 +8,7 @@ pub mod comparison;
 pub mod compatibility;
 pub mod compatibility_profiles;
 pub mod controller;
+pub(crate) mod export_handoff;
 #[allow(dead_code)]
 pub(crate) mod identification;
 #[allow(dead_code)]
