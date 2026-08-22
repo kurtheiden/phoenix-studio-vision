@@ -306,6 +306,9 @@ committed or specified.
 - [x] Implement UI0D1's owned conversion-ready handoff from one freshly
       revalidated sequence into the existing multitrack assembler input;
       defer service orchestration and filesystem output.
+- [x] Implement UI0D2 crate-internal in-memory export preparation through
+      operation-aware fresh revalidation, UI0D1 conversion, and transactional
+      assembly; defer destination commit and public response to UI0D3.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

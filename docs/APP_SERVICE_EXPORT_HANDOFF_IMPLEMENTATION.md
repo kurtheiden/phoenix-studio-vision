@@ -92,7 +92,47 @@ The owned conversion-ready handoff is implemented and reviewable. The next
 step is UI0D2 service orchestration, which must keep UI0C4B revalidation as the
 only export-authorization path.
 
+# UI0D2 in-memory preparation
+
+`PreparedExportSequence` is the crate-internal owned UI0D2 result. It contains
+only the exact session and sequence identities, selected display name, concrete
+safe `ProfileCapability`, and the existing `MultitrackExportResult`. Source
+bytes, parser structures, resolved policy, request destination fields,
+`operation_id`, collision state, file handles, and output paths are absent.
+
+`AppService::prepare_export_sequence` accepts `&ExportSequenceRequest` but reads
+only contract version, `SessionId`, and `SequenceId`. It requires the exact
+selected summary to be `Ready`, its assessment to be matched with retained
+policy, and its app-facing capability to equal the assessment capability. This
+is an early eligibility gate only; authorization still comes from immediate
+UI0C4B revalidation.
+
+The successful path calls the operation-aware private UI0C4B implementation,
+passes its exact `FreshValidatedSequence` to
+`build_conversion_ready_sequence`, and invokes
+`assemble_multitrack_sequence` exactly once through `with_multitrack_input`.
+The complete SMF bytes and report remain owned by `MultitrackExportResult`.
+
+UI0C4B now accepts the calling `AppOperation` internally. Existing diagnostic
+callers retain `GetDiagnostics`, while preparation creates all failures with
+`ExportSequence`. UI0D1 and assembler failures map to the bounded service result
+`ExportValidationFailed` / `conversion_failed`; internal error types do not
+cross the app contract.
+
+# UI0D2 tests and exclusions
+
+Portable Descriptor166 tests use a synthetic matching registry and cover exact
+success/result propagation, contract/session/cross-session failures,
+mixed-project Ready/non-Ready sibling isolation, same-size source mutation,
+source disappearance, fresh profile and stored-policy drift, operation metadata,
+assembler failure mapping, and destination/collision/operation-field
+independence. They prove no destination path is accessed or output file created.
+
+UI0D2 does not expose public `export_sequence`, construct
+`ExportSequenceResponse`, resolve collisions, validate destinations, write or
+rename files, or construct an `output_path`. Those remain UI0D3.
+
 # Single recommended next step
 
-Implement UI0D2 `AppService` export orchestration around fresh revalidation and
-this owned handoff, without adding filesystem output yet.
+Implement UI0D3 public destination commit around the prepared in-memory result,
+including collision policy, atomic writing, and `ExportSequenceResponse`.

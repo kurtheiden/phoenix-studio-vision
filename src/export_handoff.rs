@@ -411,7 +411,7 @@ impl EvidenceRange for crate::compatibility::TrackEvidence {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app_contract::{DiagnosticsLevel, InspectProjectRequest, CONTRACT_VERSION};
     use crate::app_service::AppService;
@@ -443,7 +443,7 @@ mod tests {
         bytes
     }
 
-    fn portable_project() -> Vec<u8> {
+    pub(crate) fn portable_project() -> Vec<u8> {
         const ROOT_HEADER_LENGTH: usize = 8;
         const SEQUENCE_PREAMBLE_LENGTH: usize = 208;
         const DESCRIPTOR_STRIDE: usize = 166;

@@ -991,3 +991,18 @@ SMF under the request's destination policy, and constructs
 including UI0C4B failures, must carry `AppOperation::ExportSequence`; implement
 this by parameterizing the private revalidation path with its calling operation
 rather than duplicating revalidation or rewriting errors afterward.
+
+## 2026-08-19: implement UI0D2 as in-memory export preparation
+
+**Status:** Implemented; UI0D3 destination commit deferred
+
+`AppService::prepare_export_sequence` validates the existing request's version
+and exact session-scoped sequence identity, requires consistent inspection-time
+Ready/matched/capability state, invokes the operation-aware UI0C4B path, passes
+its owned result through UI0D1, and assembles exactly one complete in-memory
+SMF. It returns only the crate-internal `PreparedExportSequence`.
+
+Destination, filename, collision, and operation-identifier request fields do
+not affect preparation. UI0D2 creates no destination state, public response, or
+output file. UI0D3 remains solely responsible for public `export_sequence`,
+atomic destination commit, and `ExportSequenceResponse`.
