@@ -972,3 +972,22 @@ the existing `MultitrackSequenceInput`. It is built only from the same owned
 bytes, evidence, structural ordinal, and resolved policy returned by UI0C4B;
 the handoff performs no path reread, readiness projection, serialization, or
 filesystem write.
+
+## 2026-08-19: separate UI0D2 preparation from UI0D3 public commit
+
+**Status:** Designed; implementation deferred
+
+UI0D2 returns a crate-internal owned `PreparedExportSequence` containing the
+selected session/sequence identity, display name, concrete safe capability,
+and `MultitrackExportResult`. Its crate-internal `prepare_export_sequence`
+accepts the existing `ExportSequenceRequest` by reference, but destination,
+filename, collision, and operation-identifier fields remain untouched for
+UI0D3. UI0D2 ends after fresh UI0C4B authorization, UI0D1 conversion, and
+transactional in-memory assembly.
+
+UI0D3 alone exposes public `AppService::export_sequence`, commits the prepared
+SMF under the request's destination policy, and constructs
+`ExportSequenceResponse` with a real `output_path`. Export preparation errors,
+including UI0C4B failures, must carry `AppOperation::ExportSequence`; implement
+this by parameterizing the private revalidation path with its calling operation
+rather than duplicating revalidation or rewriting errors afterward.

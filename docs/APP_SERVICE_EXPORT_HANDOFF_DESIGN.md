@@ -6,13 +6,18 @@ authorization is created only by an immediate UI0C4B revalidation.
 
 # Repository-derived contract
 
-The committed application contract already supplies the intended operation:
+The committed application contract already supplies the intended final public
+operation, which UI0D3 will expose after destination commit exists:
 
 ```rust
 AppService::export_sequence(
     request: ExportSequenceRequest,
 ) -> Result<ExportSequenceResponse, AppError>
 ```
+
+UI0D2 does not return `ExportSequenceResponse`: that type requires an
+`output_path`, and creating one before destination commit would fabricate
+success or pull UI0D3 behavior into UI0D2.
 
 `ExportSequenceRequest` carries only `SessionId`, `SequenceId`, contract
 version, destination folder/stem, collision policy, and an optional operation
@@ -77,6 +82,77 @@ owned conversion-ready internal representation or build one from those same
 bytes in the same call; it must not reread the path or create a second source of
 truth.
 
+# UI0D2 prepared result
+
+UI0D2 introduces only this crate-internal owned success boundary (field names
+may follow Rust module conventions, but ownership must remain equivalent):
+
+```rust
+pub(crate) struct PreparedExportSequence {
+    pub(crate) session_id: SessionId,
+    pub(crate) sequence_id: SequenceId,
+    pub(crate) sequence_display_name: String,
+    pub(crate) compatibility_profile: ProfileCapability,
+    pub(crate) result: MultitrackExportResult,
+}
+```
+
+`MultitrackExportResult` already owns the complete SMF bytes and assembler
+report, including track counts, event counts, warnings, and untranslated
+metadata. `PreparedExportSequence` must not duplicate those report values. A
+successful eligible sequence has a concrete safe capability, so the internal
+field is non-optional even though the final public response retains its
+versioned optional shape.
+
+The prepared result does not retain source bytes, parser structures, resolved
+policy, output path, destination state, collision state, open handles, or
+`operation_id`. Those values are either consumed before assembly or remain in
+the caller's request for UI0D3.
+
+The UI0D2 operation is crate-internal:
+
+```rust
+pub(crate) fn prepare_export_sequence(
+    &self,
+    request: &ExportSequenceRequest,
+) -> Result<PreparedExportSequence, AppError>
+```
+
+It accepts the existing full request by reference to avoid a second request
+model and duplicate version/identity validation. UI0D2 reads only contract,
+session, and sequence identity. It leaves `destination_folder`,
+`filename_stem`, `collision_policy`, and `operation_id` untouched in the same
+request for UI0D3; destination values cannot affect preparation.
+
+# UI0D2 operation sequence
+
+The successful UI0D2 path is exactly:
+
+```text
+request/version validation
+    -> session resolution
+    -> exact SequenceId resolution
+    -> inspection-time Ready/capability eligibility check
+    -> immediate UI0C4B revalidation
+    -> UI0D1 build_conversion_ready_sequence
+    -> assemble_multitrack_sequence
+    -> PreparedExportSequence
+```
+
+No filesystem activity other than UI0C4B's required fresh source reread occurs;
+there is no destination access, output write, or public success response.
+
+# Export error operation identity
+
+Every error surfaced by `prepare_export_sequence` has
+`AppOperation::ExportSequence`, including errors created inside UI0C4B. The
+preferred minimal implementation is to parameterize the private revalidation
+implementation (and its unknown-sequence helper) with the calling
+`AppOperation`. Existing revalidation callers continue to pass
+`GetDiagnostics`; UI0D2 passes `ExportSequence`. This reuses one revalidation
+path and its diagnostic codes without post-hoc error rewriting or duplicated
+validation.
+
 # Output boundary
 
 The existing request/response contract includes destination folder, filename
@@ -90,6 +166,13 @@ choose policy.
 No destination file is created when revalidation, decoding, adaptation,
 serialization, or collision validation fails. A future byte-only API would be a
 separate contract revision, not an implicit alternate path.
+
+UI0D3 will retain the original `ExportSequenceRequest`, call UI0D2 preparation,
+then combine its untouched destination/collision fields with the returned
+`PreparedExportSequence`. Only after destination validation, collision
+resolution, and atomic commit of `result.smf_bytes` may UI0D3 construct the
+public `ExportSequenceResponse`, including the real `output_path` and values
+derived from `result.report`.
 
 # Failure model
 
@@ -150,23 +233,30 @@ separate layers.
 1. **UI0D1 — conversion-ready handoff:** define an owned internal representation
    that is produced from `FreshValidatedSequence` bytes and policy and contains
    the exact decoded values required by `MultitrackSequenceInput`.
-2. **UI0D2 — Core export orchestration:** add `export_sequence`, validate request
-   identity/readiness, invoke UI0C4B, adapt the fresh sequence, and call
-   `assemble_multitrack_sequence` transactionally.
-3. **UI0D3 — destination commit/report:** implement collision policy, atomic
-   filesystem writing, output error mapping, and `ExportSequenceResponse`.
+2. **UI0D2 — Core export preparation:** add crate-internal
+   `prepare_export_sequence`, validate request identity/readiness, invoke
+   UI0C4B, adapt the fresh sequence, call `assemble_multitrack_sequence`
+   transactionally, and return `PreparedExportSequence`.
+3. **UI0D3 — public destination commit/report:** expose `export_sequence`, call
+   UI0D2, implement collision policy and atomic filesystem writing, map output
+   errors, and construct `ExportSequenceResponse` with the committed path.
 
 No slice changes the parser grammar, generic compatibility policy, readiness
 projection, or revalidation guarantees.
 
 # Required implementation tests
 
-The later implementation must cover successful Ready-sequence handoff,
-stale/same-size mutation refusal, source disappearance, wrong session/sequence,
-non-Ready and sibling isolation, fresh profile mismatch, exact conversion-input
-propagation, deterministic SMF bytes where existing fixtures permit it,
-transactional failure with no partial output, collision behavior, and output
-write errors.
+UI0D2 tests own contract/session/sequence validation, non-Ready and sibling
+isolation, stale mutation and source disappearance, fresh profile mismatch,
+conversion/assembly error mapping, `ExportSequence` operation metadata, exact
+prepared-result identity/capability/report propagation, deterministic in-memory
+SMF bytes where fixtures permit, and proof that destination fields cause no
+filesystem access.
+
+UI0D3 tests own destination validation, collision behavior and unique naming,
+transactional no-partial-output guarantees, atomic write failures, final report
+mapping, and the real `output_path` in `ExportSequenceResponse`. These concerns
+are not duplicated in UI0D2 tests.
 
 # Explicit exclusions
 
@@ -177,10 +267,12 @@ speculative parser support.
 
 # Current design status
 
-UI0D is designed only. No export operation, file writer, serializer call, or
-application-contract change is implemented by this document.
+UI0D1 is implemented. The UI0D2 prepared-result contract and UI0D3 public
+response ownership are designed; neither orchestration nor destination output
+is implemented by this document.
 
 # Single recommended next step
 
-Implement UI0D1: build the owned conversion-ready handoff from UI0C4B's fresh
-validated bytes and resolved policy without rereading the source.
+Implement UI0D2 crate-internal `prepare_export_sequence` and
+`PreparedExportSequence`, ending at successful owned in-memory assembly without
+destination access or public response construction.
