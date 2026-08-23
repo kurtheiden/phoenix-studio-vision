@@ -1189,3 +1189,15 @@ and the distinct stale-handle JSON/status behaviors. Generated executables stay
 in a temporary directory. UI0G2 remains the command-line Swift smoke and UI0G3
 remains fixture/CI hardening; Xcode, packaging, and the desktop application are
 not part of UI0G1.
+
+## 2026-08-23: implement UI0G2 Swift command-line interoperability smoke
+
+**Status:** Implemented; fixture/CI hardening and native application deferred
+
+UI0G2 imports the public C ABI through the repository-owned
+`include/module.modulemap`, links a command-line Swift executable to the
+release static library, and proves ABI discovery, service lifecycle,
+`get_api_info`, Swift-owned JSON decoding, exact response-buffer handoff, and
+stale-handle behavior. No Swift wrapper layer, Xcode project, packaging, or
+desktop UI is introduced; UI0G3 remains responsible for durable fixtures and
+CI/tool-availability hardening.

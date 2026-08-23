@@ -467,6 +467,6 @@ packaging, notarization, or external client.
 
 ## UI0G implementation status
 
-UI0G1 is the external C linkage and lifecycle smoke. It is implemented as a
-small C11 consumer plus a macOS shell runner; Swift interoperability and
-cross-language fixture hardening remain UI0G2/UI0G3 work.
+UI0G1 is the external C linkage and lifecycle smoke. UI0G2 now adds a minimal
+Swift command-line importer/linkage smoke through the repository-owned Clang
+module map; cross-language fixture hardening remains UI0G3 work.

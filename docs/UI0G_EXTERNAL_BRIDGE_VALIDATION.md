@@ -31,7 +31,22 @@ behavior.
 
 ## Remaining UI0G work
 
-UI0G2 will add the smallest command-line Swift importer/linkage smoke. UI0G3
-will freeze the durable cross-language fixtures and document CI/tool
-availability. Xcode, SwiftUI/AppKit, XCFrameworks, universal packaging,
-signing, and the desktop application remain deferred to UI1 or later.
+UI0G2 adds the smallest command-line Swift importer/linkage smoke using the
+repository-owned `include/module.modulemap`. UI0G3 will freeze the durable
+cross-language fixtures and document CI/tool availability. Xcode,
+SwiftUI/AppKit, XCFrameworks, universal packaging, signing, and the desktop
+application remain deferred to UI1 or later.
+
+## UI0G2 — Swift command-line interoperability smoke
+
+Run:
+
+```text
+tests/ffi/run_swift_smoke.sh
+```
+
+The Swift program imports `Phoenix`, calls the same ABI lifecycle as UI0G1,
+copies response bytes into Swift-owned `Data` before calling
+`phoenix_free_buffer`, decodes the copy with Foundation, and verifies both
+success and stale-handle transport JSON. The executable is temporary and the
+smoke validates the current host architecture only.
