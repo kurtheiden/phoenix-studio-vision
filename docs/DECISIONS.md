@@ -1177,3 +1177,15 @@ Header layout assertions, release unwind checks, conditional static-archive
 symbol inspection, and a narrow Miri-compatible buffer test finish the
 Rust-side bridge hardening. UI0G still owns external C linkage, frozen
 cross-language fixtures, Swift invocation, and native packaging.
+
+## 2026-08-23: implement UI0G1 external C linkage smoke
+
+**Status:** Implemented; Swift and native application validation deferred
+
+UI0G1 uses a repository-owned C11 smoke consumer and macOS shell runner. The
+consumer links the release `libphoenix.a` against `include/phoenix.h`, proves
+ABI discovery, `get_api_info`, Rust-owned response freeing, successful destroy,
+and the distinct stale-handle JSON/status behaviors. Generated executables stay
+in a temporary directory. UI0G2 remains the command-line Swift smoke and UI0G3
+remains fixture/CI hardening; Xcode, packaging, and the desktop application are
+not part of UI0G1.

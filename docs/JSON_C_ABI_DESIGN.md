@@ -464,3 +464,9 @@ UI0G remains responsible for compiling and linking an external C consumer,
 freezing cross-language fixtures, invoking the ABI from Swift, and validating
 the native application boundary. UI0F3 adds no Swift, Xcode, XCFramework,
 packaging, notarization, or external client.
+
+## UI0G implementation status
+
+UI0G1 is the external C linkage and lifecycle smoke. It is implemented as a
+small C11 consumer plus a macOS shell runner; Swift interoperability and
+cross-language fixture hardening remain UI0G2/UI0G3 work.

@@ -329,6 +329,9 @@ committed or specified.
       static-library output under the finalized ownership contract.
 - [x] Implement UI0F3 concurrency/lifecycle, panic/poison, layout/symbol, and
       external C-boundary hardening before UI0G.
+- [x] Implement UI0G1 external C linkage and lifecycle smoke against the
+      release static library; defer Swift interoperability and fixture/CI
+      hardening to UI0G2/UI0G3.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
