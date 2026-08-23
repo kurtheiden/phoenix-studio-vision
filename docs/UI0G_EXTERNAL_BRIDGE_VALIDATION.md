@@ -50,3 +50,37 @@ copies response bytes into Swift-owned `Data` before calling
 `phoenix_free_buffer`, decodes the copy with Foundation, and verifies both
 success and stale-handle transport JSON. The executable is temporary and the
 smoke validates the current host architecture only.
+
+## UI0G3 — aggregate validation and fixture policy
+
+Run the complete bridge-facing validation with:
+
+```text
+tests/ffi/run_external_validation.sh
+```
+
+The aggregate runner requires both `clang` and `swiftc`, reports the host and
+Swift toolchain, and runs UI0G1 and UI0G2 without silently skipping either one.
+Each smoke contains the canonical `get_api_info` request and semantic checks
+for the stable envelope, application contract version, response ownership,
+and stale-handle behavior. This deliberately avoids a second hand-maintained
+JSON schema or raw-byte fixtures: key ordering, whitespace, display prose,
+technical text, handles, session IDs, and temporary paths are not contracts.
+
+The durable cross-language values frozen by these checks are ABI version,
+status meanings, operation spelling, envelope discriminators, contract
+version, and invalid-handle transport identity. The existing Rust transport
+tests remain the detailed source for enum strings, explicit-null fields,
+AppError identity, contract-version errors, and export/diagnostics semantics.
+
+No hosted CI workflow is added in UI0G3 because the repository has no existing
+CI framework and the Swift/macOS gate is host-specific. The aggregate command
+is the reproducible local handoff gate for UI1; a later CI decision can add a
+macOS runner without changing the ABI or fixtures.
+
+## UI0G status and limits
+
+UI0G1, UI0G2, and UI0G3 are complete for the current arm64 macOS host. This
+does not claim Intel validation, universal binaries, Linux/Windows support,
+deployment-target coverage, Xcode application linkage, XCFramework support,
+signing, notarization, or native UI behavior.

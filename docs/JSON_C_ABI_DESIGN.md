@@ -469,4 +469,6 @@ packaging, notarization, or external client.
 
 UI0G1 is the external C linkage and lifecycle smoke. UI0G2 now adds a minimal
 Swift command-line importer/linkage smoke through the repository-owned Clang
-module map; cross-language fixture hardening remains UI0G3 work.
+module map. UI0G3 now provides the aggregate external-validation command and
+documents the semantic cross-language fixture policy; UI1 remains the desktop
+application phase.

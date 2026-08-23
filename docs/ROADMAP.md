@@ -335,6 +335,9 @@ committed or specified.
 - [x] Implement UI0G2 command-line Swift interoperability through the public
       C module map; defer fixture/CI hardening to UI0G3 and desktop integration
       to UI1.
+- [x] Complete UI0G3 aggregate C/Swift external validation and semantic
+      cross-language fixture policy; defer host expansion and desktop
+      application integration to UI1.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

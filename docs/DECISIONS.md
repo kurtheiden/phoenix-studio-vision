@@ -1201,3 +1201,15 @@ release static library, and proves ABI discovery, service lifecycle,
 stale-handle behavior. No Swift wrapper layer, Xcode project, packaging, or
 desktop UI is introduced; UI0G3 remains responsible for durable fixtures and
 CI/tool-availability hardening.
+
+## 2026-08-23: complete UI0G3 with aggregate external validation
+
+**Status:** Implemented; UI1 desktop application deferred
+
+UI0G3 uses one repository-owned aggregate command to run the C and Swift
+external smoke programs on a supported macOS host. It freezes semantic
+cross-language values through those independent consumers rather than adding
+a duplicate raw-JSON schema fixture set. No hosted CI workflow is introduced
+because the repository has no existing CI framework; the aggregate command is
+the reproducible local handoff gate. Intel/universal validation, Xcode,
+packaging, and native UI remain intentionally unproven.
