@@ -1141,3 +1141,21 @@ decides supported application contract versions.
 UI0F1 adds no unsafe code, raw pointers, exported C symbols, handle registry,
 locks, response-buffer allocator handoff, header, static-library output, Swift,
 or UI0G work. Those remain UI0F2/UI0F3 follow-up slices.
+
+## 2026-08-23: implement UI0F2 as the synchronous C ABI bridge
+
+**Status:** Implemented; hardening and native validation deferred
+
+Expose the five version-1 C symbols through a private Rust ABI module and a
+version-controlled `include/phoenix.h`. Process-local monotonic integer handles
+own synchronized `AppService` entries; call admission is atomic relative to
+destroy, Core work never holds the global registry lock, and successful
+destroy waits for admitted calls. Valid calls reuse UI0F1 JSON dispatch without
+duplicating operation logic. Rust transfers exact-length boxed response bytes
+and remains their sole allocator through `phoenix_free_buffer`.
+
+The basic sound boundary includes bounded unsafe pointer/slice operations,
+ordinary-unwind containment, non-unwrapping poison behavior, static-library
+output, and release unwinding. UI0F3 retains race/stress and fault-injection
+proof plus external symbol/layout hardening. UI0G retains C linkage, Swift, and
+native-app validation.

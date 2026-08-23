@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod app_contract;
 pub mod app_service;
+mod c_abi;
 pub mod channel_pressure;
 pub mod comparison;
 pub mod compatibility;

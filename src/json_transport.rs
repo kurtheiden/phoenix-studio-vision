@@ -102,23 +102,23 @@ pub fn dispatch_json(service: &mut AppService, request: &[u8]) -> Vec<u8> {
     let request = match std::str::from_utf8(request) {
         Ok(request) => request,
         Err(_) => {
-            return transport_error(INVALID_UTF8, "The request is not valid UTF-8.");
+            return transport_error_json(INVALID_UTF8, "The request is not valid UTF-8.");
         }
     };
     let value: Value = match serde_json::from_str(request) {
         Ok(value) => value,
         Err(_) => {
-            return transport_error(MALFORMED_JSON, "The request is not valid JSON.");
+            return transport_error_json(MALFORMED_JSON, "The request is not valid JSON.");
         }
     };
     let Some(object) = value.as_object() else {
-        return transport_error(INVALID_REQUEST_FIELDS, "The request must be a JSON object.");
+        return transport_error_json(INVALID_REQUEST_FIELDS, "The request must be a JSON object.");
     };
     let Some(operation) = object.get("operation") else {
-        return transport_error(MISSING_OPERATION, "The request is missing operation.");
+        return transport_error_json(MISSING_OPERATION, "The request is missing operation.");
     };
     let Some(operation) = operation.as_str() else {
-        return transport_error(
+        return transport_error_json(
             INVALID_REQUEST_FIELDS,
             "The operation field must be a string.",
         );
@@ -130,7 +130,7 @@ pub fn dispatch_json(service: &mut AppService, request: &[u8]) -> Vec<u8> {
         "get_diagnostics" => dispatch_get_diagnostics(service, value),
         "export_sequence" => dispatch_export_sequence(service, value),
         "cancel_operation" => dispatch_cancel_operation(service, value),
-        _ => transport_error(UNKNOWN_OPERATION, "The requested operation is unknown."),
+        _ => transport_error_json(UNKNOWN_OPERATION, "The requested operation is unknown."),
     }
 }
 
@@ -145,7 +145,7 @@ fn dispatch_api_info(service: &AppService, value: Value) -> Vec<u8> {
 
 fn dispatch_inspect_project(service: &mut AppService, value: Value) -> Vec<u8> {
     if !has_contract_version(&value) {
-        return transport_error(
+        return transport_error_json(
             MISSING_CONTRACT_VERSION,
             "The request is missing contract_version.",
         );
@@ -176,7 +176,7 @@ fn dispatch_get_diagnostics(service: &AppService, value: Value) -> Vec<u8> {
 
 fn dispatch_export_sequence(service: &AppService, value: Value) -> Vec<u8> {
     if !has_contract_version(&value) {
-        return transport_error(
+        return transport_error_json(
             MISSING_CONTRACT_VERSION,
             "The request is missing contract_version.",
         );
@@ -217,7 +217,7 @@ where
     T: serde::de::DeserializeOwned,
 {
     serde_json::from_value(value).map_err(|_| {
-        transport_error(
+        transport_error_json(
             INVALID_REQUEST_FIELDS,
             "The request contains invalid or unexpected fields.",
         )
@@ -247,7 +247,7 @@ where
     serialize(&SuccessEnvelope { ok: true, result })
 }
 
-fn transport_error(code: &'static str, message: &str) -> Vec<u8> {
+pub(crate) fn transport_error_json(code: &'static str, message: &str) -> Vec<u8> {
     serialize(&FailureEnvelope {
         ok: false,
         error: TransportFailure {

@@ -410,7 +410,31 @@ header, crate-type change, Swift, or UI0G work.
 
 The remaining slices are:
 
-- **UI0F2:** C ABI service handles, length-delimited request/response buffers,
-  exact `Box<[u8]>` ownership/freeing, public header, and static-library output.
+- **UI0F2:** Implemented C ABI service handles, length-delimited
+  request/response buffers, exact `Box<[u8]>` ownership/freeing, public header,
+  and static-library output.
 - **UI0F3:** ABI concurrency/lifecycle races, panic/poison containment, external
   layout/symbol hardening, and the finalized C-boundary validation matrix.
+
+## UI0F2 implementation status
+
+UI0F2 implements the five version-1 C symbols in `c_abi`, process-local
+monotonic service tokens, atomic call admission relative to destroy,
+same-handle serialization, and quiescent destruction. Each exported operation
+contains ordinary Rust unwinding; basic poisoned-lock paths return the stable
+internal-failure status without unwrapping ABI-path locks. `phoenix_call`
+reuses UI0F1 `dispatch_json` exactly once for valid calls and returns
+exact-length Rust-owned boxed response bytes released only through
+`phoenix_free_buffer`.
+
+The version-controlled `include/phoenix.h` defines the public layouts,
+statuses, ownership rules, and pointer preconditions. Cargo retains `rlib` and
+adds `staticlib` output with release unwinding. Focused portable tests cover
+the ABI version/layout, service and buffer lifecycle, persistent JSON sessions,
+real portable export, unsupported cancellation, bounded pointer/length cases,
+and C/C++ header syntax.
+
+UI0F3 still owns concurrent race/stress proof, poison and panic fault
+injection, token-exhaustion injection, sanitizer-style allocation validation,
+and external symbol/layout hardening. UI0G still owns external static-library
+linkage, frozen cross-language fixtures, Swift, and native-app validation.
