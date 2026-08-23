@@ -45,6 +45,8 @@ int32_t phoenix_service_destroy(phoenix_service_handle_t handle);
  * request_ptr is borrowed only for this call and is not NUL-terminated. When
  * request_len is nonzero, request_ptr must be non-NULL, correctly aligned,
  * readable for request_len bytes, and valid for the complete call.
+ * Calls on one handle serialize. Reentrant calls on the same handle are not
+ * supported. Separate service handles own independent state.
  *
  * out_response must be non-NULL, correctly aligned, writable for one
  * phoenix_buffer_t, and valid for the complete call. Status OK means it owns a

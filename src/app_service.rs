@@ -121,6 +121,15 @@ const EXPORT_CANDIDATE_LIMIT: usize = 10_000;
 const EXPORT_TEMP_ATTEMPT_LIMIT: usize = 128;
 const EXPORT_TEMP_PREFIX: &str = ".phoenix-export-";
 static NEXT_EXPORT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+static NEXT_SERVICE_NAMESPACE: AtomicU64 = AtomicU64::new(1);
+
+fn allocate_service_namespace() -> u64 {
+    NEXT_SERVICE_NAMESPACE
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(1)
+        })
+        .expect("AppService namespace space exhausted")
+}
 
 struct ExportResponsePreflight {
     session_id: SessionId,
@@ -223,6 +232,7 @@ struct InspectedTrackStructure {
 /// Synchronous, owned service state for one or more inspection sessions.
 pub struct AppService {
     sessions: HashMap<SessionId, Session>,
+    session_namespace: u64,
     next_session: u64,
     registry: Option<CompatibilityRegistry>,
     registry_error: Option<String>,
@@ -240,6 +250,7 @@ impl AppService {
             Ok(registry) => Self::with_registry(registry),
             Err(error) => Self {
                 sessions: HashMap::new(),
+                session_namespace: allocate_service_namespace(),
                 next_session: 1,
                 registry: None,
                 registry_error: Some(format!("{error:?}")),
@@ -250,6 +261,7 @@ impl AppService {
     pub fn with_registry(registry: CompatibilityRegistry) -> Self {
         Self {
             sessions: HashMap::new(),
+            session_namespace: allocate_service_namespace(),
             next_session: 1,
             registry: Some(registry),
             registry_error: None,
@@ -1346,7 +1358,10 @@ impl AppService {
     }
 
     fn allocate_session_id(&mut self) -> SessionId {
-        let value = format!("session-{:08}", self.next_session);
+        let value = format!(
+            "session-{:016x}-{:08}",
+            self.session_namespace, self.next_session
+        );
         self.next_session = self.next_session.saturating_add(1);
         SessionId::new(value)
     }

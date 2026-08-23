@@ -1159,3 +1159,21 @@ ordinary-unwind containment, non-unwrapping poison behavior, static-library
 output, and release unwinding. UI0F3 retains race/stress and fault-injection
 proof plus external symbol/layout hardening. UI0G retains C linkage, Swift, and
 native-app validation.
+
+## 2026-08-23: harden UI0F3 through isolated deterministic ABI tests
+
+**Status:** Implemented; external native validation deferred
+
+Keep the five-symbol ABI unchanged and route its private operations through a
+registry parameter so destructive tests use isolated state. Deterministic
+barrier/channel coverage now proves serialization, independent-handle
+concurrency, quiescent destruction including queued calls and publication,
+poison and ordinary-panic containment, token exhaustion, stable status/output
+invariants, and bounded response ownership cycles. Per-service opaque session
+namespaces prevent cross-handle same-ordinal IDs from resolving unrelated
+state.
+
+Header layout assertions, release unwind checks, conditional static-archive
+symbol inspection, and a narrow Miri-compatible buffer test finish the
+Rust-side bridge hardening. UI0G still owns external C linkage, frozen
+cross-language fixtures, Swift invocation, and native packaging.

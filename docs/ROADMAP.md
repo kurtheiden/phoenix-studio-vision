@@ -327,7 +327,7 @@ committed or specified.
       round trips, and session persistence without any C ABI.
 - [x] Implement UI0F2 C service handles, buffers/freeing, public header, and
       static-library output under the finalized ownership contract.
-- [ ] Implement UI0F3 concurrency/lifecycle, panic/poison, layout/symbol, and
+- [x] Implement UI0F3 concurrency/lifecycle, panic/poison, layout/symbol, and
       external C-boundary hardening before UI0G.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.

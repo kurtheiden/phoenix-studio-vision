@@ -413,8 +413,9 @@ The remaining slices are:
 - **UI0F2:** Implemented C ABI service handles, length-delimited
   request/response buffers, exact `Box<[u8]>` ownership/freeing, public header,
   and static-library output.
-- **UI0F3:** ABI concurrency/lifecycle races, panic/poison containment, external
-  layout/symbol hardening, and the finalized C-boundary validation matrix.
+- **UI0F3:** Implemented ABI concurrency/lifecycle races, panic/poison
+  containment, layout/symbol hardening, and the finalized C-boundary validation
+  matrix.
 
 ## UI0F2 implementation status
 
@@ -434,7 +435,32 @@ the ABI version/layout, service and buffer lifecycle, persistent JSON sessions,
 real portable export, unsupported cancellation, bounded pointer/length cases,
 and C/C++ header syntax.
 
-UI0F3 still owns concurrent race/stress proof, poison and panic fault
-injection, token-exhaustion injection, sanitizer-style allocation validation,
-and external symbol/layout hardening. UI0G still owns external static-library
-linkage, frozen cross-language fixtures, Swift, and native-app validation.
+UI0F3 covers concurrent race/stress proof, poison and panic fault injection,
+token-exhaustion injection, bounded allocator-lifecycle validation, and
+conditional external symbol/layout hardening. UI0G still owns external
+static-library linkage, frozen cross-language fixtures, Swift, and native-app
+validation.
+
+## UI0F3 implementation status
+
+UI0F3 hardens the existing ABI without changing its public symbols, layouts,
+JSON envelopes, or allocator contract. Private registry-parameterized helpers
+let tests poison and exhaust isolated state without damaging the process-global
+registry. Deterministic channel/barrier tests prove same-handle serialization,
+separate-handle concurrency, active and queued call quiescence, bounded
+admission/destroy races, and no post-destroy admission. Opaque session IDs now
+include a per-`AppService` namespace so one handle cannot accidentally resolve
+an unrelated handle's same-ordinal session.
+
+Focused injection tests cover registry, service, and lifecycle poison plus
+ordinary panics after admission, during dispatch, before publication, and in
+panic-response fallback. They preserve the status/output rules, release every
+admission exactly once, and leave destruction bounded. Token exhaustion,
+bounded service/buffer cycles, a narrow Miri-compatible boxed-buffer path,
+C/C++ compile-time layout assertions, release unwind configuration, and
+conditional archive-symbol inspection complete the Rust-side hardening.
+
+UI0G remains responsible for compiling and linking an external C consumer,
+freezing cross-language fixtures, invoking the ABI from Swift, and validating
+the native application boundary. UI0F3 adds no Swift, Xcode, XCFramework,
+packaging, notarization, or external client.
