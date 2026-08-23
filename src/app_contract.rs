@@ -6,9 +6,11 @@
 
 use std::cmp::Ordering;
 
+use serde::{Deserialize, Serialize};
+
 pub const CONTRACT_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ApiInfo {
     pub contract_version: u32,
     pub core_version: String,
@@ -25,7 +27,8 @@ impl ApiInfo {
 
 macro_rules! opaque_id {
     ($name:ident) => {
-        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+        #[serde(transparent)]
         pub struct $name(String);
 
         impl $name {
@@ -44,11 +47,15 @@ opaque_id!(SessionId);
 opaque_id!(SequenceId);
 opaque_id!(OperationId);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Readiness {
+    #[serde(rename = "ready")]
     Ready,
+    #[serde(rename = "partially_supported")]
     PartiallySupported,
+    #[serde(rename = "unsupported")]
     Unsupported,
+    #[serde(rename = "unknown")]
     Unknown,
 }
 
@@ -72,10 +79,13 @@ impl Readiness {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ReasonSeverity {
+    #[serde(rename = "informational")]
     Informational,
+    #[serde(rename = "caution")]
     Caution,
+    #[serde(rename = "data_loss_risk")]
     DataLossRisk,
 }
 
@@ -89,14 +99,21 @@ impl ReasonSeverity {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ReadinessReasonCode {
+    #[serde(rename = "validated_compatibility_profile")]
     ValidatedCompatibilityProfile,
+    #[serde(rename = "missing_channel_routing")]
     MissingChannelRouting,
+    #[serde(rename = "unsupported_event_family")]
     UnsupportedEventFamily,
+    #[serde(rename = "unsupported_patch_translation")]
     UnsupportedPatchTranslation,
+    #[serde(rename = "unsupported_project_profile")]
     UnsupportedProjectProfile,
+    #[serde(rename = "incomplete_sequence_structure")]
     IncompleteSequenceStructure,
+    #[serde(rename = "unknown_structure")]
     UnknownStructure,
 }
 
@@ -143,7 +160,7 @@ impl ReadinessReasonCode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ReadinessReason {
     pub code: ReadinessReasonCode,
     pub severity: ReasonSeverity,
@@ -164,10 +181,13 @@ impl ReadinessReason {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum WarningSeverity {
+    #[serde(rename = "informational")]
     Informational,
+    #[serde(rename = "caution")]
     Caution,
+    #[serde(rename = "data_loss_risk")]
     DataLossRisk,
 }
 
@@ -181,10 +201,13 @@ impl WarningSeverity {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum WarningScope {
+    #[serde(rename = "project")]
     Project,
+    #[serde(rename = "sequence")]
     Sequence,
+    #[serde(rename = "generic_track")]
     GenericTrack,
 }
 
@@ -198,7 +221,7 @@ impl WarningScope {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Warning {
     pub code: String,
     pub message: String,
@@ -219,7 +242,7 @@ pub fn compare_warnings(left: &Warning, right: &Warning) -> Ordering {
     left.sort_key().cmp(&right.sort_key())
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct IdentificationSummary {
     pub recognized: bool,
     pub label: String,
@@ -227,7 +250,7 @@ pub struct IdentificationSummary {
     pub profile_label: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ProjectSummary {
     pub display_name: String,
     pub byte_size: u64,
@@ -240,14 +263,21 @@ pub struct ProjectSummary {
     pub diagnostics_available: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum EventFamily {
+    #[serde(rename = "note")]
     Note,
+    #[serde(rename = "controller")]
     Controller,
+    #[serde(rename = "program_change")]
     ProgramChange,
+    #[serde(rename = "channel_pressure")]
     ChannelPressure,
+    #[serde(rename = "pitch_bend")]
     PitchBend,
+    #[serde(rename = "tempo")]
     Tempo,
+    #[serde(rename = "meter")]
     Meter,
 }
 
@@ -277,21 +307,21 @@ impl EventFamily {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct EventFamilySummary {
     pub family: EventFamily,
     pub count: u64,
     pub supported: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ProfileCapability {
     pub profile_id: String,
     pub profile_version: u32,
     pub display_label: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SequenceSummary {
     pub sequence_id: SequenceId,
     pub display_name: String,
@@ -304,10 +334,13 @@ pub struct SequenceSummary {
     pub diagnostics_available: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum DiagnosticsLevel {
+    #[serde(rename = "none")]
     None,
+    #[serde(rename = "summary")]
     Summary,
+    #[serde(rename = "full")]
     Full,
 }
 
@@ -328,7 +361,7 @@ pub struct InspectProjectRequest {
     pub diagnostics_level: DiagnosticsLevel,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct InspectProjectResponse {
     pub contract_version: u32,
     pub session_id: SessionId,
@@ -338,7 +371,7 @@ pub struct InspectProjectResponse {
     pub diagnostics_available: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Diagnostics {
     pub core_version: String,
     pub contract_version: u32,
@@ -352,9 +385,11 @@ pub struct Diagnostics {
     pub export_report: Option<ExportSequenceResponse>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum CollisionPolicy {
+    #[serde(rename = "fail_if_exists")]
     FailIfExists,
+    #[serde(rename = "generate_unique_name")]
     GenerateUniqueName,
 }
 
@@ -385,7 +420,7 @@ pub struct ExportSequenceRequest {
     pub operation_id: Option<OperationId>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ExportCounts {
     pub notes: u64,
     pub generated_note_offs: u64,
@@ -440,8 +475,9 @@ impl ExportCounts {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ValidationStatus {
+    #[serde(rename = "validated")]
     Validated,
 }
 
@@ -451,7 +487,7 @@ impl ValidationStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ExportSequenceResponse {
     pub session_id: SessionId,
     pub sequence_id: SequenceId,
@@ -488,18 +524,29 @@ pub struct AudioReferenceSummary {
     pub provenance_confidence: ProvenanceConfidence,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum AppErrorCategory {
+    #[serde(rename = "file_unreadable")]
     FileUnreadable,
+    #[serde(rename = "not_recognized")]
     NotRecognized,
+    #[serde(rename = "unsupported_profile")]
     UnsupportedProfile,
+    #[serde(rename = "sequence_unsupported")]
     SequenceUnsupported,
+    #[serde(rename = "missing_routing")]
     MissingRouting,
+    #[serde(rename = "unsupported_event_family")]
     UnsupportedEventFamily,
+    #[serde(rename = "export_validation_failed")]
     ExportValidationFailed,
+    #[serde(rename = "destination_exists")]
     DestinationExists,
+    #[serde(rename = "output_io_failed")]
     OutputIoFailed,
+    #[serde(rename = "cancelled")]
     Cancelled,
+    #[serde(rename = "internal_error")]
     InternalError,
 }
 
@@ -537,12 +584,17 @@ impl AppErrorCategory {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum AppOperation {
+    #[serde(rename = "get_api_info")]
     GetApiInfo,
+    #[serde(rename = "inspect_project")]
     InspectProject,
+    #[serde(rename = "get_diagnostics")]
     GetDiagnostics,
+    #[serde(rename = "export_sequence")]
     ExportSequence,
+    #[serde(rename = "cancel_operation")]
     CancelOperation,
 }
 
@@ -568,7 +620,7 @@ impl AppOperation {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct AppError {
     pub contract_version: u32,
     pub category: AppErrorCategory,

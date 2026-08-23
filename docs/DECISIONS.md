@@ -1126,3 +1126,18 @@ and invalid foreign pointers remain outside recovery. The exact symbols,
 envelopes, serialization rules, ownership contract, and later test gate are in
 `JSON_C_ABI_DESIGN.md`. No ABI, dependency, Cargo output, header, or Swift code
 is implemented by this design.
+
+## 2026-08-23: implement UI0F1 as a safe Rust JSON dispatcher
+
+**Status:** Implemented; C ABI deferred
+
+Add runtime `serde`/`serde_json`, serialize the existing owned application DTOs
+directly with explicit stable strings/nulls, and use strict private request
+adapters. `dispatch_json` accepts an existing mutable `AppService`, preserving
+session state while routing only the five committed operations and keeping
+transport failures distinct from unchanged Core `AppError` values. Core alone
+decides supported application contract versions.
+
+UI0F1 adds no unsafe code, raw pointers, exported C symbols, handle registry,
+locks, response-buffer allocator handoff, header, static-library output, Swift,
+or UI0G work. Those remain UI0F2/UI0F3 follow-up slices.

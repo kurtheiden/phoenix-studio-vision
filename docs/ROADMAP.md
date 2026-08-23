@@ -322,8 +322,13 @@ committed or specified.
       Rust-owned response-buffer contract; specify pointer preconditions,
       destroy/poison behavior, deterministic statuses, and UI0F header
       ownership.
-- [ ] Implement UI0F JSON/C ABI only after its separate dependency, allocator,
-      symbol, and packaging contract is approved.
+- [x] Implement UI0F1 safe Rust JSON dispatch with strict request shapes,
+      direct owned-DTO serialization, Core error/version authority, portable
+      round trips, and session persistence without any C ABI.
+- [ ] Implement UI0F2 C service handles, buffers/freeing, public header, and
+      static-library output under the finalized ownership contract.
+- [ ] Implement UI0F3 concurrency/lifecycle, panic/poison, layout/symbol, and
+      external C-boundary hardening before UI0G.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

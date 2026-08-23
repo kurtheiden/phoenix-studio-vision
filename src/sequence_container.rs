@@ -1130,7 +1130,7 @@ mod tests {
         assert_eq!(descriptors[0].label.as_ref().unwrap().bytes, &[0xa5]);
         assert_eq!(
             descriptors.last().unwrap().label.as_ref().unwrap().bytes,
-            &[]
+            &[] as &[u8]
         );
         assert_eq!(descriptors.last().unwrap().label_start, 563);
     }

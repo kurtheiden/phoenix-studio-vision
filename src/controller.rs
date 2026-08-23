@@ -308,7 +308,7 @@ mod tests {
         let prefix = [0x00, 0xff, 0x41, 0x05];
         for context_bytes in 0..3 {
             let mut bytes = prefix.to_vec();
-            bytes.extend(std::iter::repeat_n(0, context_bytes));
+            bytes.extend(std::iter::repeat(0).take(context_bytes));
             assert_eq!(
                 decode(&bytes),
                 Err(BoundedControllerError::TruncatedContext {

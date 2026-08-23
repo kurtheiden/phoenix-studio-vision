@@ -1944,7 +1944,7 @@ fn overall_readiness(sequences: &[SequenceSummary]) -> Readiness {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app_contract::{CollisionPolicy, ExportSequenceRequest, OperationId};
     use crate::compatibility::{
@@ -1959,7 +1959,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn portable_path(bytes: &[u8]) -> PathBuf {
+    pub(crate) fn portable_path(bytes: &[u8]) -> PathBuf {
         static NEXT_PATH_ID: AtomicU64 = AtomicU64::new(0);
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1974,7 +1974,7 @@ mod tests {
         path
     }
 
-    fn portable_directory() -> PathBuf {
+    pub(crate) fn portable_directory() -> PathBuf {
         static NEXT_DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
         let nonce = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -2098,7 +2098,7 @@ mod tests {
         }
     }
 
-    fn portable_registry(bytes: &[u8]) -> CompatibilityRegistry {
+    pub(crate) fn portable_registry(bytes: &[u8]) -> CompatibilityRegistry {
         let parsed = parse_project_166(bytes).unwrap();
         let structure = build_structure_snapshot(&parsed.sequences, bytes).unwrap();
         let hash = sha256_hex(bytes);

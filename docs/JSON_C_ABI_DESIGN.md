@@ -375,4 +375,42 @@ XCFramework packaging, or broad parser/profile work.
 
 The dispatcher, service lifetime, JSON schema, version split, allocation,
 panic, malformed-input, dependency, crate-output, and UI0G boundaries are
-specified. UI0F is ready for implementation review; it is not implemented.
+specified. The overall design is approved; UI0F1 is implemented below while
+the C ABI remains deferred.
+
+## UI0F1 implementation status
+
+UI0F1 implements the safe Rust JSON transport only. Runtime `serde` with
+`derive` and `serde_json` are now dependencies. Public application DTOs carry
+only the serialization/deserialization directions needed by transport, with
+explicit stable enum strings and explicit JSON `null` for optional response
+fields. Internal parser, service-state, and compatibility-policy types remain
+unserialized.
+
+The serialization dependency graph is pinned and locked for the crate's
+declared Rust 1.70 MSRV. UI0F1 compiles and its complete test suite passes with
+Rust 1.70.0. Historical Clippy lint differences are not part of the MSRV
+contract; the current default toolchain's Clippy with warnings denied remains
+the project lint gate.
+
+`json_transport::dispatch_json(&mut AppService, &[u8]) -> Vec<u8>` strictly
+parses the dispatcher envelope and private operation payloads, dispatches only
+the five documented public operations, and returns owned success, Core
+`AppError`, or transport-error JSON. Core remains the version authority for
+`inspect_project` and `export_sequence`; non-versioned operations reject an
+envelope version. Reusing one caller-owned `AppService` preserves sessions
+across dispatches.
+
+Portable tests cover API info, inspection-to-diagnostics session persistence,
+export commit/report fidelity, unsupported cancellation, Core error fidelity,
+strict field/type/version shapes, invalid UTF-8/malformed JSON, explicit enum
+strings, and explicit-null options. UI0F1 contains no unsafe code, C ABI symbol,
+raw pointer, handle registry, synchronization, response-allocation handoff,
+header, crate-type change, Swift, or UI0G work.
+
+The remaining slices are:
+
+- **UI0F2:** C ABI service handles, length-delimited request/response buffers,
+  exact `Box<[u8]>` ownership/freeing, public header, and static-library output.
+- **UI0F3:** ABI concurrency/lifecycle races, panic/poison containment, external
+  layout/symbol hardening, and the finalized C-boundary validation matrix.
