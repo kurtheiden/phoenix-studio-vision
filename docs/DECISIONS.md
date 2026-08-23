@@ -1101,3 +1101,28 @@ unknown-identifier context, the intentional dual-category
 completed hard-link export. Existing UI0D3 report and warning tests remain the
 source of truth for structured success invariants. UI0F transport remains
 deferred.
+
+## 2026-08-23: specify UI0F as a handle-owned generic JSON dispatcher
+
+**Status:** Designed; implementation deferred
+
+Use one `phoenix_call` JSON dispatcher over explicit process-local service
+handle tokens. Each handle owns one serialized `AppService`; separate handles
+have independent session state and may run concurrently after a build assertion
+establishes `AppService: Send`. Monotonic nonreused integer tokens backed by a
+synchronized registry permit safe rejection of null, stale, and
+double-destroyed handles without exposing Rust pointers. Per-entry lifecycle
+coordination prevents calls from beginning after successful destroy, and the
+global registry lock is never held for long Core work.
+
+Keep `PHOENIX_ABI_VERSION` independent from the application
+`CONTRACT_VERSION`. Rust returns exact-length boxed UTF-8 response buffers as
+pointer plus length, and only `phoenix_free_buffer` releases them. Transport
+validation failures use a distinct tagged JSON error rather than fabricating
+an `AppError`; valid Core failures preserve `AppError` unchanged. Every
+exported function catches ordinary Rust unwinding behind a no-unwind boundary;
+the ABI requires unwind builds and defines poisoned-lock handling, while aborts
+and invalid foreign pointers remain outside recovery. The exact symbols,
+envelopes, serialization rules, ownership contract, and later test gate are in
+`JSON_C_ABI_DESIGN.md`. No ABI, dependency, Cargo output, header, or Swift code
+is implemented by this design.

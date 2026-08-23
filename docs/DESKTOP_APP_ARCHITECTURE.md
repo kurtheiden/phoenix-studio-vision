@@ -39,9 +39,9 @@ recreated by a third-party shell.
 
 The bridge should expose versioned request/response operations using owned,
 FFI-safe data—not Rust borrows, parser structs, SwiftUI types, or callbacks into
-reverse-engineering code. A generated or handwritten C header can initially
-carry opaque handles plus serialized DTO payloads; the exact binding mechanism
-belongs to UI0 evaluation.
+reverse-engineering code. UI0F owns a handwritten C header carrying opaque
+handles plus serialized DTO payloads; UI0G later validates that header from C
+and Swift without redefining it.
 
 Official platform references used for this direction:
 
@@ -388,7 +388,8 @@ DTOs before transport or Swift code.
 
 # Unknowns
 
-- Exact C ABI/binding generator and static-library/XCFramework packaging.
+- Static-library embedding, Swift binding mechanics, and XCFramework packaging;
+  the exact C ABI and UI0F-owned handwritten header are designed separately.
 - Minimum supported macOS/Xcode/Swift version and distribution channel.
 - Whether Core or the app service owns final atomic output writing across the
   sandbox boundary.
@@ -399,6 +400,5 @@ DTOs before transport or Swift code.
 
 # Single recommended next step
 
-Review and commit the implemented UI0E stable error/report and explicit v0
-unsupported-cancellation boundary. UI0F transport remains a separate deferred
-slice that must precede the UI1 native shell.
+Review the UI0F JSON/C ABI design in `JSON_C_ABI_DESIGN.md`, then implement that
+separate transport slice before the UI1 native shell. UI0F is not implemented.

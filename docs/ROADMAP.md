@@ -317,6 +317,11 @@ committed or specified.
       irreversible commit point.
 - [x] Implement UI0E contract-invariant tests and the explicit
       `cancellation_not_supported` operation without adding transport.
+- [x] Design UI0F's generic JSON dispatcher, explicit service-handle lifetime,
+      separate ABI/application versioning, transport errors, and exact-length
+      Rust-owned response-buffer contract; specify pointer preconditions,
+      destroy/poison behavior, deterministic statuses, and UI0F header
+      ownership.
 - [ ] Implement UI0F JSON/C ABI only after its separate dependency, allocator,
       symbol, and packaging contract is approved.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their

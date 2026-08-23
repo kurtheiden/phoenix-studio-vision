@@ -251,4 +251,5 @@ export. Existing UI0D3 tests continue to lock warning order, structured warning
 fields, checked report mapping, and validated-success behavior.
 
 No cancellation registry, concurrency, transport, or UI behavior was added.
-The next step is read-only review and commit of UI0E; UI0F remains deferred.
+UI0F's transport design now records how this unchanged unsupported result
+crosses JSON/C; implementation remains separate.

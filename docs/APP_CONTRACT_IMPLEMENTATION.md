@@ -138,6 +138,5 @@ bounded diagnostics without changing this transport-independent model.
 
 # Single recommended next step
 
-Review and commit the implemented UI0E stable error/report invariants and
-explicit unsupported v0 cancellation operation. UI0F serialization and ABI
-work remains separate and deferred.
+Review the separate UI0F transport design in `JSON_C_ABI_DESIGN.md`. Its
+serialization and ABI implementation remains separate and unimplemented.

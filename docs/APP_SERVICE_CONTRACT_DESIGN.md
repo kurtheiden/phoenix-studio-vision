@@ -304,10 +304,11 @@ and `InternalError`. Success with warnings is distinct from an operation error.
 # FFI transport
 
 Choose **B: JSON payloads over a tiny C ABI** for v0. The ABI can expose
-`api_info`, `call(request_json, response_out)`, and `free_buffer`, with one
-UTF-8 JSON envelope per operation. JSON is simple to inspect from Swift,
-debuggable in fixtures, naturally additive, and keeps Rust ownership behind a
-small boundary. It has no performance concern for project summaries/reports.
+one generic call with one UTF-8 JSON envelope per operation. JSON is simple to
+inspect from Swift, debuggable in fixtures, naturally additive, and keeps Rust
+ownership behind a small boundary. It has no performance concern for project
+summaries/reports. The exact v0 handle, symbol, envelope, and status design is
+specified in `JSON_C_ABI_DESIGN.md`.
 
 This will likely require adding a serialization dependency (for example
 `serde`/`serde_json`) when UI0 implementation begins; this design task adds
@@ -317,10 +318,12 @@ replace only the transport encoding.
 # Memory ownership
 
 Rust allocates each response buffer and returns pointer plus length. The caller
-must invoke `free_buffer(pointer, length, allocator_version)` exactly once;
-Rust owns deallocation. Responses are valid UTF-8 JSON, contain no interior NUL
-requirement, and are length-delimited rather than C-string terminated. Request
-bytes are caller-owned for the call. No borrowed Rust pointer crosses a call.
+must invoke `phoenix_free_buffer` exactly once; Rust owns deallocation. UI0F
+uses an exact-length boxed byte slice, so pointer plus length reconstructs the
+allocation without assuming a `Vec` capacity or exposing an allocator version.
+Responses are valid UTF-8 JSON and are length-delimited rather than C-string
+terminated. Request bytes are caller-owned for the call. No borrowed Rust
+pointer crosses a call.
 
 # macOS sandbox/file ownership
 
@@ -371,18 +374,22 @@ irreversible hard-link commit.
 
 # Thread safety
 
-Make the service instance session-aware but serialized per session. Independent
-sessions are safe on separate worker instances; one session cannot be exported
-concurrently. This is simple for one window and leaves multi-window ownership
-explicit rather than promising every parser object is Send/Sync.
+Use explicit service handles. Calls on one handle are synchronous and
+serialized; separate handles own independent service/session state and may run
+concurrently only after UI0F establishes the required `AppService: Send`
+property. The token registry is held only for lookup, not Core work; per-entry
+lifecycle coordination makes successful destroy wait for admitted work and
+prevents later execution. This supports test isolation and future multi-window
+ownership without exposing parser objects or promising reentrancy.
 
 # Deterministic behavior
 
-Enums have stable snake-case strings plus numeric codes. Sequence order follows
+Enums have stable snake-case strings; existing Core numeric helpers remain Core
+metadata rather than duplicated JSON discriminants. Sequence order follows
 Core structural order; warning and report arrays are deterministic. All text is
-UTF-8. Absent optional values are omitted/null according to one schema rule,
-never represented by magic empty strings. JSON readers ignore unknown additive
-fields and preserve unknown enum values as `unknown(code)`.
+UTF-8. Absent optional values are JSON `null`, never magic empty strings.
+Readers ignore unknown additive response fields and safely handle unknown enum
+or code strings.
 
 # Security and privacy
 
@@ -400,7 +407,8 @@ Future service tests should include:
 - authentic inspection, Ode-profile readiness, mismatch-disabled-export, and
   successful report integration tests;
 - FFI round trips for request/response bytes, version mismatch, malformed JSON,
-  UTF-8, buffer freeing, and allocator ownership.
+  UTF-8, buffer freeing, allocator ownership, service-token races, lock poison
+  handling, and external compilation against the UI0F-owned C header.
 
 No tests are added in UI0 design.
 
@@ -431,16 +439,16 @@ No tests are added in UI0 design.
 | I. FFI transport recommendation | YES |
 | J. macOS path/sandbox ownership | YES |
 | K. Cancellation/progress seam | YES |
-| L. UI0 implementation-ready | PARTIAL |
+| L. UI0 implementation-ready | YES |
 
-UI0 is not implementation-ready until the repository chooses the exact owned
-DTO Rust module and confirms the C ABI/JSON serialization dependency policy.
-That is one bounded implementation decision, not a parser/export blocker.
+UI0F is design-ready. Its later implementation still requires explicit approval
+to add the documented serialization dependencies and Cargo crate output.
 
 # Unknowns
 
-- Exact DTO Rust module names and serialization crate approval.
-- C ABI symbol naming, library packaging, and Swift binding generation.
+- Approval to add the selected serialization crates and static-library output.
+- Final static-library embedding and Swift binding mechanics in UI0G; UI0F owns
+  the public C header itself.
 - Minimum supported macOS/Xcode versions and sandbox entitlements.
 - Whether Core or a host process owns all destination writes in a signed app.
 - Session expiry limits and future multi-window scheduling.
@@ -456,9 +464,9 @@ is marked Ready because routing and compatibility profiles remain unresolved.
 
 # Current status and single recommended next step
 
-UI0A through UI0E are implemented. Review and commit UI0E's stable error/report
-invariants and explicit unsupported-cancellation operation before beginning a
-separate UI0F transport design. UI0F remains deferred.
+UI0A through UI0E are implemented. UI0F's JSON/C ABI is now specified in
+`JSON_C_ABI_DESIGN.md`; review that dependency, allocator, handle, symbol, and
+packaging contract before implementation. UI0F remains unimplemented.
 
 # UI0C registry seam
 
