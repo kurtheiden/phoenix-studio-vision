@@ -386,10 +386,11 @@ DTOs before transport or Swift code.
   shell, inspection, readiness, report, and bridge architecture remain valid;
   general routing later changes Core readiness, not UI logic.
 
-# Unknowns
+# Remaining product unknowns
 
-- Static-library embedding, Swift binding mechanics, and XCFramework packaging;
-  the exact C ABI and UI0F-owned handwritten header are designed separately.
+- XCFramework packaging and the final distribution build; static-library
+  embedding and Swift binding mechanics are proven for the UI0G development
+  host, while the exact release packaging remains later work.
 - Minimum supported macOS/Xcode/Swift version and distribution channel.
 - Whether Core or the app service owns final atomic output writing across the
   sandbox boundary.
@@ -398,7 +399,11 @@ DTOs before transport or Swift code.
 - Stable general readiness rules after channel derivation expands.
 - Commercial licensing, update delivery, telemetry/privacy, and support policy.
 
-# Single recommended next step
+# Current implementation status and next step
 
-Review the UI0F JSON/C ABI design in `JSON_C_ABI_DESIGN.md`, then implement that
-separate transport slice before the UI1 native shell. UI0F is not implemented.
+UI0F and UI0G are complete for the validated arm64 macOS host. The next
+checkpoint is UI1A: create the minimal SwiftUI native shell and perform a real
+`get_api_info` Core handshake through the validated C ABI. UI1A does not yet
+open files, inspect projects, display diagnostics, or export MIDI. The focused
+design and build/link decisions are recorded in
+`docs/UI1_NATIVE_SHELL_DESIGN.md`.

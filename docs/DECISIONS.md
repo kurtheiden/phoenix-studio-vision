@@ -1213,3 +1213,17 @@ a duplicate raw-JSON schema fixture set. No hosted CI workflow is introduced
 because the repository has no existing CI framework; the aggregate command is
 the reproducible local handoff gate. Intel/universal validation, Xcode,
 packaging, and native UI remain intentionally unproven.
+
+## 2026-08-24: define UI1A native SwiftUI shell and Core handshake
+
+**Status:** Designed; implementation deferred
+
+Begin UI1 with one `PhoenixApp` macOS target under `macos/PhoenixApp`, using
+SwiftUI only for the first shell. A main-actor `AppModel` presents starting,
+ready, and failed states while a private actor-owned `PhoenixCore` performs
+the synchronous `get_api_info` call off the main actor, copies and frees the
+Rust-owned response, and owns one service handle for the shell lifetime.
+The target links the existing header/module map and release static library;
+an Xcode build phase may invoke locked Cargo release builds. File access,
+inspection, diagnostics, export, AppKit panels, packaging, and product support
+policy remain later decisions.
