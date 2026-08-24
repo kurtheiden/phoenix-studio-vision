@@ -338,9 +338,9 @@ committed or specified.
 - [x] Complete UI0G3 aggregate C/Swift external validation and semantic
       cross-language fixture policy; defer host expansion and desktop
       application integration to UI1.
-- [x] Define UI1A native SwiftUI shell, Core handshake, ownership, threading,
-      development linkage, and three-state startup model; implementation
-      remains deferred.
+- [x] Implement UI1A native SwiftUI shell, Core handshake, ownership,
+      threading, development linkage, and three-state startup model; defer
+      project opening and product workflows to UI1B and later.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

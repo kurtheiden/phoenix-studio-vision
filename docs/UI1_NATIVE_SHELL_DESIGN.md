@@ -95,3 +95,12 @@ Drag/drop, security-scoped bookmark persistence, batch export, overwrite,
 genuine cancellation, audio recovery, DAW/remapping, final branding, Intel or
 universal validation, XCFrameworks, signing, notarization, and distribution
 remain deferred.
+
+## Implementation status
+
+UI1A is implemented in `macos/PhoenixApp`. The `PhoenixApp` target uses the
+provisional macOS 13.0 deployment target, invokes `cargo build --release
+--locked` from its Xcode build phase, and links the existing release static
+library through the public module map. A real arm64 macOS launch reached
+`UI1A_READY contract_version=1`; the service is owned by the private
+`PhoenixCore` actor and destroyed by its owner. UI1B remains the next slice.

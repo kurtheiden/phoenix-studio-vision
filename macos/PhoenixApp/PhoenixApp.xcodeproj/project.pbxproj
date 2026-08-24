@@ -1,0 +1,57 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+/* Begin PBXBuildFile section */
+		A00000010000000000000001 /* PhoenixAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000001 /* PhoenixAppApp.swift */; };
+		A00000010000000000000002 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000002 /* AppModel.swift */; };
+		A00000010000000000000003 /* PhoenixCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000003 /* PhoenixCore.swift */; };
+		A00000010000000000000004 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000004 /* ContentView.swift */; };
+		A00000010000000000000005 /* libphoenix.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000120000000000000001 /* libphoenix.a */; };
+/* End PBXBuildFile section */
+/* Begin PBXFileReference section */
+		A00000100000000000000001 /* Phoenix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Phoenix.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000110000000000000001 /* PhoenixAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoenixAppApp.swift; sourceTree = "<group>"; };
+		A00000110000000000000002 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		A00000110000000000000003 /* PhoenixCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoenixCore.swift; sourceTree = "<group>"; };
+		A00000110000000000000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A00000120000000000000001 /* libphoenix.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "$(SRCROOT)/../../target/release/libphoenix.a"; path = "$(SRCROOT)/../../target/release/libphoenix.a"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+/* Begin PBXFrameworksBuildPhase section */
+		A00000200000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+/* Begin PBXGroup section */
+		A00000300000000000000001 = {isa = PBXGroup; children = (A00000300000000000000002 /* PhoenixApp */, A00000300000000000000003 /* Products */,); sourceTree = "<group>"; };
+		A00000300000000000000002 /* PhoenixApp */ = {isa = PBXGroup; children = (A00000110000000000000001 /* PhoenixAppApp.swift */, A00000110000000000000002 /* AppModel.swift */, A00000110000000000000003 /* PhoenixCore.swift */, A00000110000000000000004 /* ContentView.swift */, A00000120000000000000001 /* libphoenix.a */,); path = PhoenixApp; sourceTree = "<group>"; };
+		A00000300000000000000003 /* Products */ = {isa = PBXGroup; children = (A00000100000000000000001 /* Phoenix.app */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+/* Begin PBXNativeTarget section */
+		A00000400000000000000001 /* PhoenixApp */ = {isa = PBXNativeTarget; buildConfigurationList = A00000700000000000000002 /* Build configuration list for PBXNativeTarget "PhoenixApp" */; buildPhases = (A00000500000000000000001 /* Cargo build */, A00000200000000000000001 /* Frameworks */, A00000500000000000000002 /* Sources */, A00000500000000000000003 /* Resources */,); buildRules = (); dependencies = (); name = PhoenixApp; productName = Phoenix; productReference = A00000100000000000000001 /* Phoenix.app */; productType = "com.apple.product-type.application"; };
+/* End PBXNativeTarget section */
+/* Begin PBXProject section */
+		A00000600000000000000001 /* Project object */ = {isa = PBXProject; attributes = {LastUpgradeCheck = 2630;}; buildConfigurationList = A00000700000000000000001 /* Build configuration list for PBXProject "PhoenixApp" */; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en,); mainGroup = A00000300000000000000001; productRefGroup = A00000300000000000000003 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (A00000400000000000000001 /* PhoenixApp */,); };
+/* End PBXProject section */
+/* Begin PBXResourcesBuildPhase section */
+		A00000500000000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+/* Begin PBXShellScriptBuildPhase section */
+		A00000500000000000000001 /* Cargo build */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); name = "Build Phoenix Rust library"; outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "cd \"$SRCROOT/../..\"\ncargo build --release --locked\n"; };
+/* End PBXShellScriptBuildPhase section */
+/* Begin PBXSourcesBuildPhase section */
+		A00000500000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000010000000000000001 /* PhoenixAppApp.swift in Sources */, A00000010000000000000002 /* AppModel.swift in Sources */, A00000010000000000000003 /* PhoenixCore.swift in Sources */, A00000010000000000000004 /* ContentView.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+/* Begin XCBuildConfiguration section */
+		A00000800000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 13.0; PRODUCT_BUNDLE_IDENTIFIER = "com.phoenix-studio-vision.Phoenix"; PRODUCT_NAME = Phoenix; SWIFT_MODULE_NAME = PhoenixApp; SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = complete; HEADER_SEARCH_PATHS = "$(SRCROOT)/../../include"; LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../target/release"; OTHER_LDFLAGS = ("-lphoenix",); CLANG_ENABLE_MODULES = YES; CODE_SIGNING_ALLOWED = NO; }; name = Debug; };
+		A00000800000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 13.0; PRODUCT_BUNDLE_IDENTIFIER = "com.phoenix-studio-vision.Phoenix"; PRODUCT_NAME = Phoenix; SWIFT_MODULE_NAME = PhoenixApp; SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = complete; HEADER_SEARCH_PATHS = "$(SRCROOT)/../../include"; LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../target/release"; OTHER_LDFLAGS = ("-lphoenix",); CLANG_ENABLE_MODULES = YES; CODE_SIGNING_ALLOWED = NO; }; name = Release; };
+		A00000800000000000000003 /* Project Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO;}; name = Debug; };
+		A00000800000000000000004 /* Project Release */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO;}; name = Release; };
+/* End XCBuildConfiguration section */
+/* Begin XCConfigurationList section */
+		A00000700000000000000001 /* Build configuration list for PBXProject "PhoenixApp" */ = {isa = XCConfigurationList; buildConfigurations = (A00000800000000000000003 /* Project Debug */, A00000800000000000000004 /* Project Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A00000700000000000000002 /* Build configuration list for PBXNativeTarget "PhoenixApp" */ = {isa = XCConfigurationList; buildConfigurations = (A00000800000000000000001 /* Debug */, A00000800000000000000002 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A00000600000000000000001 /* Project object */;
+}

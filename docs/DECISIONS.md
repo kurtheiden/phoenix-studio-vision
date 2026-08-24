@@ -1216,7 +1216,7 @@ packaging, and native UI remain intentionally unproven.
 
 ## 2026-08-24: define UI1A native SwiftUI shell and Core handshake
 
-**Status:** Designed; implementation deferred
+**Status:** Implemented
 
 Begin UI1 with one `PhoenixApp` macOS target under `macos/PhoenixApp`, using
 SwiftUI only for the first shell. A main-actor `AppModel` presents starting,
@@ -1227,3 +1227,7 @@ The target links the existing header/module map and release static library;
 an Xcode build phase may invoke locked Cargo release builds. File access,
 inspection, diagnostics, export, AppKit panels, packaging, and product support
 policy remain later decisions.
+
+The first target builds from the command line with Xcode and reaches the ready
+handshake state on the validated arm64 host. UI1B remains the next
+implementation checkpoint; UI1 overall is not complete.
