@@ -49,6 +49,27 @@ private struct InspectEnvelope: Decodable {
     let error: ResponseError?
 }
 
+private struct DiagnosticsEnvelope: Decodable {
+    let ok: Bool
+    let result: DiagnosticsSummary?
+    let error: ResponseError?
+}
+
+private struct DiagnosticsRequest: Encodable {
+    let operation = "get_diagnostics"
+    let payload: Payload
+
+    struct Payload: Encodable {
+        let sessionID: String
+        let diagnosticsLevel = "summary"
+
+        enum CodingKeys: String, CodingKey {
+            case sessionID = "session_id"
+            case diagnosticsLevel = "diagnostics_level"
+        }
+    }
+}
+
 private struct InspectRequest: Encodable {
     let operation = "inspect_project"
     let contractVersion: UInt32
@@ -140,6 +161,26 @@ actor PhoenixCore {
         let envelope: InspectEnvelope
         do {
             envelope = try JSONDecoder().decode(InspectEnvelope.self, from: data)
+        } catch {
+            throw PhoenixCoreError.invalidResponse
+        }
+        guard envelope.ok else {
+            guard let error = envelope.error else { throw PhoenixCoreError.invalidResponse }
+            if error.kind == "transport" {
+                throw PhoenixCoreError.transport(error.message ?? error.code ?? "unknown error")
+            }
+            throw PhoenixCoreError.application(error.appError?.displayMessage ?? "unknown error")
+        }
+        guard let result = envelope.result else { throw PhoenixCoreError.invalidResponse }
+        return result
+    }
+
+    func getDiagnostics(sessionID: String) throws -> DiagnosticsSummary {
+        let request = DiagnosticsRequest(payload: .init(sessionID: sessionID))
+        let data = try Self.call(handle: ensureHandle(), request: JSONEncoder().encode(request))
+        let envelope: DiagnosticsEnvelope
+        do {
+            envelope = try JSONDecoder().decode(DiagnosticsEnvelope.self, from: data)
         } catch {
             throw PhoenixCoreError.invalidResponse
         }

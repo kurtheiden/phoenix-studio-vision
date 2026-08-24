@@ -275,6 +275,14 @@ Diagnostics is a disclosure/sidebar sheet within this window, not a separate
 research application. A toolbar Open action replaces the current project only
 after the current Core call completes and any required confirmation.
 
+UI1D implements this as an inline Details disclosure. It sends the opaque
+session ID to project-scoped `get_diagnostics` at summary level only on first
+expansion, caches the summary for the current inspection, and resets it after a
+successful replacement. A diagnostics failure stays inside Details and does
+not invalidate the inspected project, readiness, or warnings. Sequence
+selection is limited to showing Core-owned readiness explanation and counts; it
+does not authorize export.
+
 # Visual principles
 
 Use standard macOS materials, spacing, typography, tables/lists, symbols, and

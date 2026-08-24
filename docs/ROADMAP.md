@@ -349,6 +349,10 @@ committed or specified.
       readiness/diagnostics presentation to UI1D and export to UI1E.
 - [x] Define UI1D readiness, limitations, warnings, and lazy project-level
       diagnostics presentation; defer implementation and export to UI1E.
+- [x] Implement UI1D Core-owned readiness and warning presentation, opaque
+      sequence selection for limitation context, and lazy cached summary
+      diagnostics with failure isolation; authentic-file UI validation remains
+      before commit and UI1E remains next.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

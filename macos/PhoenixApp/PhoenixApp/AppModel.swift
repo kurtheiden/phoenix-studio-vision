@@ -15,8 +15,17 @@ final class AppModel: ObservableObject {
         case failed(message: String)
     }
 
+    enum DiagnosticsState: Equatable {
+        case notLoaded
+        case loading
+        case loaded(DiagnosticsSummary)
+        case failed(message: String)
+    }
+
     @Published private(set) var state: State = .starting
     @Published private(set) var projectState: ProjectState = .idle
+    @Published var selectedSequenceID: String?
+    @Published private(set) var diagnosticsState: DiagnosticsState = .notLoaded
     private let core = PhoenixCore()
     private var started = false
 
@@ -46,16 +55,39 @@ final class AppModel: ObservableObject {
 
     func openProject() {
         guard canOpenProject, let url = ProjectOpenPanel.chooseProject() else { return }
+        selectedSequenceID = nil
         projectState = .inspecting
         let path = url.path
         Task {
             do {
                 let summary = try await core.inspectProject(path: path)
+                selectedSequenceID = nil
+                diagnosticsState = .notLoaded
                 projectState = .inspected(summary)
                 FileHandle.standardError.write(Data("UI1B_INSPECTED sequences=\(summary.sequenceCount)\n".utf8))
             } catch {
                 projectState = .failed(message: error.localizedDescription)
                 FileHandle.standardError.write(Data("UI1B_INSPECTION_FAILED\n".utf8))
+            }
+        }
+    }
+
+    func loadDiagnosticsIfNeeded() {
+        guard case .notLoaded = diagnosticsState,
+              case .inspected(let inspection) = projectState,
+              inspection.diagnosticsAvailable else { return }
+        diagnosticsState = .loading
+        let sessionID = inspection.sessionID
+        Task {
+            do {
+                let summary = try await core.getDiagnostics(sessionID: sessionID)
+                guard case .inspected(let current) = projectState,
+                      current.sessionID == sessionID else { return }
+                diagnosticsState = .loaded(summary)
+            } catch {
+                guard case .inspected(let current) = projectState,
+                      current.sessionID == sessionID else { return }
+                diagnosticsState = .failed(message: error.localizedDescription)
             }
         }
     }

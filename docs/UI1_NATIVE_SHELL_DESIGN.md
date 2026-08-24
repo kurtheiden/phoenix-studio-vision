@@ -103,7 +103,7 @@ provisional macOS 13.0 deployment target, invokes `cargo build --release
 --locked` from its Xcode build phase, and links the existing release static
 library through the public module map. A real arm64 macOS launch reached
 `UI1A_READY contract_version=1`; the service is owned by the private
-`PhoenixCore` actor and destroyed by its owner. UI1D is the next slice.
+`PhoenixCore` actor and destroyed by its owner. UI1E is the next slice.
 
 ## UI1B status
 
@@ -121,12 +121,15 @@ and typed sequence data, presents explicit project counts, and shows an
 informational sequence list or truthful zero-sequence empty state. Sequence
 readiness, detailed diagnostics, and export remain deferred to UI1D/UI1E.
 
-## UI1D design status
+## UI1D implementation status
 
-UI1D is specified as the readiness, limitations, warnings, and project-level
+UI1D is implemented as the readiness, limitations, warnings, and project-level
 diagnostics presentation phase. It maps Core readiness to “Ready”, “Partially
 supported”, “Not currently exportable”, or “Readiness unknown”; presents Core-
-provided readiness details and warning messages; and may introduce opaque
-sequence selection for that context. Details are loaded lazily through the
-project-scoped `get_diagnostics` operation at summary level and cached for the
-current inspection. Export remains deferred to UI1E.
+provided readiness details and warning messages; and uses opaque sequence
+selection only for that context. Details load lazily through project/session-
+scoped `get_diagnostics` at summary level and are cached for the current
+inspection. Successful replacement resets selection and diagnostics; Details
+failure stays local to the disclosure. Export remains deferred to UI1E.
+Automated validation accompanies the implementation; authentic-file UI
+validation has not yet been performed.

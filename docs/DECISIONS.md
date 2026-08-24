@@ -1279,3 +1279,20 @@ invalidate inspection; they show bounded “Details unavailable” state.
 Technical hashes, raw codes, parser evidence, offsets, and technical messages
 remain hidden from the normal recovery UI. Export, destination selection, and
 other UI1E behavior remain deferred.
+
+## 2026-08-24: implement UI1D readiness, limitations, and diagnostics
+
+**Status:** Implemented; authentic-file UI validation pending
+
+The native shell presents Core-owned project and sequence readiness with the
+four reviewed display labels and shows `Warning.message` in preserved Core
+order. Opaque sequence selection exists only to show the selected sequence's
+Core `ReadinessReason.display_detail` and summary counts; Swift does not derive
+policy or explanation text from machine codes.
+
+Project/session-scoped summary diagnostics load on first Details expansion and
+are cached for that inspection. Successful replacement resets selection and
+diagnostics state. Diagnostics errors remain bounded within Details and do not
+replace the successful inspection. Technical hashes, raw codes, profile
+identifiers, parser evidence, and technical errors remain hidden. UI1E export
+work remains deferred.
