@@ -3,10 +3,12 @@
 Phoenix is an open-source recovery toolkit for rescuing music projects created
 with legacy digital audio workstations.
 
-The initial focus is Opcode Studio Vision and Studio Vision Pro. Phoenix is
-currently an exploratory inspection tool. It can report evidence-based Studio
-Vision identification confidence, but recovery and structural parsing are not
-implemented yet.
+The initial focus is Opcode Studio Vision and Studio Vision Pro. Phoenix now
+has a native macOS application that can open and inspect supported Studio
+Vision projects, present recovery readiness and limitations, and export
+eligible sequences as Standard MIDI Files. This is deliberately compatibility-
+profile gated: it does not imply universal Studio Vision parsing or that every
+sequence is exportable.
 
 The read-only discovery inspector reports basic file metadata, a SHA-256
 digest, a hexadecimal preview of the first 256 bytes, printable ASCII strings
@@ -14,13 +16,18 @@ found across the complete file, and summary statistics including Shannon
 entropy. These are format-neutral observations; Phoenix does not yet recognize
 Studio Vision from discovery output or parse Studio Vision file structures.
 
-Phoenix also reads classic Mac Finder metadata when the platform makes it
+The command-line discovery inspector remains available for format-neutral
+research. Phoenix also reads classic Mac Finder metadata when the platform makes it
 available. The observed Finder type `MID2` together with creator `MIDA` produces
 High confidence; either code alone with the other unavailable produces Low
 confidence. Missing, unsupported, malformed, unreadable, or conflicting
 metadata produces Unknown confidence. Filename extensions are displayed but
 never used as identification evidence. Confidence is evidence-based and does
 not claim that a file is definitively Studio Vision or structurally valid.
+
+Batch export, external-audio recovery, project-resurrection reporting, DAW
+project generation, instrument remapping, and distribution packaging are not
+implemented.
 
 ## Requirements
 

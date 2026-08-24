@@ -373,7 +373,12 @@ SMF writing, or readiness decision exists in Swift. No successful result is
 shown for partial output. The design adds no framework, dependency, app target,
 bundle, CLI behavior, or production code.
 
-# Implementation phases
+# Historical implementation phase plan
+
+The following sequence was the original architecture plan. Its UI2 inspection,
+UI3 export, and most UI4 result responsibilities were subsequently implemented
+inside the finer-grained UI1B–UI1E slices; they are retained here as historical
+planning context, not as unstarted future phases.
 
 1. **UI0 — Core application contract:** design/test owned DTOs, readiness/error
    categories, profile registry boundary, path/file-I/O ownership, cancellation,
@@ -388,6 +393,26 @@ bundle, CLI behavior, or production code.
    details/copying.
 6. **UI5 — hardening:** cancellation behavior, VoiceOver/keyboard/contrast QA,
    signing, sandbox, notarization, packaging, and manual DAW acceptance.
+
+# Re-baselined phase status after UI1
+
+UI1A–UI1E complete the native prototype workflow represented by historical
+UI1–UI4: SwiftUI shell and Core ownership, native one-file Open,
+`inspect_project`, project/sequence presentation, readiness and warnings, lazy
+diagnostics, opaque selection context, capability-gated one-sequence export,
+Core-owned unique naming, result presentation, and Reveal in Finder. Authentic
+end-to-end validation exported `Ode to Clarke` twice without overwrite.
+
+UI5 remains the next named phase, but it is not a license to absorb every
+deferred product feature. Its first bounded slice, UI5A, is an accessibility
+and interaction-language audit of the existing workflow: keyboard traversal,
+VoiceOver reading and status announcements, focus behavior, text-plus-icon
+status communication, and contrast. It should correct only defects found in
+that surface. It should also replace the potentially confusing phrase
+“general MIDI routing is not established,” which musicians may read as a
+reference to the General MIDI standard, with wording such as “its MIDI routing
+has not yet been fully recovered.” UI5A does not add cancellation, sandboxing,
+packaging, or recovery capability.
 
 UI0's contract design is recorded separately in
 `docs/APP_SERVICE_CONTRACT_DESIGN.md`; its first implementation slice is owned
@@ -424,9 +449,8 @@ DTOs before transport or Swift code.
 
 # Current implementation status and next step
 
-UI0F and UI0G are complete for the validated arm64 macOS host. The next
-checkpoint is UI1A: create the minimal SwiftUI native shell and perform a real
-`get_api_info` Core handshake through the validated C ABI. UI1A does not yet
-open files, inspect projects, display diagnostics, or export MIDI. The focused
-design and build/link decisions are recorded in
-`docs/UI1_NATIVE_SHELL_DESIGN.md`.
+UI0 and UI1 are complete for the validated arm64 macOS host. UI1's native app
+opens and inspects one project, presents Core-owned readiness and diagnostics,
+and exports an eligible selected sequence with a validated result. UI5 is the
+next named phase; the next implementation checkpoint is the bounded UI5A
+accessibility and interaction-language audit defined above.

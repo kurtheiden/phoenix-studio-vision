@@ -1329,3 +1329,32 @@ normally, with no new crash report; the existing
 
 Batch export, external-audio discovery/relinking, resurrection totals, DAW
 generation, remapping, packaging, and distribution remain deferred.
+
+## 2026-08-24: close UI1 and re-baseline the native roadmap
+
+**Status:** UI1 complete; UI5A defined but not started
+
+UI1A–UI1E delivered the native shell and Core handshake/service ownership,
+one-file Open and inspection, project and sequence presentation, Core-owned
+readiness/warnings and lazy diagnostics, opaque selection context,
+capability-gated single-sequence MIDI export with Core-owned unique naming,
+result presentation, and Reveal in Finder. Authentic `newest STUFF baseline`
+validation completed the native Studio Vision-to-MIDI proof.
+
+The architecture's older UI2 inspection, UI3 export, and most UI4 results
+labels are retained as historical planning terminology, but their intended
+capabilities were delivered within UI1B–UI1E. UI5 remains the next named phase.
+The first bounded slice is UI5A: audit and harden keyboard traversal, VoiceOver
+reading/status announcements, focus behavior, text-plus-icon status, contrast,
+and user-facing interaction language in the existing workflow. The phrase
+“Phoenix can inspect this sequence, but general MIDI routing is not
+established” should be reconsidered because musicians may interpret “general
+MIDI” as the General MIDI standard; prefer language such as “Phoenix can
+inspect this sequence, but its MIDI routing has not yet been fully recovered.”
+This closeout does not change the UI wording or begin UI5A.
+
+Broader Studio Vision parsing/profile coverage, batch/project export, external-
+audio discovery/relinking, complete resurrection reporting, DAW/Logic
+generation, instrument remapping, drag/drop/recent files, sandbox and security-
+scoped bookmarks, artwork/visual polish, signing/notarization/distribution, and
+universal/XCFramework packaging remain deferred.

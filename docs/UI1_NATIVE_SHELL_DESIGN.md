@@ -103,7 +103,8 @@ provisional macOS 13.0 deployment target, invokes `cargo build --release
 --locked` from its Xcode build phase, and links the existing release static
 library through the public module map. A real arm64 macOS launch reached
 `UI1A_READY contract_version=1`; the service is owned by the private
-`PhoenixCore` actor and destroyed by its owner. UI1E is the next slice.
+`PhoenixCore` actor and destroyed by its owner. Later UI1 slices are recorded
+below.
 
 ## UI1B status
 
@@ -152,3 +153,21 @@ validation completed with the 18-sequence `newest STUFF baseline`: `Ode to
 Clarke` exported twice with unique names, Finder reveal worked, cancellation
 preserved state, and a non-exportable sibling remained disabled. Batch export,
 audio recovery and the broader project-resurrection workflow remain deferred.
+
+## UI1 milestone closeout
+
+UI1 is complete. UI1A–UI1E established the native macOS SwiftUI shell and Core
+service ownership, native one-file Open and `inspect_project`, project and
+sequence presentation, Core-owned readiness and warnings, lazy project
+diagnostics, opaque sequence context, capability-gated single-sequence MIDI
+export, Core-owned unique filenames, export results, and Reveal in Finder. The
+complete Studio Vision-to-MIDI path was authentically validated with `Ode to
+Clarke` from `newest STUFF baseline`.
+
+Historical architecture labels UI2 inspection, UI3 export, and most UI4 result
+behavior were delivered within UI1B–UI1E and are not future implementation
+milestones. UI5 hardening is next. Its first bounded slice is an accessibility
+and interaction-language audit of the existing workflow, including keyboard,
+VoiceOver, focus, status communication, contrast, and the potentially
+misleading “general MIDI routing” phrase. No UI5 implementation begins in this
+closeout.

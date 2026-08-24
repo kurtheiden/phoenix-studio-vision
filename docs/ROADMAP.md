@@ -358,6 +358,17 @@ committed or specified.
       bounded result/failure state, and Reveal in Finder; authentic repeated-
       export, cancellation, eligibility, termination, and crash-report
       validation completed, while batch/audio resurrection remain deferred.
+- [x] Close UI1 after UI1A–UI1E delivered and authentically validated the
+      native one-file inspection, readiness/diagnostics, and capability-gated
+      single-sequence MIDI recovery workflow.
+- [ ] Begin UI5A as a bounded native accessibility and interaction-language
+      hardening pass: manually audit keyboard traversal, VoiceOver reading and
+      status announcements, focus behavior, text-plus-icon status, and contrast
+      across the existing open/inspect/details/export/result/error workflows;
+      correct only defects found in that surface. Include the known wording
+      cleanup from “general MIDI routing is not established” to language such
+      as “its MIDI routing has not yet been fully recovered.” Do not add Core
+      cancellation, sandboxing, packaging, or new recovery features in UI5A.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
@@ -365,6 +376,17 @@ committed or specified.
 
 This milestone remains compatibility-profile gated and does not establish
 general Studio Vision parsing.
+
+UI1 is complete. The architecture's earlier UI2 inspection, UI3 export, and
+most UI4 results plan was delivered within UI1B–UI1E; those labels are
+historical rather than future milestones. UI5 hardening is the next named
+phase, beginning with the bounded UI5A audit above.
+
+Broader parsing/profile coverage, batch/project-wide export, external-audio
+discovery and relinking, full resurrection reporting, DAW/Logic generation,
+instrument remapping, drag/drop and recent files, sandbox/bookmark work,
+artwork and visual polish, signing/notarization/distribution, and universal or
+XCFramework packaging remain deferred.
 
 ## Long-term product vision
 
