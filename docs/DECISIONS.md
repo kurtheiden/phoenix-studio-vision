@@ -1258,3 +1258,24 @@ decoder smoke compiles the same production project/sequence models used by the
 app and exercises them with synthetic populated data for additive,
 contract-shaped decoding; it is not evidence that a real sample exposes
 sequences.
+
+## 2026-08-24: define UI1D readiness, limitations, and diagnostics presentation
+
+**Status:** Design clarified; implementation deferred
+
+UI1D will present Core-owned project and sequence readiness using the user-facing
+vocabulary “Ready”, “Partially supported”, “Not currently exportable”, and
+“Readiness unknown”. Core `ReadinessReason.display_detail` and `Warning.message`
+remain the semantic and user-language authority; Swift will not reconstruct
+policy from machine codes. Warnings remain visible without opening diagnostics.
+
+UI1D may introduce opaque sequence selection solely to reveal readiness and
+limitation context. Project-level `get_diagnostics` is requested lazily at
+`summary` level on first Details/Diagnostics disclosure, cached for the current
+inspection, and reset when a new project replaces it. The operation accepts only
+the opaque session ID and is not sequence-filtered. Diagnostics failures do not
+invalidate inspection; they show bounded “Details unavailable” state.
+
+Technical hashes, raw codes, parser evidence, offsets, and technical messages
+remain hidden from the normal recovery UI. Export, destination selection, and
+other UI1E behavior remain deferred.

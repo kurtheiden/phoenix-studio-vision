@@ -347,6 +347,8 @@ committed or specified.
 - [x] Implement UI1C project summary, explicit Core counts, typed noninteractive
       sequence presentation, and truthful zero-sequence behavior; defer
       readiness/diagnostics presentation to UI1D and export to UI1E.
+- [x] Define UI1D readiness, limitations, warnings, and lazy project-level
+      diagnostics presentation; defer implementation and export to UI1E.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
