@@ -1231,3 +1231,14 @@ policy remain later decisions.
 The first target builds from the command line with Xcode and reaches the ready
 handshake state on the validated arm64 host. UI1B remains the next
 implementation checkpoint; UI1 overall is not complete.
+
+## 2026-08-24: implement UI1B project opening and inspection
+
+**Status:** Implemented
+
+UI1B uses a focused `NSOpenPanel` that accepts one arbitrary file, including
+extensionless Studio Vision projects, and passes only its filesystem path to
+the existing `inspect_project` operation. The shell shows inspecting,
+compact Core-derived summary, and bounded failure states; picker cancellation
+is a no-op. The current target is unsandboxed, so security-scoped bookmarks and
+distribution access policy remain deferred. UI1C remains next.

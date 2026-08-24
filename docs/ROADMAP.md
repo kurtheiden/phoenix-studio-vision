@@ -341,6 +341,9 @@ committed or specified.
 - [x] Implement UI1A native SwiftUI shell, Core handshake, ownership,
       threading, development linkage, and three-state startup model; defer
       project opening and product workflows to UI1B and later.
+- [x] Implement UI1B one-file Open, path-based `inspect_project` dispatch,
+      compact Core-derived summary, nested AppError presentation, and repeated
+      Open behavior; defer sequence presentation to UI1C.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks

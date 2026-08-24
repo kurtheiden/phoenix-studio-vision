@@ -104,3 +104,12 @@ provisional macOS 13.0 deployment target, invokes `cargo build --release
 library through the public module map. A real arm64 macOS launch reached
 `UI1A_READY contract_version=1`; the service is owned by the private
 `PhoenixCore` actor and destroyed by its owner. UI1B remains the next slice.
+
+## UI1B status
+
+UI1B adds one-file `NSOpenPanel` selection without extension filtering and sends
+the selected `URL.path` through the existing `inspect_project` contract at
+summary diagnostics level. The app retains the opaque session ID and shows a
+compact Core-derived project summary or bounded nested `AppError` message.
+The development target remains unsandboxed; security-scoped access and
+bookmarks are deferred. UI1C remains the next slice.

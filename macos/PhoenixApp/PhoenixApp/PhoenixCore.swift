@@ -12,13 +12,108 @@ private struct APIInfoResult: Decodable {
 private struct APIInfoEnvelope: Decodable {
     let ok: Bool
     let result: APIInfoResult?
-    let error: APIError?
+    let error: ResponseError?
 }
 
-private struct APIError: Decodable {
+private struct ResponseError: Decodable {
     let kind: String
     let code: String?
     let message: String?
+    let appError: AppErrorPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case code
+        case message
+        case appError = "app_error"
+    }
+}
+
+private struct AppErrorPayload: Decodable {
+    let category: String
+    let displayMessage: String
+    let technicalMessage: String
+    let diagnosticCode: String
+
+    enum CodingKeys: String, CodingKey {
+        case category
+        case displayMessage = "display_message"
+        case technicalMessage = "technical_message"
+        case diagnosticCode = "diagnostic_code"
+    }
+}
+
+struct InspectionSummary: Decodable, Equatable {
+    let sessionID: String
+    let displayName: String
+    let recognizedStudioVision: Bool
+    let profileLabel: String?
+    let sequenceCount: UInt32
+    let warningCount: UInt32
+    let diagnosticsAvailable: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case project
+        case sequences
+        case warnings
+        case diagnosticsAvailable = "diagnostics_available"
+    }
+
+    private struct Project: Decodable {
+        let displayName: String
+        let recognizedStudioVision: Bool
+        let profileLabel: String?
+
+        enum CodingKeys: String, CodingKey {
+            case displayName = "display_name"
+            case recognizedStudioVision = "recognized_studio_vision"
+            case profileLabel = "profile_label"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let project = try values.decode(Project.self, forKey: .project)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        displayName = project.displayName
+        recognizedStudioVision = project.recognizedStudioVision
+        profileLabel = project.profileLabel
+        sequenceCount = UInt32(try values.decode([IgnoredSequence].self, forKey: .sequences).count)
+        warningCount = UInt32(try values.decode([IgnoredWarning].self, forKey: .warnings).count)
+        diagnosticsAvailable = try values.decode(Bool.self, forKey: .diagnosticsAvailable)
+    }
+
+    private struct IgnoredSequence: Decodable {}
+    private struct IgnoredWarning: Decodable {}
+}
+
+private struct InspectEnvelope: Decodable {
+    let ok: Bool
+    let result: InspectionSummary?
+    let error: ResponseError?
+}
+
+private struct InspectRequest: Encodable {
+    let operation = "inspect_project"
+    let contractVersion: UInt32
+    let payload: Payload
+
+    struct Payload: Encodable {
+        let sourcePath: String
+        let diagnosticsLevel = "summary"
+
+        enum CodingKeys: String, CodingKey {
+            case sourcePath = "source_path"
+            case diagnosticsLevel = "diagnostics_level"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case operation
+        case contractVersion = "contract_version"
+        case payload
+    }
 }
 
 private enum PhoenixCoreError: LocalizedError {
@@ -77,10 +172,40 @@ actor PhoenixCore {
             if error.kind == "transport" {
                 throw PhoenixCoreError.transport(error.message ?? error.code ?? "unknown error")
             }
-            throw PhoenixCoreError.application(error.message ?? "unknown error")
+            throw PhoenixCoreError.application(error.appError?.displayMessage ?? "unknown error")
         }
         guard let result = envelope.result else { throw PhoenixCoreError.invalidResponse }
         return result.contractVersion
+    }
+
+    func inspectProject(path: String) throws -> InspectionSummary {
+        let request = InspectRequest(contractVersion: 1, payload: .init(sourcePath: path))
+        let requestData = try JSONEncoder().encode(request)
+        let data = try Self.call(handle: ensureHandle(), request: requestData)
+        let envelope: InspectEnvelope
+        do {
+            envelope = try JSONDecoder().decode(InspectEnvelope.self, from: data)
+        } catch {
+            throw PhoenixCoreError.invalidResponse
+        }
+        guard envelope.ok else {
+            guard let error = envelope.error else { throw PhoenixCoreError.invalidResponse }
+            if error.kind == "transport" {
+                throw PhoenixCoreError.transport(error.message ?? error.code ?? "unknown error")
+            }
+            throw PhoenixCoreError.application(error.appError?.displayMessage ?? "unknown error")
+        }
+        guard let result = envelope.result else { throw PhoenixCoreError.invalidResponse }
+        return result
+    }
+
+    private func ensureHandle() throws -> phoenix_service_handle_t {
+        if handle != 0 { return handle }
+        var created: phoenix_service_handle_t = 0
+        let status = phoenix_service_create(&created)
+        guard status == 0, created != 0 else { throw PhoenixCoreError.status(status) }
+        handle = created
+        return created
     }
 
     private nonisolated static func call(handle: phoenix_service_handle_t,
