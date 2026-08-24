@@ -35,6 +35,8 @@ check(inspection.sequences[1].readinessReason.displayDetail == "Synthetic partia
 check(inspection.sequences[1].readinessReason.severity == .dataLossRisk, "reason severity")
 check(inspection.sequences[0].exportCapability?.displayLabel == "Synthetic capability", "optional export capability")
 check(inspection.sequences[1].exportCapability == nil, "absent export capability")
+check(inspection.sequences[0].isExportEligible, "ready capability is export eligible")
+check(inspection.sequences.dropFirst().allSatisfy { !$0.isExportEligible }, "non-ready sequences are not export eligible")
 check(inspection.warnings.map(\.message) == ["First synthetic warning.", "Second synthetic warning."], "warning order")
 check(inspection.warnings.map(\.severity) == [.caution, .dataLossRisk], "warning severity")
 
@@ -59,4 +61,90 @@ check(diagnostics.result.recognizedProfile == "Synthetic profile", "recognized p
 check(diagnostics.result.structuralStatus == "Synthetic structural status", "structural status")
 check(diagnostics.result.unsupportedFamilies == ["synthetic_family"], "unsupported families")
 check(diagnostics.result.compatibilityProfile?.displayLabel == "Validated research profile", "compatibility display label")
-print("UI1D Swift decoder smoke passed")
+
+let exportRequest = ExportSequenceRequest(payload: .init(
+    sessionID: "opaque-session",
+    sequenceID: "opaque-sequence",
+    destinationFolder: "/synthetic/destination",
+    filenameStem: "Sequence Name.MID",
+    collisionPolicy: .generateUniqueName,
+    operationID: nil
+))
+let exportRequestData = try JSONEncoder().encode(exportRequest)
+let exportObject = try JSONSerialization.jsonObject(with: exportRequestData) as! [String: Any]
+check(exportObject["operation"] as? String == "export_sequence", "export operation")
+check(exportObject["contract_version"] as? Int == 1, "export contract version")
+let exportPayload = exportObject["payload"] as! [String: Any]
+check(exportPayload["session_id"] as? String == "opaque-session", "export session ID")
+check(exportPayload["sequence_id"] as? String == "opaque-sequence", "export sequence ID")
+check(exportPayload["destination_folder"] as? String == "/synthetic/destination", "destination folder")
+check(exportPayload["filename_stem"] as? String == "Sequence Name.MID", "unchanged filename stem")
+check(exportPayload["collision_policy"] as? String == "generate_unique_name", "unique collision policy")
+check(exportPayload.keys.contains("operation_id"), "operation ID is present")
+check(exportPayload["operation_id"] is NSNull, "operation ID is null")
+
+let failIfExistsRequest = ExportSequenceRequest(payload: .init(
+    sessionID: "session",
+    sequenceID: "sequence",
+    destinationFolder: "/destination",
+    filenameStem: "Name",
+    collisionPolicy: .failIfExists,
+    operationID: "opaque-operation"
+))
+let failIfExistsObject = try JSONSerialization.jsonObject(
+    with: JSONEncoder().encode(failIfExistsRequest)
+) as! [String: Any]
+let failIfExistsPayload = failIfExistsObject["payload"] as! [String: Any]
+check(failIfExistsPayload["collision_policy"] as? String == "fail_if_exists", "fail collision policy")
+check(failIfExistsPayload["operation_id"] as? String == "opaque-operation", "optional operation ID")
+
+struct ExportSmokeEnvelope: Decodable {
+    let ok: Bool
+    let result: ExportSequenceResult
+}
+
+let exportJSON = #"""
+{
+  "ok":true,
+  "result":{
+    "session_id":"opaque-session",
+    "sequence_id":"opaque-sequence",
+    "sequence_display_name":"Synthetic Sequence",
+    "output_path":"/synthetic/Synthetic Sequence.mid",
+    "compatibility_profile":{"profile_id":"hidden","profile_version":1,"display_label":"Validated synthetic profile","future_profile_field":true},
+    "musical_track_count":3,
+    "total_smf_track_count":4,
+    "counts":{"notes":10,"generated_note_offs":10,"controllers":2,"bank_select_msb":1,"bank_select_lsb":1,"programs":1,"pressure":3,"pitch_bend":4,"tempo":1,"meter":1,"future_count":99},
+    "warnings":[
+      {"code":"hidden_first","message":"First export warning.","technical_detail":null,"scope":"sequence","severity":"caution","diagnostic_ref":null,"source_order":2},
+      {"code":"hidden_second","message":"Second export warning.","technical_detail":"hidden","scope":"generic_track","severity":"informational","diagnostic_ref":"hidden","source_order":1,"future_warning":true}
+    ],
+    "untranslated_metadata_count":5,
+    "validation_status":"validated",
+    "future_export_field":true
+  },
+  "future_envelope":true
+}
+"""#.data(using: .utf8)!
+let export = try decoder.decode(ExportSmokeEnvelope.self, from: exportJSON).result
+check(export.sessionID == "opaque-session" && export.sequenceID == "opaque-sequence", "export opaque IDs")
+check(export.sequenceDisplayName == "Synthetic Sequence", "export sequence display name")
+check(export.outputPath.hasSuffix("Synthetic Sequence.mid"), "Core output path")
+check(export.compatibilityProfile?.displayLabel == "Validated synthetic profile", "export compatibility profile")
+check(export.musicalTrackCount == 3 && export.totalSMFTrackCount == 4, "export track counts")
+check(export.counts.notes == 10 && export.counts.generatedNoteOffs == 10, "export note counts")
+check(export.counts.bankSelectMSB == 1 && export.counts.bankSelectLSB == 1, "export bank counts")
+check(export.counts.pitchBend == 4 && export.counts.meter == 1, "export event counts")
+check(export.untranslatedMetadataCount == 5, "untranslated metadata count")
+check(export.validationStatus == .validated, "validated status")
+check(export.warnings.map(\.message) == ["First export warning.", "Second export warning."], "export warning order")
+
+let noProfileJSON = #"{"session_id":"s","sequence_id":"q","sequence_display_name":"No Profile","output_path":"/tmp/No Profile.mid","compatibility_profile":null,"musical_track_count":0,"total_smf_track_count":1,"counts":{"notes":0,"generated_note_offs":0,"controllers":0,"bank_select_msb":0,"bank_select_lsb":0,"programs":0,"pressure":0,"pitch_bend":0,"tempo":0,"meter":0},"warnings":[],"untranslated_metadata_count":0,"validation_status":"validated"}"#.data(using: .utf8)!
+let noProfile = try decoder.decode(ExportSequenceResult.self, from: noProfileJSON)
+check(noProfile.compatibilityProfile == nil, "optional export profile")
+
+let readyWithoutCapabilityJSON = #"{"sequence_id":"ready-without-capability","display_name":"Ready Without Capability","readiness":"ready","readiness_reason":{"severity":"informational","display_detail":"Synthetic detail."},"musical_track_count":1,"warning_count":0,"export_capability":null,"diagnostics_available":false}"#.data(using: .utf8)!
+let readyWithoutCapability = try decoder.decode(SequenceViewData.self, from: readyWithoutCapabilityJSON)
+check(!readyWithoutCapability.isExportEligible, "ready without capability is not export eligible")
+
+print("UI1D/UI1E Swift production model smoke passed")

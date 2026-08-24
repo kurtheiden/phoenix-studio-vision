@@ -11,6 +11,7 @@
 		A00000010000000000000004 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000004 /* ContentView.swift */; };
 		A00000010000000000000006 /* ProjectOpenPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000005 /* ProjectOpenPanel.swift */; };
 		A00000010000000000000007 /* ProjectInspectionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000006 /* ProjectInspectionModels.swift */; };
+		A00000010000000000000008 /* ExportDestinationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000007 /* ExportDestinationPanel.swift */; };
 		A00000010000000000000005 /* libphoenix.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000120000000000000001 /* libphoenix.a */; };
 /* End PBXBuildFile section */
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		A00000110000000000000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A00000110000000000000005 /* ProjectOpenPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectOpenPanel.swift; sourceTree = "<group>"; };
 		A00000110000000000000006 /* ProjectInspectionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectInspectionModels.swift; sourceTree = "<group>"; };
+		A00000110000000000000007 /* ExportDestinationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportDestinationPanel.swift; sourceTree = "<group>"; };
 		A00000120000000000000001 /* libphoenix.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "$(SRCROOT)/../../target/release/libphoenix.a"; path = "$(SRCROOT)/../../target/release/libphoenix.a"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 /* Begin PBXFrameworksBuildPhase section */
@@ -28,7 +30,7 @@
 /* End PBXFrameworksBuildPhase section */
 /* Begin PBXGroup section */
 		A00000300000000000000001 = {isa = PBXGroup; children = (A00000300000000000000002 /* PhoenixApp */, A00000300000000000000003 /* Products */,); sourceTree = "<group>"; };
-		A00000300000000000000002 /* PhoenixApp */ = {isa = PBXGroup; children = (A00000110000000000000001 /* PhoenixAppApp.swift */, A00000110000000000000002 /* AppModel.swift */, A00000110000000000000003 /* PhoenixCore.swift */, A00000110000000000000004 /* ContentView.swift */, A00000110000000000000005 /* ProjectOpenPanel.swift */, A00000110000000000000006 /* ProjectInspectionModels.swift */, A00000120000000000000001 /* libphoenix.a */,); path = PhoenixApp; sourceTree = "<group>"; };
+		A00000300000000000000002 /* PhoenixApp */ = {isa = PBXGroup; children = (A00000110000000000000001 /* PhoenixAppApp.swift */, A00000110000000000000002 /* AppModel.swift */, A00000110000000000000003 /* PhoenixCore.swift */, A00000110000000000000004 /* ContentView.swift */, A00000110000000000000005 /* ProjectOpenPanel.swift */, A00000110000000000000006 /* ProjectInspectionModels.swift */, A00000110000000000000007 /* ExportDestinationPanel.swift */, A00000120000000000000001 /* libphoenix.a */,); path = PhoenixApp; sourceTree = "<group>"; };
 		A00000300000000000000003 /* Products */ = {isa = PBXGroup; children = (A00000100000000000000001 /* Phoenix.app */,); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 /* Begin PBXNativeTarget section */
@@ -44,7 +46,7 @@
 		A00000500000000000000001 /* Cargo build */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); name = "Build Phoenix Rust library"; outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "cd \"$SRCROOT/../..\"\ncargo build --release --locked\n"; };
 /* End PBXShellScriptBuildPhase section */
 /* Begin PBXSourcesBuildPhase section */
-		A00000500000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000010000000000000001 /* PhoenixAppApp.swift in Sources */, A00000010000000000000002 /* AppModel.swift in Sources */, A00000010000000000000003 /* PhoenixCore.swift in Sources */, A00000010000000000000004 /* ContentView.swift in Sources */, A00000010000000000000006 /* ProjectOpenPanel.swift in Sources */, A00000010000000000000007 /* ProjectInspectionModels.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
+		A00000500000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000010000000000000001 /* PhoenixAppApp.swift in Sources */, A00000010000000000000002 /* AppModel.swift in Sources */, A00000010000000000000003 /* PhoenixCore.swift in Sources */, A00000010000000000000004 /* ContentView.swift in Sources */, A00000010000000000000006 /* ProjectOpenPanel.swift in Sources */, A00000010000000000000007 /* ProjectInspectionModels.swift in Sources */, A00000010000000000000008 /* ExportDestinationPanel.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 /* Begin XCBuildConfiguration section */
 		A00000800000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 13.0; PRODUCT_BUNDLE_IDENTIFIER = "com.phoenix-studio-vision.Phoenix"; PRODUCT_NAME = Phoenix; SWIFT_MODULE_NAME = PhoenixApp; SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = complete; HEADER_SEARCH_PATHS = "$(SRCROOT)/../../include"; LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../target/release"; OTHER_LDFLAGS = ("-lphoenix",); CLANG_ENABLE_MODULES = YES; CODE_SIGNING_ALLOWED = NO; }; name = Debug; };

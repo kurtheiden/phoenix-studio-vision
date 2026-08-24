@@ -280,8 +280,23 @@ session ID to project-scoped `get_diagnostics` at summary level only on first
 expansion, caches the summary for the current inspection, and resets it after a
 successful replacement. A diagnostics failure stays inside Details and does
 not invalidate the inspected project, readiness, or warnings. Sequence
-selection is limited to showing Core-owned readiness explanation and counts; it
-does not authorize export.
+selection shows Core-owned readiness explanation and counts; it does not
+independently authorize export.
+
+UI1E reuses that selection for one-sequence export. Swift enables Export MIDI
+only for the conjunction of Core `ready` and a non-null projected
+`export_capability`; the export operation still revalidates authority. A
+directory-only native panel supplies the existing destination folder, and one
+versioned `export_sequence` call uses the Core display name unchanged as its
+stem, `generate_unique_name`, and a null operation ID. Core owns extension,
+filename validation, collision naming, MIDI validation, and the authoritative
+output path. Export state is local to the inspected project, stale completion
+is session/selection guarded, and failure does not replace inspection. The
+result presents returned counts and warning messages plus Reveal in Finder.
+Authentic UI export validation completed against `newest STUFF baseline`,
+including unique repeated export, Finder reveal, destination cancellation, and
+disabled export for a non-capable sibling. Batch and audio-resurrection work
+remain deferred.
 
 # Visual principles
 

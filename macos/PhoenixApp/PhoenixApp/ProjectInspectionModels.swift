@@ -86,6 +86,10 @@ struct SequenceViewData: Decodable, Equatable {
         case exportCapability = "export_capability"
         case diagnosticsAvailable = "diagnostics_available"
     }
+
+    var isExportEligible: Bool {
+        readiness == .ready && exportCapability != nil
+    }
 }
 
 struct ProjectInspection: Decodable, Equatable {
@@ -159,5 +163,112 @@ struct DiagnosticsSummary: Decodable, Equatable {
         case structuralStatus = "structural_status"
         case unsupportedFamilies = "unsupported_families"
         case compatibilityProfile = "compatibility_profile"
+    }
+}
+
+enum CollisionPolicy: String, Codable, Equatable {
+    case failIfExists = "fail_if_exists"
+    case generateUniqueName = "generate_unique_name"
+}
+
+enum ValidationStatus: String, Decodable, Equatable {
+    case validated
+}
+
+struct ExportCounts: Decodable, Equatable {
+    let notes: UInt64
+    let generatedNoteOffs: UInt64
+    let controllers: UInt64
+    let bankSelectMSB: UInt64
+    let bankSelectLSB: UInt64
+    let programs: UInt64
+    let pressure: UInt64
+    let pitchBend: UInt64
+    let tempo: UInt64
+    let meter: UInt64
+
+    enum CodingKeys: String, CodingKey {
+        case notes
+        case generatedNoteOffs = "generated_note_offs"
+        case controllers
+        case bankSelectMSB = "bank_select_msb"
+        case bankSelectLSB = "bank_select_lsb"
+        case programs
+        case pressure
+        case pitchBend = "pitch_bend"
+        case tempo
+        case meter
+    }
+}
+
+struct ExportSequenceResult: Decodable, Equatable {
+    let sessionID: String
+    let sequenceID: String
+    let sequenceDisplayName: String
+    let outputPath: String
+    let compatibilityProfile: ProfileCapability?
+    let musicalTrackCount: UInt32
+    let totalSMFTrackCount: UInt32
+    let counts: ExportCounts
+    let warnings: [ProjectWarning]
+    let untranslatedMetadataCount: UInt64
+    let validationStatus: ValidationStatus
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case sequenceID = "sequence_id"
+        case sequenceDisplayName = "sequence_display_name"
+        case outputPath = "output_path"
+        case compatibilityProfile = "compatibility_profile"
+        case musicalTrackCount = "musical_track_count"
+        case totalSMFTrackCount = "total_smf_track_count"
+        case counts
+        case warnings
+        case untranslatedMetadataCount = "untranslated_metadata_count"
+        case validationStatus = "validation_status"
+    }
+}
+
+struct ExportSequenceRequest: Encodable, Equatable {
+    let operation = "export_sequence"
+    let contractVersion: UInt32 = 1
+    let payload: Payload
+
+    struct Payload: Encodable, Equatable {
+        let sessionID: String
+        let sequenceID: String
+        let destinationFolder: String
+        let filenameStem: String
+        let collisionPolicy: CollisionPolicy
+        let operationID: String?
+
+        enum CodingKeys: String, CodingKey {
+            case sessionID = "session_id"
+            case sequenceID = "sequence_id"
+            case destinationFolder = "destination_folder"
+            case filenameStem = "filename_stem"
+            case collisionPolicy = "collision_policy"
+            case operationID = "operation_id"
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var values = encoder.container(keyedBy: CodingKeys.self)
+            try values.encode(sessionID, forKey: .sessionID)
+            try values.encode(sequenceID, forKey: .sequenceID)
+            try values.encode(destinationFolder, forKey: .destinationFolder)
+            try values.encode(filenameStem, forKey: .filenameStem)
+            try values.encode(collisionPolicy, forKey: .collisionPolicy)
+            if let operationID {
+                try values.encode(operationID, forKey: .operationID)
+            } else {
+                try values.encodeNil(forKey: .operationID)
+            }
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case operation
+        case contractVersion = "contract_version"
+        case payload
     }
 }

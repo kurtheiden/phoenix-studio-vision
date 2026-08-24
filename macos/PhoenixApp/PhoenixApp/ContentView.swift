@@ -114,6 +114,12 @@ private struct ProjectInspectionView: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    Button("Export MIDI") { model.exportSelectedSequence() }
+                        .disabled(!sequence.isExportEligible || model.exportState == .exporting)
+                        .accessibilityHint(sequence.isExportEligible
+                            ? "Choose a destination folder and export this sequence"
+                            : "This sequence is not currently eligible for export")
+                    exportContent
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -131,6 +137,50 @@ private struct ProjectInspectionView: View {
             }
         }
         Button("Open Another Project") { model.openProject() }
+    }
+
+    @ViewBuilder
+    private var exportContent: some View {
+        switch model.exportState {
+        case .idle:
+            EmptyView()
+        case .exporting:
+            HStack {
+                ProgressView()
+                Text("Exporting MIDI")
+            }
+            .accessibilityElement(children: .combine)
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("MIDI export failed").font(.headline)
+                Text(message).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+        case .succeeded(let result):
+            VStack(alignment: .leading, spacing: 5) {
+                Text("MIDI exported").font(.headline)
+                Text(result.sequenceDisplayName)
+                Text(URL(fileURLWithPath: result.outputPath).lastPathComponent)
+                Text(result.outputPath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Text("\(result.musicalTrackCount) musical tracks · \(result.totalSMFTrackCount) SMF tracks")
+                    .font(.caption)
+                if result.untranslatedMetadataCount > 0 {
+                    Text("\(result.untranslatedMetadataCount) untranslated metadata items")
+                        .font(.caption)
+                }
+                ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
+                    Text(warning.message)
+                        .accessibilityLabel("Export warning: \(warning.message)")
+                }
+                Button("Reveal in Finder") {
+                    ExportDestinationPanel.revealInFinder(path: result.outputPath)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     @ViewBuilder

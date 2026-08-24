@@ -22,12 +22,27 @@ final class AppModel: ObservableObject {
         case failed(message: String)
     }
 
+    enum ExportState: Equatable {
+        case idle
+        case exporting
+        case succeeded(ExportSequenceResult)
+        case failed(message: String)
+    }
+
     @Published private(set) var state: State = .starting
     @Published private(set) var projectState: ProjectState = .idle
-    @Published var selectedSequenceID: String?
+    @Published var selectedSequenceID: String? {
+        didSet {
+            if selectedSequenceID != oldValue {
+                resetExportState()
+            }
+        }
+    }
     @Published private(set) var diagnosticsState: DiagnosticsState = .notLoaded
+    @Published private(set) var exportState: ExportState = .idle
     private let core = PhoenixCore()
     private var started = false
+    private var currentExportAttemptID: UUID?
 
     init() {
         startHandshake()
@@ -63,6 +78,7 @@ final class AppModel: ObservableObject {
                 let summary = try await core.inspectProject(path: path)
                 selectedSequenceID = nil
                 diagnosticsState = .notLoaded
+                resetExportState()
                 projectState = .inspected(summary)
                 FileHandle.standardError.write(Data("UI1B_INSPECTED sequences=\(summary.sequenceCount)\n".utf8))
             } catch {
@@ -90,5 +106,49 @@ final class AppModel: ObservableObject {
                 diagnosticsState = .failed(message: error.localizedDescription)
             }
         }
+    }
+
+    func exportSelectedSequence() {
+        guard exportState != .exporting else { return }
+        beginExportIfPossible()
+    }
+
+    private func beginExportIfPossible() {
+        guard case .inspected(let inspection) = projectState,
+              let sequenceID = selectedSequenceID,
+              let sequence = inspection.sequences.first(where: { $0.sequenceID == sequenceID }),
+              sequence.isExportEligible,
+              let destination = ExportDestinationPanel.chooseFolder() else { return }
+
+        let sessionID = inspection.sessionID
+        let attemptID = UUID()
+        currentExportAttemptID = attemptID
+        exportState = .exporting
+        Task {
+            do {
+                let result = try await core.exportSequence(
+                    sessionID: sessionID,
+                    sequenceID: sequenceID,
+                    destinationFolder: destination.path,
+                    filenameStem: sequence.displayName
+                )
+                guard case .inspected(let current) = projectState,
+                      current.sessionID == sessionID,
+                      selectedSequenceID == sequenceID,
+                      currentExportAttemptID == attemptID else { return }
+                exportState = .succeeded(result)
+            } catch {
+                guard case .inspected(let current) = projectState,
+                      current.sessionID == sessionID,
+                      selectedSequenceID == sequenceID,
+                      currentExportAttemptID == attemptID else { return }
+                exportState = .failed(message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func resetExportState() {
+        currentExportAttemptID = nil
+        exportState = .idle
     }
 }

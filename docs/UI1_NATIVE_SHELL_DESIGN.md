@@ -130,6 +130,25 @@ provided readiness details and warning messages; and uses opaque sequence
 selection only for that context. Details load lazily through project/session-
 scoped `get_diagnostics` at summary level and are cached for the current
 inspection. Successful replacement resets selection and diagnostics; Details
-failure stays local to the disclosure. Export remains deferred to UI1E.
-Automated validation accompanies the implementation; authentic-file UI
-validation has not yet been performed.
+failure stays local to the disclosure.
+
+## UI1E implementation status
+
+UI1E implements one selected-sequence MIDI export. The action is enabled only
+when Core projects both `ready` and a non-null `export_capability`; Core remains
+the final authority and revalidates during export. A directory-only
+`NSOpenPanel` supplies `destination_folder`, while the sequence display name is
+passed unchanged as `filename_stem`. Swift always requests
+`generate_unique_name`, sends `operation_id: null`, and leaves extension,
+filename validation, collision suffixes, and final path construction to Core.
+
+The existing service handle performs one synchronous `export_sequence` call
+off the main actor. The inspected project remains visible while exporting and
+after bounded export failure. Success shows Core's output path, track counts,
+untranslated-metadata count when nonzero, ordered export warning messages, and
+a Reveal in Finder action. Destination-panel cancellation is a no-op;
+in-progress Core cancellation remains unsupported. Authentic UI export
+validation completed with the 18-sequence `newest STUFF baseline`: `Ode to
+Clarke` exported twice with unique names, Finder reveal worked, cancellation
+preserved state, and a non-exportable sibling remained disabled. Batch export,
+audio recovery and the broader project-resurrection workflow remain deferred.

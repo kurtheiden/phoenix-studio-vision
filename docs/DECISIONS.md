@@ -1282,7 +1282,7 @@ other UI1E behavior remain deferred.
 
 ## 2026-08-24: implement UI1D readiness, limitations, and diagnostics
 
-**Status:** Implemented; authentic-file UI validation pending
+**Status:** Implemented and manually validated
 
 The native shell presents Core-owned project and sequence readiness with the
 four reviewed display labels and shows `Warning.message` in preserved Core
@@ -1295,4 +1295,37 @@ are cached for that inspection. Successful replacement resets selection and
 diagnostics state. Diagnostics errors remain bounded within Details and do not
 replace the successful inspection. Technical hashes, raw codes, profile
 identifiers, parser evidence, and technical errors remain hidden. UI1E export
-work remains deferred.
+is implemented separately below.
+
+## 2026-08-24: implement UI1E single-sequence native MIDI export
+
+**Status:** Implemented and authentically validated
+
+UI1E reuses UI1D's opaque sequence selection and enables Export MIDI only when
+Core projects both `ready` and a non-null `export_capability`. Swift does not
+interpret reason or profile identifiers, and Core revalidates during the one
+public `export_sequence` call.
+
+A directory-only `NSOpenPanel` supplies `destination_folder`. The selected
+sequence's Core display name is passed unchanged as `filename_stem`; every
+request uses `generate_unique_name` and `operation_id: null`. Core retains
+ownership of extension, filename validation, collision naming, final path,
+conversion, and validation. The synchronous bridge call remains on the existing
+actor and service handle. Export success, ordered result warning messages, and
+bounded failure are local state that preserve the inspected project. Captured
+session and sequence identities prevent stale completion from populating a new
+context. Reveal in Finder uses only the returned output path. Destination-panel
+cancellation is a no-op and in-progress cancellation remains unsupported.
+
+Manual validation used the authentic `newest STUFF baseline`: the partially
+supported project exposed 18 sequences; Ready `Ode to Clarke` exposed 9 musical
+tracks and enabled export. The first export created `Ode to Clarke.mid` and
+reported 9 musical / 10 SMF tracks; Finder revealed the actual file. Repeating
+the export in the same folder preserved it and created `Ode to Clarke 2.mid`.
+Destination cancellation preserved the current result without error, while
+partially supported `Jurassic Park` kept Export MIDI disabled. Phoenix then quit
+normally, with no new crash report; the existing
+`Phoenix-2026-08-24-005234.ips` predates this validation run.
+
+Batch export, external-audio discovery/relinking, resurrection totals, DAW
+generation, remapping, packaging, and distribution remain deferred.

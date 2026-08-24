@@ -55,6 +55,12 @@ private struct DiagnosticsEnvelope: Decodable {
     let error: ResponseError?
 }
 
+private struct ExportEnvelope: Decodable {
+    let ok: Bool
+    let result: ExportSequenceResult?
+    let error: ResponseError?
+}
+
 private struct DiagnosticsRequest: Encodable {
     let operation = "get_diagnostics"
     let payload: Payload
@@ -181,6 +187,36 @@ actor PhoenixCore {
         let envelope: DiagnosticsEnvelope
         do {
             envelope = try JSONDecoder().decode(DiagnosticsEnvelope.self, from: data)
+        } catch {
+            throw PhoenixCoreError.invalidResponse
+        }
+        guard envelope.ok else {
+            guard let error = envelope.error else { throw PhoenixCoreError.invalidResponse }
+            if error.kind == "transport" {
+                throw PhoenixCoreError.transport(error.message ?? error.code ?? "unknown error")
+            }
+            throw PhoenixCoreError.application(error.appError?.displayMessage ?? "unknown error")
+        }
+        guard let result = envelope.result else { throw PhoenixCoreError.invalidResponse }
+        return result
+    }
+
+    func exportSequence(sessionID: String,
+                        sequenceID: String,
+                        destinationFolder: String,
+                        filenameStem: String) throws -> ExportSequenceResult {
+        let request = ExportSequenceRequest(payload: .init(
+            sessionID: sessionID,
+            sequenceID: sequenceID,
+            destinationFolder: destinationFolder,
+            filenameStem: filenameStem,
+            collisionPolicy: .generateUniqueName,
+            operationID: nil
+        ))
+        let data = try Self.call(handle: ensureHandle(), request: JSONEncoder().encode(request))
+        let envelope: ExportEnvelope
+        do {
+            envelope = try JSONDecoder().decode(ExportEnvelope.self, from: data)
         } catch {
             throw PhoenixCoreError.invalidResponse
         }
