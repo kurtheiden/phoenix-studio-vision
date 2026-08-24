@@ -20,7 +20,7 @@ struct ContentView: View {
             }
         }
         .padding(40)
-        .frame(minWidth: 420, minHeight: 240)
+        .frame(minWidth: 640, minHeight: 440)
     }
 
     @ViewBuilder
@@ -31,10 +31,33 @@ struct ContentView: View {
         case .inspecting:
             ProgressView()
             Text("Inspecting project…")
-        case .inspected(let summary):
-            Text(summary.displayName).font(.headline)
-            Text(summary.recognizedStudioVision ? "Studio Vision project recognized" : "File inspected")
-            Text("\(summary.sequenceCount) sequences · \(summary.warningCount) warnings")
+        case .inspected(let inspection):
+            Text(inspection.displayName).font(.headline)
+            Text(inspection.recognizedStudioVision ? "Studio Vision project recognized" : "File inspected")
+            Text(ByteCountFormatter.string(fromByteCount: Int64(inspection.byteSize), countStyle: .file))
+            Text("\(inspection.sequenceCount) sequences · \(inspection.warningCount) warnings")
+            if inspection.sequences.isEmpty {
+                Text(inspection.recognizedStudioVision ? "No sequences found." : "No Studio Vision sequences found.")
+                    .foregroundStyle(.secondary)
+            } else {
+                List(Array(inspection.sequences.enumerated()), id: \.element.sequenceID) { index, sequence in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(index + 1). \(sequence.displayName)")
+                        HStack(spacing: 12) {
+                            if let tracks = sequence.musicalTrackCount {
+                                Text("\(tracks) tracks")
+                            }
+                            if sequence.warningCount > 0 {
+                                Text("\(sequence.warningCount) warnings")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 3)
+                }
+                .frame(minHeight: 160)
+            }
             Button("Open Another Project") { model.openProject() }
         case .failed(let message):
             Text("Project inspection failed").font(.headline)

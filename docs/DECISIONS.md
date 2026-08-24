@@ -1242,3 +1242,19 @@ the existing `inspect_project` operation. The shell shows inspecting,
 compact Core-derived summary, and bounded failure states; picker cancellation
 is a no-op. The current target is unsandboxed, so security-scoped bookmarks and
 distribution access policy remain deferred. UI1C remains next.
+
+## 2026-08-24: implement UI1C project summary and sequence presentation
+
+**Status:** Implemented
+
+UI1C expands the Swift inspection value with the public project summary and
+typed sequence fields. The native view displays Core-provided project name,
+recognition state, byte size, explicit sequence and warning counts, and a
+noninteractive sequence list when sequences are exposed. Zero sequences are
+shown as a truthful empty state, including for successfully inspected
+unrecognized files. Sequence identifiers remain opaque and readiness,
+diagnostic detail, and export remain deferred to UI1D/UI1E. A small Swift
+decoder smoke compiles the same production project/sequence models used by the
+app and exercises them with synthetic populated data for additive,
+contract-shaped decoding; it is not evidence that a real sample exposes
+sequences.

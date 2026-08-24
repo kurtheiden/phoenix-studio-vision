@@ -43,54 +43,9 @@ private struct AppErrorPayload: Decodable {
     }
 }
 
-struct InspectionSummary: Decodable, Equatable {
-    let sessionID: String
-    let displayName: String
-    let recognizedStudioVision: Bool
-    let profileLabel: String?
-    let sequenceCount: UInt32
-    let warningCount: UInt32
-    let diagnosticsAvailable: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case sessionID = "session_id"
-        case project
-        case sequences
-        case warnings
-        case diagnosticsAvailable = "diagnostics_available"
-    }
-
-    private struct Project: Decodable {
-        let displayName: String
-        let recognizedStudioVision: Bool
-        let profileLabel: String?
-
-        enum CodingKeys: String, CodingKey {
-            case displayName = "display_name"
-            case recognizedStudioVision = "recognized_studio_vision"
-            case profileLabel = "profile_label"
-        }
-    }
-
-    init(from decoder: Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        let project = try values.decode(Project.self, forKey: .project)
-        sessionID = try values.decode(String.self, forKey: .sessionID)
-        displayName = project.displayName
-        recognizedStudioVision = project.recognizedStudioVision
-        profileLabel = project.profileLabel
-        sequenceCount = UInt32(try values.decode([IgnoredSequence].self, forKey: .sequences).count)
-        warningCount = UInt32(try values.decode([IgnoredWarning].self, forKey: .warnings).count)
-        diagnosticsAvailable = try values.decode(Bool.self, forKey: .diagnosticsAvailable)
-    }
-
-    private struct IgnoredSequence: Decodable {}
-    private struct IgnoredWarning: Decodable {}
-}
-
 private struct InspectEnvelope: Decodable {
     let ok: Bool
-    let result: InspectionSummary?
+    let result: ProjectInspection?
     let error: ResponseError?
 }
 
@@ -178,7 +133,7 @@ actor PhoenixCore {
         return result.contractVersion
     }
 
-    func inspectProject(path: String) throws -> InspectionSummary {
+    func inspectProject(path: String) throws -> ProjectInspection {
         let request = InspectRequest(contractVersion: 1, payload: .init(sourcePath: path))
         let requestData = try JSONEncoder().encode(request)
         let data = try Self.call(handle: ensureHandle(), request: requestData)

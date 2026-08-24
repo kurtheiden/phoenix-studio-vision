@@ -112,4 +112,11 @@ the selected `URL.path` through the existing `inspect_project` contract at
 summary diagnostics level. The app retains the opaque session ID and shows a
 compact Core-derived project summary or bounded nested `AppError` message.
 The development target remains unsandboxed; security-scoped access and
-bookmarks are deferred. UI1C remains the next slice.
+bookmarks are deferred.
+
+## UI1C status
+
+UI1C is implemented: a successful inspection retains the Core project summary
+and typed sequence data, presents explicit project counts, and shows an
+informational sequence list or truthful zero-sequence empty state. Sequence
+readiness, detailed diagnostics, and export remain deferred to UI1D/UI1E.

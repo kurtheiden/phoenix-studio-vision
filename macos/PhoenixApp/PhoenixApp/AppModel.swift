@@ -11,7 +11,7 @@ final class AppModel: ObservableObject {
     enum ProjectState: Equatable {
         case idle
         case inspecting
-        case inspected(InspectionSummary)
+        case inspected(ProjectInspection)
         case failed(message: String)
     }
 

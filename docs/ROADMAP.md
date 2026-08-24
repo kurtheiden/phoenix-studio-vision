@@ -344,6 +344,9 @@ committed or specified.
 - [x] Implement UI1B one-file Open, path-based `inspect_project` dispatch,
       compact Core-derived summary, nested AppError presentation, and repeated
       Open behavior; defer sequence presentation to UI1C.
+- [x] Implement UI1C project summary, explicit Core counts, typed noninteractive
+      sequence presentation, and truthful zero-sequence behavior; defer
+      readiness/diagnostics presentation to UI1D and export to UI1E.
 - [ ] Defer the source-unresolved `ANALOG.MID #2` Pitch Bend curves until their
       project/sequence provenance is established.
 - [ ] Defer the controlled no-bank/sentinel experiment until it outranks
