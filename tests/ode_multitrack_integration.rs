@@ -434,6 +434,12 @@ fn validate_and_assemble(bytes: &[u8], manifest: &SequenceManifest) -> Result<D2
         let mut patches = 0;
         for item in &walk.items {
             match item {
+                MixedEventItem::Patch(_) => {
+                    return Err(D2Error::Patch(
+                        row_index,
+                        "unexpected standalone Patch".into(),
+                    ));
+                }
                 MixedEventItem::PatchToNote(transition) => {
                     let expected = row
                         .patch

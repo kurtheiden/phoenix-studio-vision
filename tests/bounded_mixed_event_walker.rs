@@ -4,6 +4,7 @@ use phoenix::mixed_event::{
     walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
     MixedEventTimingBasis, MixedEventWalkError,
 };
+use phoenix::sequence_container::parse_project_166;
 
 const BASELINE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline";
 
@@ -21,6 +22,7 @@ fn family_counts(result: &phoenix::mixed_event::MixedEventWalk<'_>) -> [usize; 5
     let mut counts = [0; 5];
     for item in &result.items {
         match item {
+            MixedEventItem::Patch(_) => counts[1] += 1,
             MixedEventItem::PatchToNote(_) => {
                 counts[0] += 1;
                 counts[1] += 1;
@@ -186,6 +188,216 @@ fn authentic_direct_patch_to_note_is_coupled() {
     assert_eq!(transition.patch_position, 0);
     assert_eq!(transition.first_note_position, 9720);
     assert_eq!(transition.first_note.status.unwrap().offset, 0x2f852);
+}
+
+fn assert_bells_patch_controller_note(
+    event_range: std::ops::Range<usize>,
+    patch_range: std::ops::Range<usize>,
+    controller_range: std::ops::Range<usize>,
+    note_range: std::ops::Range<usize>,
+    positions: [u32; 3],
+    context: [u8; 3],
+    expected_logical_events: usize,
+) {
+    let bytes = fs::read(BASELINE).unwrap();
+    let result = walk_bounded_mixed_events(
+        &bytes,
+        MixedEventBounds {
+            event_range: event_range.clone(),
+        },
+        MixedEventTimingBasis::default(),
+    )
+    .unwrap();
+    assert_eq!(result.consumed_range, event_range);
+    assert_eq!(result.logical_event_count(), expected_logical_events);
+
+    let MixedEventItem::Patch(patch) = &result.items[0] else {
+        panic!("expected standalone Patch")
+    };
+    assert_eq!(patch.representation_range, patch_range);
+    assert_eq!(patch.position.value, positions[0]);
+
+    let MixedEventItem::Event(controller) = &result.items[1] else {
+        panic!("expected Controller")
+    };
+    assert_eq!(controller.position, positions[1]);
+    let MixedEventKind::Controller(controller) = &controller.event else {
+        panic!("expected Controller")
+    };
+    assert_eq!(controller.record_range, controller_range);
+    assert_eq!(controller.context.bytes, context);
+    assert_eq!(controller.controller_number.value, 7);
+    assert_eq!(controller.controller_value.value, 127);
+
+    let MixedEventItem::Event(note) = &result.items[2] else {
+        panic!("expected Note")
+    };
+    assert_eq!(note.position, positions[2]);
+    let first_note_position = note.position;
+    let MixedEventKind::Note(note) = &note.event else {
+        panic!("expected Note")
+    };
+    assert_eq!(note.representation_range, note_range);
+    assert!(note.status.is_some());
+    assert_eq!(
+        patch.representation_range.end,
+        controller.record_range.start
+    );
+    assert_eq!(controller.record_range.end, note.representation_range.start);
+
+    let MixedEventItem::Event(next) = &result.items[3] else {
+        panic!("expected Note continuation")
+    };
+    let MixedEventKind::Note(next_note) = &next.event else {
+        panic!("expected Note continuation")
+    };
+    assert!(next_note.status.is_none());
+    assert!(next.position > first_note_position);
+}
+
+#[test]
+fn authentic_bells_track_3_patch_controller_note_consumes_exactly() {
+    assert_bells_patch_controller_note(
+        0x10a4d..0x110c8,
+        0x10a4d..0x10a6d,
+        0x10a6d..0x10a77,
+        0x10a77..0x10a80,
+        [480, 960, 71_040],
+        [0x00, 0x23, 0x00],
+        275,
+    );
+}
+
+#[test]
+fn authentic_bells_track_4_patch_controller_note_consumes_exactly() {
+    assert_bells_patch_controller_note(
+        0x1121b..0x1192a,
+        0x1121b..0x1123a,
+        0x1123a..0x11243,
+        0x11243..0x1124b,
+        [180, 208, 71_278],
+        [0x00, 0x05, 0x00],
+        296,
+    );
+}
+
+#[test]
+fn authentic_bells_exact_consumption_is_thirteen_of_fourteen() {
+    let bytes = fs::read(BASELINE).unwrap();
+    let project = parse_project_166(&bytes).unwrap();
+    let bells = project
+        .sequences
+        .iter()
+        .find(|sequence| sequence.sequence_name.as_utf8() == Some("Bells for her"))
+        .unwrap();
+    assert_eq!(bells.track_pairs.len(), 14);
+
+    let mut consumed = Vec::new();
+    let mut rejected = Vec::new();
+    for (index, pair) in bells.track_pairs.iter().enumerate() {
+        let bounds = pair.validated_event_bounds().unwrap();
+        match walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds {
+                event_range: bounds.event_range.clone(),
+            },
+            MixedEventTimingBasis::default(),
+        ) {
+            Ok(walk) if walk.consumed_range == bounds.event_range => consumed.push(index + 1),
+            Ok(_) | Err(_) => rejected.push(index + 1),
+        }
+    }
+    assert_eq!(consumed.len(), 13);
+    assert_eq!(rejected, [6]);
+}
+
+fn synthetic_patch_controller_note() -> Vec<u8> {
+    vec![
+        0x00, 0xff, 0x7c, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x19, 0x01, 0xff, 0x41, 0x05,
+        0x00, 0x01, 0x00, 0x07, 0x7f, 0x02, 0x90, 0x3c, 0x40, 0x20, 0x01,
+    ]
+}
+
+#[test]
+fn strict_patch_controller_note_rejects_malformed_current_controller() {
+    let mut wrong_tag = synthetic_patch_controller_note();
+    wrong_tag[13] = 0x42;
+    wrong_tag.extend([0x00, 0xff, 0x41, 0x05, 0, 0, 0, 7, 127]);
+    assert!(matches!(
+        walk(&wrong_tag),
+        Err(MixedEventWalkError::PatchContextMismatch {
+            cursor: 0,
+            offset: 12,
+            observed: Some(0xff),
+        })
+    ));
+
+    let mut wrong_length = synthetic_patch_controller_note();
+    wrong_length[14] = 0x04;
+    assert!(matches!(
+        walk(&wrong_length),
+        Err(MixedEventWalkError::MalformedController { cursor: 11, .. })
+    ));
+
+    for end in 12..20 {
+        let bytes = synthetic_patch_controller_note();
+        assert!(walk(&bytes[..end]).is_err(), "unexpected success at {end}");
+    }
+
+    let mut overlong_timing = synthetic_patch_controller_note();
+    overlong_timing.splice(11..12, [0x81, 0x81, 0x81, 0x81]);
+    assert!(matches!(
+        walk(&overlong_timing),
+        Err(MixedEventWalkError::TimingVlq { .. })
+    ));
+}
+
+#[test]
+fn strict_patch_controller_note_requires_one_direct_explicit_note() {
+    let mut non_note = synthetic_patch_controller_note();
+    non_note[21] = 0xd0;
+    non_note.extend([0x00, 0x90, 0x3c, 0x40, 0x20, 0x01]);
+    assert!(matches!(
+        walk(&non_note),
+        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
+    ));
+
+    let mut ff60 = synthetic_patch_controller_note();
+    ff60.splice(
+        20..,
+        [
+            0x00, 0xff, 0x60, 0x01, 0x11, 0x00, 0x90, 0x3c, 0x40, 0x20, 0x01,
+        ],
+    );
+    assert!(matches!(
+        walk(&ff60),
+        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
+    ));
+
+    let mut second_controller = synthetic_patch_controller_note();
+    second_controller.splice(
+        20..,
+        [
+            0x00, 0xff, 0x41, 0x05, 0, 0, 0, 7, 1, 0, 0x90, 0x3c, 0x40, 0x20, 1,
+        ],
+    );
+    assert!(matches!(
+        walk(&second_controller),
+        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
+    ));
+
+    let mut malformed_note = synthetic_patch_controller_note();
+    malformed_note[21] = 0x91;
+    malformed_note.extend([0x00, 0x90, 0x3c, 0x40, 0x20, 0x01]);
+    assert!(matches!(
+        walk(&malformed_note),
+        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
+    ));
+
+    let bytes = synthetic_patch_controller_note();
+    for end in 20..bytes.len() {
+        assert!(walk(&bytes[..end]).is_err(), "unexpected success at {end}");
+    }
 }
 
 #[test]

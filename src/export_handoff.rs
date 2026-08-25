@@ -12,8 +12,8 @@ use crate::app_service::FreshValidatedSequence;
 use crate::compatibility::PatchTranslationPolicy;
 use crate::meter::{decode_bounded_initial_meter, InitialMeterBounds};
 use crate::midi_export::{
-    ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent, MeterPolicy, PatchPolicy,
-    PatchTranslation, TimingPolicy,
+    ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent, DecodedExportEventKind,
+    MeterPolicy, PatchPolicy, PatchTranslation, TimingPolicy,
 };
 use crate::mixed_event::{
     walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
@@ -240,6 +240,51 @@ pub(crate) fn build_conversion_ready_sequence(
         let mut used_patch_indices = std::collections::BTreeSet::new();
         for item in walk.items {
             match item {
+                MixedEventItem::Patch(patch) => {
+                    let patch_start =
+                        u64::try_from(patch.representation_range.start).map_err(|_| {
+                            ConversionReadyError::PolicyMismatch(format!(
+                                "Patch range overflows fixed-width evidence for track {track_index}"
+                            ))
+                        })?;
+                    let patch_end =
+                        u64::try_from(patch.representation_range.end).map_err(|_| {
+                            ConversionReadyError::PolicyMismatch(format!(
+                            "Patch range overflows fixed-width evidence for track {track_index}"
+                        ))
+                        })?;
+                    let patch_index = evidence_track
+                        .patch_evidence
+                        .iter()
+                        .enumerate()
+                        .find(|(index, evidence)| {
+                            !used_patch_indices.contains(index)
+                                && evidence.source_range.start() == patch_start
+                                && evidence.source_range.end_exclusive() == patch_end
+                        })
+                        .map(|(index, _)| index)
+                        .ok_or_else(|| {
+                            ConversionReadyError::PolicyMismatch(format!(
+                                "Patch evidence missing for track {track_index}"
+                            ))
+                        })?;
+                    used_patch_indices.insert(patch_index);
+                    let translation = policy_track.patches.get(patch_index).ok_or_else(|| {
+                        ConversionReadyError::PolicyMismatch(format!(
+                            "Patch policy missing for track {track_index}"
+                        ))
+                    })?;
+                    events.push(DecodedExportEvent {
+                        absolute_position: patch.position.value,
+                        source_ordinal,
+                        source_range: Some(patch.representation_range),
+                        kind: DecodedExportEventKind::Patch {
+                            program: patch.program_change.value,
+                            translation: patch_translation(translation),
+                        },
+                    });
+                    source_ordinal += 1;
+                }
                 MixedEventItem::PatchToNote(transition) => {
                     let patch_start = u64::try_from(transition.patch.representation_range.start)
                         .map_err(|_| {
@@ -523,6 +568,13 @@ pub(crate) mod tests {
                 .iter()
                 .enumerate()
                 .filter_map(|(ordinal, item)| match item {
+                    MixedEventItem::Patch(patch) => Some(PatchEvidence {
+                        source_ordinal: ordinal as u32,
+                        source_range: fixed_range(&patch.representation_range),
+                        decoded_program: patch.program_change.value,
+                        decoded_bank_msb: None,
+                        decoded_bank_lsb: None,
+                    }),
                     MixedEventItem::PatchToNote(transition) => Some(PatchEvidence {
                         source_ordinal: ordinal as u32,
                         source_range: fixed_range(&transition.patch.representation_range),

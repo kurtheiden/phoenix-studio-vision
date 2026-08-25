@@ -54,6 +54,7 @@ plausibility.
 - `e0` Pitch Bend entry and compact continuation;
 - the established direct Patch-to-Note form;
 - the established form with exactly one length-framed `ff 60` context record;
+- the established Patch-core-to-one-Controller-to-direct-Note form;
 - the established `ff 60` context-mediated Note entry outside Patch;
 - strict exact-end termination.
 
@@ -62,7 +63,8 @@ plausibility.
 - event-region discovery or terminal-tail discovery;
 - the older 120-byte descriptor profile;
 - SysEx, Poly Pressure, unknown statuses, and unknown `ff` tags;
-- repeated `ff 60` records, other Patch contexts, or other Patch layouts;
+- repeated `ff 60` records, Patch-to-multiple-Controller forms, context after a
+  Patch-following Controller, other Patch contexts, or other Patch layouts;
 - general Studio Vision channel semantics;
 - malformed or out-of-domain structures;
 - heuristic recovery, decoder probing, scan-ahead, or backtracking;
@@ -201,11 +203,16 @@ loop:
             position = checked(previous_position + timing.value)
             append Controller; state = None
         ff 7c:
-            parse one supported bounded Patch-to-Note transition
-            Patch position is its stored absolute position VLQ
-            derive first-Note position from supported transition components
-            append one coupled PatchToNote item; state = Note
-            previous_position = first-Note position
+            parse the bounded Patch core through declared payload_end
+            classify only the exact post-core timing endpoint
+            direct 90 or one ff 60:
+                preserve the established coupled PatchToNote transition
+            ff 41:
+                decode exactly one ordinary Controller at payload_end
+                require exactly one direct explicit Note at Controller end
+                append disjoint Patch, Controller, Note items transactionally
+            reject every other form without scanning
+            state = Note; previous_position = first-Note position
         ff 60:
             parse exactly one context-mediated Note entry
             position = checked(previous_position + leading timing + final timing)
@@ -246,6 +253,8 @@ The representation distinguishes stored syntax from derived position:
 - `PatchAbsolute`: the raw Patch position VLQ and its direct absolute value;
 - `PatchFirstNote`: Patch absolute position, post-PC timing VLQ, optional
   bounded `ff 60` context, optional final timing VLQ, and derived Note position;
+- `PatchControllerNote`: Patch absolute position, Controller delta and checked
+  position, then Note delta and checked position;
 - `ContextMediatedNote`: leading delta VLQ, one bounded `ff 60` context, final
   timing VLQ, their checked sum, and accumulated Note position.
 
@@ -272,6 +281,7 @@ pub struct MixedEventWalk<'a> {
 
 pub enum MixedEventItem<'a> {
     Event(TimedMixedEvent<'a>),
+    Patch(BoundedPatchCore<'a>),
     PatchToNote(BoundedPatchToNoteTransition<'a>),
 }
 
@@ -297,6 +307,12 @@ avoids inventing disjoint source ownership where the existing Patch decoder's
 bounded representation includes the first `90`. The walk result exposes a
 logical-event iterator/count so authentic expectations still count Patch and
 first Note separately.
+
+The standalone `Patch` item is used only where a following ordinary Controller
+has independent byte ownership. Its range ends exactly at declared
+`payload_end`; the following Controller and direct Note are ordinary timed
+items with adjacent, disjoint ranges. The branch validates all three before
+adding them to a successful transactional walk.
 
 Every representation preserves its absolute source range, raw timing bytes,
 decoded timing, derived position, and family fields. `BoundedNoteEvent` must
@@ -418,6 +434,28 @@ not duplicate Patch payload/name/Program Change decoding.
 The helper then decodes the first Note properties and duration, returns the
 coupled `BoundedPatchToNoteTransition`, and establishes Note state. It does not
 assign a semantic name to `ff 60` or its payload.
+
+## Patch-to-Controller-to-Note grammar
+
+The additional authenticated Bells Tracks 3/4 form is exactly:
+
+```text
+position VLQ
+ff 7c | payload_length | payload ending in direct Program Change
+Controller timing VLQ | ff 41 | 05 | context[3] | number | value
+Note timing VLQ | 90 | pitch | attack | release | duration VLQ
+```
+
+The factored Patch core ends at declared `payload_end`. Exactly one ordinary
+Controller begins there and ends at its value byte. Exactly one direct explicit
+Note begins at that Controller end. The three ranges are disjoint. Patch
+position is absolute; Controller position adds its delta to Patch position;
+Note position adds its delta to Controller position. The completed branch
+leaves Note state.
+
+`ff 60` after the Controller, a second Controller, malformed current bytes,
+and any other intervening structure are rejected at the exact current cursor.
+No later valid-looking `ff 41` or `90` is searched for or used for recovery.
 
 # Context-mediated Note entry
 
@@ -552,6 +590,8 @@ Focused tests must cover:
 - Pressure continuation and Pressure to Note;
 - Bend continuation, Bend to Note, and Bend to Controller;
 - direct Patch-to-Note;
+- Patch-to-one-Controller-to-direct-Note, including disjoint ownership and
+  checked two-step timing;
 - exactly one `ff 60`-mediated Note entry;
 - unsupported `ff` tag and unsupported status;
 - data byte with state `None`;
@@ -560,6 +600,8 @@ Focused tests must cover:
 - checked accumulated-position overflow;
 - malformed current branch followed by a valid-looking later event, proving
   no scanning or recovery;
+- malformed/truncated Patch-following Controller or Note, `ff 60` after that
+  Controller, and a second Controller;
 - exact returned item/consumed ranges and monotonic cursors for every success.
 
 # Existing decoder reuse

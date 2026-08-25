@@ -27,6 +27,13 @@ pub struct PatchRepresentationBounds {
     pub note_status_end: usize,
 }
 
+/// Hard caller boundary for one Patch core ending at its declared payload end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PatchCoreBounds {
+    pub position_start: usize,
+    pub end: usize,
+}
+
 /// Borrowed bytes paired with their absolute source range.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocatedBytes<'a> {
@@ -73,6 +80,21 @@ pub struct BoundedPatchRepresentation<'a> {
     pub post_pc_timing_component: LocatedVlq<'a>,
     pub pre_note_context: LocatedBytes<'a>,
     pub note_status: LocatedByte,
+}
+
+/// The length-delimited Patch fields through the direct Program Change byte.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedPatchCore<'a> {
+    pub representation_range: Range<usize>,
+    pub position: LocatedVlq<'a>,
+    pub marker_range: Range<usize>,
+    pub payload_length: LocatedByte,
+    pub payload_range: Range<usize>,
+    pub pre_name_context: LocatedBytes<'a>,
+    pub name_length: LocatedByte,
+    pub name: LocatedAscii<'a>,
+    pub post_name_context: LocatedBytes<'a>,
+    pub program_change: LocatedByte,
 }
 
 /// Deterministic failures from the shared bounded representation decoder.
@@ -221,8 +243,81 @@ pub fn decode_bounded_patch_representation<'a>(
         });
     }
 
-    let position =
-        decode_7bit_be_vlq(bytes, start, status_offset).map_err(BoundedPatchError::PositionVlq)?;
+    let core = decode_bounded_patch_core(
+        bytes,
+        PatchCoreBounds {
+            position_start: start,
+            end: status_offset,
+        },
+    )?;
+    let post_pc_start = core.representation_range.end;
+    let post_pc = decode_7bit_be_vlq(bytes, post_pc_start, status_offset)
+        .map_err(BoundedPatchError::PostPcVlq)?;
+    let post_pc_end = post_pc_start.checked_add(post_pc.bytes_consumed).ok_or(
+        BoundedPatchError::PostPcVlqCrossesStatus {
+            range: post_pc_start..usize::MAX,
+            status_offset,
+        },
+    )?;
+    let post_pc_range = post_pc_start..post_pc_end;
+    if post_pc_end > status_offset {
+        return Err(BoundedPatchError::PostPcVlqCrossesStatus {
+            range: post_pc_range,
+            status_offset,
+        });
+    }
+    let post_pc_bytes =
+        bytes
+            .get(post_pc_range.clone())
+            .ok_or(BoundedPatchError::PostPcVlqCrossesStatus {
+                range: post_pc_range.clone(),
+                status_offset,
+            })?;
+    let pre_note_range = post_pc_end..status_offset;
+
+    Ok(BoundedPatchRepresentation {
+        representation_range: start..end,
+        position: core.position,
+        marker_range: core.marker_range,
+        payload_length: core.payload_length,
+        payload_range: core.payload_range,
+        pre_name_context: core.pre_name_context,
+        name_length: core.name_length,
+        name: core.name,
+        post_name_context: core.post_name_context,
+        program_change: core.program_change,
+        post_pc_timing_component: LocatedVlq {
+            value: post_pc.value,
+            bytes: post_pc_bytes,
+            range: post_pc_range,
+        },
+        pre_note_context: LocatedBytes {
+            bytes: &bytes[pre_note_range.clone()],
+            range: pre_note_range,
+        },
+        note_status: LocatedByte {
+            value: EXPECTED_NOTE_STATUS,
+            offset: status_offset,
+        },
+    })
+}
+
+/// Decodes one current-cursor Patch core through its declared payload end.
+pub fn decode_bounded_patch_core<'a>(
+    bytes: &'a [u8],
+    bounds: PatchCoreBounds,
+) -> Result<BoundedPatchCore<'a>, BoundedPatchError> {
+    let start = bounds.position_start;
+    let end = bounds.end;
+    if start >= end || end > bytes.len() {
+        return Err(BoundedPatchError::InvalidBounds {
+            start,
+            end,
+            size: bytes.len(),
+        });
+    }
+
+    let position = decode_7bit_be_vlq(bytes, start, end).map_err(BoundedPatchError::PositionVlq)?;
     let position_end =
         start
             .checked_add(position.bytes_consumed)
@@ -240,11 +335,18 @@ pub fn decode_bounded_patch_representation<'a>(
             }))?;
 
     let marker_start = position_end;
-    let marker_end = marker_start.saturating_add(COMMON_MARKER.len());
+    let marker_end =
+        marker_start
+            .checked_add(COMMON_MARKER.len())
+            .ok_or(BoundedPatchError::InvalidBounds {
+                start,
+                end,
+                size: bytes.len(),
+            })?;
     let marker = bytes
-        .get(marker_start..marker_end.min(status_offset))
+        .get(marker_start..marker_end.min(end))
         .unwrap_or_default();
-    if marker_end > status_offset || marker != COMMON_MARKER {
+    if marker_end > end || marker != COMMON_MARKER {
         return Err(BoundedPatchError::MissingMarker {
             offset: marker_start,
             observed: marker.to_vec(),
@@ -252,18 +354,16 @@ pub fn decode_bounded_patch_representation<'a>(
     }
 
     let payload_length_offset = marker_end;
-    let Some(payload_length) = bytes.get(payload_length_offset).copied() else {
+    let Some(payload_length) = bytes
+        .get(payload_length_offset)
+        .copied()
+        .filter(|_| payload_length_offset < end)
+    else {
         return Err(BoundedPatchError::PayloadExceedsBoundary {
             payload_end: payload_length_offset.saturating_add(1),
-            status_offset,
+            status_offset: end,
         });
     };
-    if payload_length_offset >= status_offset {
-        return Err(BoundedPatchError::PayloadExceedsBoundary {
-            payload_end: payload_length_offset.saturating_add(1),
-            status_offset,
-        });
-    }
     if payload_length < MINIMUM_PAYLOAD_LENGTH {
         return Err(BoundedPatchError::PayloadTooShort {
             offset: payload_length_offset,
@@ -285,19 +385,19 @@ pub fn decode_bounded_patch_representation<'a>(
             offset: payload_length_offset,
             length: payload_length,
         })?;
-    if payload_end > status_offset {
+    if payload_end > end {
         return Err(BoundedPatchError::PayloadExceedsBoundary {
             payload_end,
-            status_offset,
+            status_offset: end,
         });
     }
     let payload_range = payload_start..payload_end;
-    let Some(program_change_offset) = payload_end.checked_sub(1) else {
-        return Err(BoundedPatchError::MissingProgramChange {
-            payload_range: payload_range.clone(),
-        });
-    };
-
+    let program_change_offset =
+        payload_end
+            .checked_sub(1)
+            .ok_or(BoundedPatchError::MissingProgramChange {
+                payload_range: payload_range.clone(),
+            })?;
     let pre_name_end = payload_start.checked_add(PRE_NAME_CONTEXT_BYTES).ok_or(
         BoundedPatchError::PayloadLengthOverflow {
             offset: payload_length_offset,
@@ -310,12 +410,29 @@ pub fn decode_bounded_patch_representation<'a>(
             .get(pre_name_range.clone())
             .ok_or(BoundedPatchError::PayloadExceedsBoundary {
                 payload_end,
-                status_offset,
+                status_offset: end,
             })?;
 
     let name_length_offset = pre_name_end;
-    let name_length = bytes[name_length_offset];
-    let name_start = name_length_offset + 1;
+    let Some(name_length) = bytes
+        .get(name_length_offset)
+        .copied()
+        .filter(|_| name_length_offset < program_change_offset)
+    else {
+        return Err(BoundedPatchError::NameLengthExceedsPayload {
+            offset: name_length_offset,
+            length: 0,
+            pc_offset: program_change_offset,
+        });
+    };
+    let name_start =
+        name_length_offset
+            .checked_add(1)
+            .ok_or(BoundedPatchError::NameLengthExceedsPayload {
+                offset: name_length_offset,
+                length: name_length,
+                pc_offset: program_change_offset,
+            })?;
     let name_end = name_start.checked_add(usize::from(name_length)).ok_or(
         BoundedPatchError::NameLengthExceedsPayload {
             offset: name_length_offset,
@@ -346,7 +463,6 @@ pub fn decode_bounded_patch_representation<'a>(
         std::str::from_utf8(name_bytes).map_err(|_| BoundedPatchError::InvalidAsciiName {
             range: name_range.clone(),
         })?;
-
     let post_name_range = name_end..program_change_offset;
     let post_name_bytes = &bytes[post_name_range.clone()];
     let program_change = bytes.get(program_change_offset).copied().ok_or(
@@ -355,33 +471,8 @@ pub fn decode_bounded_patch_representation<'a>(
         },
     )?;
 
-    let post_pc_start = payload_end;
-    let post_pc = decode_7bit_be_vlq(bytes, post_pc_start, status_offset)
-        .map_err(BoundedPatchError::PostPcVlq)?;
-    let post_pc_end = post_pc_start.checked_add(post_pc.bytes_consumed).ok_or(
-        BoundedPatchError::PostPcVlqCrossesStatus {
-            range: post_pc_start..usize::MAX,
-            status_offset,
-        },
-    )?;
-    let post_pc_range = post_pc_start..post_pc_end;
-    if post_pc_end > status_offset {
-        return Err(BoundedPatchError::PostPcVlqCrossesStatus {
-            range: post_pc_range,
-            status_offset,
-        });
-    }
-    let post_pc_bytes =
-        bytes
-            .get(post_pc_range.clone())
-            .ok_or(BoundedPatchError::PostPcVlqCrossesStatus {
-                range: post_pc_range.clone(),
-                status_offset,
-            })?;
-    let pre_note_range = post_pc_end..status_offset;
-
-    Ok(BoundedPatchRepresentation {
-        representation_range: start..end,
+    Ok(BoundedPatchCore {
+        representation_range: start..payload_end,
         position: LocatedVlq {
             value: position.value,
             bytes: position_bytes,
@@ -413,19 +504,6 @@ pub fn decode_bounded_patch_representation<'a>(
         program_change: LocatedByte {
             value: program_change,
             offset: program_change_offset,
-        },
-        post_pc_timing_component: LocatedVlq {
-            value: post_pc.value,
-            bytes: post_pc_bytes,
-            range: post_pc_range,
-        },
-        pre_note_context: LocatedBytes {
-            bytes: &bytes[pre_note_range.clone()],
-            range: pre_note_range,
-        },
-        note_status: LocatedByte {
-            value: EXPECTED_NOTE_STATUS,
-            offset: status_offset,
         },
     })
 }

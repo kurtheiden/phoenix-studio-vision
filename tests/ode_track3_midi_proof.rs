@@ -348,6 +348,11 @@ fn build_and_compare_proof() -> Result<ProofOutcome, ProofError> {
     let mut ordinal = 0_u64;
     for item in &walk.items {
         match item {
+            MixedEventItem::Patch(_) => {
+                return Err(ProofError::ComparisonMismatch(
+                    "unexpected standalone Patch in Ode Track 3".into(),
+                ));
+            }
             MixedEventItem::PatchToNote(transition) => {
                 validate_track3_patch(transition)?;
                 decoded.push(DecodedExportEvent::from_patch(

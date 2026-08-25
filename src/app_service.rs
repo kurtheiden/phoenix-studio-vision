@@ -1727,6 +1727,21 @@ fn inventory_families(
     let mut patch_evidence = Vec::new();
     for (item_index, item) in walk.items.iter().enumerate() {
         match item {
+            MixedEventItem::Patch(patch) => {
+                present[0] = true;
+                if let (Ok(source_ordinal), Some(source_range)) = (
+                    u32::try_from(item_index),
+                    owned_range(&patch.representation_range),
+                ) {
+                    patch_evidence.push(PatchEvidence {
+                        source_ordinal,
+                        source_range,
+                        decoded_program: patch.program_change.value,
+                        decoded_bank_msb: None,
+                        decoded_bank_lsb: None,
+                    });
+                }
+            }
             MixedEventItem::PatchToNote(transition) => {
                 present[0] = true;
                 present[1] = true;

@@ -1,6 +1,6 @@
 use phoenix::patch::{
-    decode_bounded_patch_representation, decode_known_track3_2_patch, BoundedPatchRepresentation,
-    PatchRepresentationBounds,
+    decode_bounded_patch_core, decode_bounded_patch_representation, decode_known_track3_2_patch,
+    BoundedPatchRepresentation, PatchCoreBounds, PatchRepresentationBounds,
 };
 use std::fs;
 use std::ops::Range;
@@ -20,6 +20,30 @@ fn decode(path: &str, start: usize, status_offset: usize) -> BoundedPatchReprese
         },
     )
     .unwrap()
+}
+
+#[test]
+fn authentic_bells_patch_cores_end_at_declared_payload_boundaries() {
+    let bytes = fs::read(BASELINE).unwrap();
+    for (start, end, position, name, program) in [
+        (0x10a4d, 0x10a6d, 480, "Pipe Organ 2", 25),
+        (0x1121b, 0x1123a, 180, "BritelowBass", 34),
+    ] {
+        let core = decode_bounded_patch_core(
+            &bytes,
+            PatchCoreBounds {
+                position_start: start,
+                end: bytes.len(),
+            },
+        )
+        .unwrap();
+        assert_eq!(core.representation_range, start..end);
+        assert_eq!(core.position.value, position);
+        assert_eq!(core.name.text, name);
+        assert_eq!(core.program_change.value, program);
+        assert_eq!(core.payload_range.end, end);
+        assert_eq!(core.program_change.offset + 1, end);
+    }
 }
 
 struct ExpectedCommon<'a> {

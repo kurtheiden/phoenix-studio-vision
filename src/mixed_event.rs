@@ -15,8 +15,9 @@ use crate::{
         ControllerRecordBounds,
     },
     patch::{
-        decode_bounded_patch_representation, BoundedPatchError, BoundedPatchRepresentation,
-        LocatedByte, LocatedBytes, LocatedVlq, PatchRepresentationBounds,
+        decode_bounded_patch_core, decode_bounded_patch_representation, BoundedPatchCore,
+        BoundedPatchError, BoundedPatchRepresentation, LocatedByte, LocatedBytes, LocatedVlq,
+        PatchCoreBounds, PatchRepresentationBounds,
     },
     pitch_bend::{
         decode_pitch_bend_entry_at, DecodedPitchBendEntry, PitchBendEntry, PitchBendEntryError,
@@ -99,6 +100,7 @@ pub struct BoundedPatchToNoteTransition<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixedEventItem<'a> {
     Event(Box<PositionedEvent<'a>>),
+    Patch(Box<BoundedPatchCore<'a>>),
     PatchToNote(Box<BoundedPatchToNoteTransition<'a>>),
 }
 
@@ -106,9 +108,17 @@ impl MixedEventItem<'_> {
     pub fn logical_event_count(&self) -> usize {
         match self {
             Self::Event(_) => 1,
+            Self::Patch(_) => 1,
             Self::PatchToNote(_) => 2,
         }
     }
+}
+
+struct PatchDispatch<'a> {
+    items: Vec<MixedEventItem<'a>>,
+    next: usize,
+    next_position: u32,
+    next_state: ActiveEventState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -251,6 +261,17 @@ pub fn walk_bounded_mixed_events(
             });
         };
 
+        let tag_offset = timing_end.checked_add(1);
+        if first == 0xff && tag_offset.and_then(|offset| bytes.get(offset).copied()) == Some(0x7c) {
+            let outcome = decode_patch_transition(bytes, cursor, end)?;
+            require_advance(cursor, outcome.next, end)?;
+            items.extend(outcome.items);
+            cursor = outcome.next;
+            previous_position = outcome.next_position;
+            state = outcome.next_state;
+            continue;
+        }
+
         let (item, next, next_position, next_state) = match first {
             0x00..=0x7f => match state {
                 ActiveEventState::None => {
@@ -359,16 +380,7 @@ pub fn walk_bounded_mixed_events(
             }
         };
 
-        if next <= cursor {
-            return Err(MixedEventWalkError::CursorDidNotAdvance { cursor });
-        }
-        if next > end {
-            return Err(MixedEventWalkError::EventPastBound {
-                cursor,
-                required_end: next,
-                event_end: end,
-            });
-        }
+        require_advance(cursor, next, end)?;
         items.push(item);
         cursor = next;
         previous_position = next_position;
@@ -433,7 +445,6 @@ fn dispatch_ff<'a>(
                 ActiveEventState::None,
             ))
         }
-        Some(0x7c) => decode_patch_transition(bytes, cursor, ff_offset, event_end),
         Some(0x60) => {
             decode_context_mediated_note(bytes, cursor, ff_offset, event_end, previous_position)
         }
@@ -448,43 +459,25 @@ fn dispatch_ff<'a>(
 fn decode_patch_transition(
     bytes: &[u8],
     cursor: usize,
-    marker_start: usize,
     event_end: usize,
-) -> Result<(MixedEventItem<'_>, usize, u32, ActiveEventState), MixedEventWalkError> {
-    let length_offset =
-        marker_start
-            .checked_add(2)
-            .ok_or(MixedEventWalkError::MalformedKnownTag {
-                cursor,
-                offset: marker_start,
-            })?;
-    let Some(payload_length) = bytes
-        .get(length_offset)
-        .copied()
-        .filter(|_| length_offset < event_end)
-    else {
-        return Err(MixedEventWalkError::MalformedKnownTag {
-            cursor,
-            offset: length_offset,
-        });
-    };
-    let payload_start = length_offset + 1;
-    let payload_end = payload_start
-        .checked_add(usize::from(payload_length))
-        .ok_or(MixedEventWalkError::EventPastBound {
-            cursor,
-            required_end: usize::MAX,
-            event_end,
-        })?;
-    if payload_end > event_end {
-        return Err(MixedEventWalkError::EventPastBound {
-            cursor,
-            required_end: payload_end,
-            event_end,
-        });
-    }
+) -> Result<PatchDispatch<'_>, MixedEventWalkError> {
+    let core = decode_bounded_patch_core(
+        bytes,
+        PatchCoreBounds {
+            position_start: cursor,
+            end: event_end,
+        },
+    )
+    .map_err(|source| MixedEventWalkError::MalformedPatch { cursor, source })?;
+    let payload_end = core.representation_range.end;
     let post_pc = located_vlq(bytes, payload_end, event_end, cursor)?;
     let mut transition_cursor = post_pc.range.end;
+
+    let controller_tag_end = transition_cursor.checked_add(2);
+    if controller_tag_end.and_then(|end| bytes.get(transition_cursor..end)) == Some(&[0xff, 0x41]) {
+        return decode_patch_controller_note(bytes, event_end, core);
+    }
+
     let (context, final_timing) = match bytes.get(transition_cursor).copied() {
         Some(0x90) if transition_cursor < event_end => (None, None),
         Some(0xff) if transition_cursor < event_end => {
@@ -540,12 +533,106 @@ fn decode_patch_transition(
         final_timing,
         first_note,
     };
-    Ok((
-        MixedEventItem::PatchToNote(Box::new(transition)),
+    Ok(PatchDispatch {
+        items: vec![MixedEventItem::PatchToNote(Box::new(transition))],
         next,
-        first_note_position,
-        ActiveEventState::Note,
-    ))
+        next_position: first_note_position,
+        next_state: ActiveEventState::Note,
+    })
+}
+
+fn decode_patch_controller_note<'a>(
+    bytes: &'a [u8],
+    event_end: usize,
+    patch: BoundedPatchCore<'a>,
+) -> Result<PatchDispatch<'a>, MixedEventWalkError> {
+    let controller_cursor = patch.representation_range.end;
+    let timing = decode_7bit_be_vlq(bytes, controller_cursor, event_end).map_err(|source| {
+        MixedEventWalkError::TimingVlq {
+            cursor: controller_cursor,
+            source,
+        }
+    })?;
+    let controller_tag = controller_cursor.checked_add(timing.bytes_consumed).ok_or(
+        MixedEventWalkError::EventPastBound {
+            cursor: controller_cursor,
+            required_end: usize::MAX,
+            event_end,
+        },
+    )?;
+    let controller_end = controller_tag
+        .checked_add(CONTROLLER_REMAINDER_LENGTH)
+        .ok_or(MixedEventWalkError::EventPastBound {
+            cursor: controller_cursor,
+            required_end: usize::MAX,
+            event_end,
+        })?;
+    if controller_end > event_end {
+        return Err(MixedEventWalkError::EventPastBound {
+            cursor: controller_cursor,
+            required_end: controller_end,
+            event_end,
+        });
+    }
+    let controller = decode_bounded_controller_record(
+        bytes,
+        ControllerRecordBounds {
+            record_range: controller_cursor..controller_end,
+        },
+    )
+    .map_err(|source| MixedEventWalkError::MalformedController {
+        cursor: controller_cursor,
+        source,
+    })?;
+    let controller_position = add_position(
+        patch.position.value,
+        controller.timing_delta.value,
+        controller_cursor,
+    )?;
+
+    let note_cursor = controller_end;
+    let (note, next) = decode_note_at(bytes, note_cursor, event_end, true).map_err(|source| {
+        MixedEventWalkError::MalformedNote {
+            cursor: note_cursor,
+            source,
+        }
+    })?;
+    let note_position = add_position(controller_position, note.timing.value, note_cursor)?;
+
+    Ok(PatchDispatch {
+        items: vec![
+            MixedEventItem::Patch(Box::new(patch)),
+            MixedEventItem::Event(Box::new(PositionedEvent {
+                position: controller_position,
+                event: MixedEventKind::Controller(controller),
+            })),
+            MixedEventItem::Event(Box::new(PositionedEvent {
+                position: note_position,
+                event: MixedEventKind::Note(note),
+            })),
+        ],
+        next,
+        next_position: note_position,
+        next_state: ActiveEventState::Note,
+    })
+}
+
+fn require_advance(
+    cursor: usize,
+    next: usize,
+    event_end: usize,
+) -> Result<(), MixedEventWalkError> {
+    if next <= cursor {
+        return Err(MixedEventWalkError::CursorDidNotAdvance { cursor });
+    }
+    if next > event_end {
+        return Err(MixedEventWalkError::EventPastBound {
+            cursor,
+            required_end: next,
+            event_end,
+        });
+    }
+    Ok(())
 }
 
 fn decode_context_mediated_note(
