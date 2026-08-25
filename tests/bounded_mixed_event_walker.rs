@@ -28,7 +28,9 @@ fn family_counts(result: &phoenix::mixed_event::MixedEventWalk<'_>) -> [usize; 5
                 counts[1] += 1;
             }
             MixedEventItem::Event(event) => match &event.event {
-                MixedEventKind::Note(_) | MixedEventKind::ContextMediatedNote(_) => counts[0] += 1,
+                MixedEventKind::Note(_)
+                | MixedEventKind::ContextMediatedNote(_)
+                | MixedEventKind::DoubleContextMediatedNote(_) => counts[0] += 1,
                 MixedEventKind::Controller(_) => counts[2] += 1,
                 MixedEventKind::ChannelPressure { .. } => counts[3] += 1,
                 MixedEventKind::PitchBend { .. } => counts[4] += 1,
@@ -168,6 +170,225 @@ fn one_ff60_context_mediates_note_entry() {
     assert_eq!(note.representation_range, 0..bytes.len());
 }
 
+struct AuthenticDoubleContextCase {
+    range: std::ops::Range<usize>,
+    transition_end: usize,
+    previous_position: u32,
+    position: u32,
+    timings: [u32; 3],
+    timing_ranges: [std::ops::Range<usize>; 3],
+    first_range: std::ops::Range<usize>,
+    first_payload: &'static [u8],
+    second_range: std::ops::Range<usize>,
+    second_payload: &'static [u8],
+    note_range: std::ops::Range<usize>,
+    note: [u8; 4],
+}
+
+fn assert_authentic_double_context(case: AuthenticDoubleContextCase) {
+    let bytes = fs::read(BASELINE).unwrap();
+    let result = walk_bounded_mixed_events(
+        &bytes,
+        MixedEventBounds {
+            event_range: case.range.clone(),
+        },
+        MixedEventTimingBasis {
+            previous_event_position: case.previous_position,
+        },
+    )
+    .unwrap();
+    assert_eq!(result.consumed_range, case.range);
+    assert_eq!(result.logical_event_count(), 2);
+
+    let MixedEventItem::Event(first) = &result.items[0] else {
+        panic!("expected double-context Note")
+    };
+    assert_eq!(first.position, case.position);
+    let MixedEventKind::DoubleContextMediatedNote(entry) = &first.event else {
+        panic!("expected double-context Note")
+    };
+    assert_eq!(
+        entry.representation_range,
+        case.range.start..case.transition_end
+    );
+    assert_eq!(entry.leading_timing.value, case.timings[0]);
+    assert_eq!(entry.leading_timing.range, case.timing_ranges[0]);
+    assert_eq!(entry.first_context.range, case.first_range);
+    assert_eq!(entry.first_context.payload_length.value, 6);
+    assert_eq!(entry.first_context.payload.bytes, case.first_payload);
+    assert_eq!(entry.inter_context_timing.value, case.timings[1]);
+    assert_eq!(entry.inter_context_timing.range, case.timing_ranges[1]);
+    assert_eq!(entry.second_context.range, case.second_range);
+    assert_eq!(entry.second_context.payload_length.value, 7);
+    assert_eq!(entry.second_context.payload.bytes, case.second_payload);
+    assert_eq!(entry.final_timing.value, case.timings[2]);
+    assert_eq!(entry.final_timing.range, case.timing_ranges[2]);
+    assert_eq!(entry.note.representation_range, case.note_range);
+    assert!(entry.note.status.is_some());
+    assert_eq!(
+        [
+            entry.note.pitch.value,
+            entry.note.attack_velocity.value,
+            entry.note.release_velocity.value,
+            entry.note.duration.value as u8,
+        ],
+        case.note
+    );
+
+    let MixedEventItem::Event(next) = &result.items[1] else {
+        panic!("expected compact Note continuation")
+    };
+    let MixedEventKind::Note(next_note) = &next.event else {
+        panic!("expected compact Note continuation")
+    };
+    assert!(next_note.status.is_none());
+    assert!(next.position > first.position);
+}
+
+#[test]
+fn authentic_bells_track_6_double_context_notes_are_exact() {
+    for case in [
+        AuthenticDoubleContextCase {
+            range: 0x121ba..0x121dc,
+            transition_end: 0x121d6,
+            previous_position: 103_455,
+            position: 104_036,
+            timings: [538, 39, 4],
+            timing_ranges: [0x121ba..0x121bc, 0x121c5..0x121c6, 0x121d0..0x121d1],
+            first_range: 0x121bc..0x121c5,
+            first_payload: &[0x57, 0x7f, 0x00, 0x7e, 0x7c, 0x27],
+            second_range: 0x121c6..0x121d0,
+            second_payload: &[0x57, 0x7f, 0x00, 0x7e, 0x44, 0x8a, 0x6f],
+            note_range: 0x121d1..0x121d6,
+            note: [74, 123, 126, 49],
+        },
+        AuthenticDoubleContextCase {
+            range: 0x122c7..0x122e8,
+            transition_end: 0x122e2,
+            previous_position: 111_634,
+            position: 111_720,
+            timings: [3, 26, 57],
+            timing_ranges: [0x122c7..0x122c8, 0x122d1..0x122d2, 0x122dc..0x122dd],
+            first_range: 0x122c8..0x122d1,
+            first_payload: &[0x57, 0x7f, 0x00, 0x7e, 0x7c, 0x1a],
+            second_range: 0x122d2..0x122dc,
+            second_payload: &[0x57, 0x7f, 0x00, 0x7c, 0x3e, 0x89, 0x53],
+            note_range: 0x122dd..0x122e2,
+            note: [70, 118, 123, 58],
+        },
+        AuthenticDoubleContextCase {
+            range: 0x12310..0x12331,
+            transition_end: 0x1232b,
+            previous_position: 113_536,
+            position: 113_631,
+            timings: [12, 13, 70],
+            timing_ranges: [0x12310..0x12311, 0x1231a..0x1231b, 0x12325..0x12326],
+            first_range: 0x12311..0x1231a,
+            first_payload: &[0x57, 0x7f, 0x00, 0x7f, 0x7f, 0x0d],
+            second_range: 0x1231b..0x12325,
+            second_payload: &[0x57, 0x7f, 0x00, 0x7e, 0x42, 0x8b, 0x16],
+            note_range: 0x12326..0x1232b,
+            note: [70, 120, 106, 64],
+        },
+    ] {
+        assert_authentic_double_context(case);
+    }
+}
+
+fn synthetic_double_context(first_length: u8, second_length: u8) -> Vec<u8> {
+    let mut bytes = vec![0x02, 0xff, 0x60, first_length];
+    bytes.extend(std::iter::repeat(0x11).take(usize::from(first_length)));
+    bytes.extend([0x03, 0xff, 0x60, second_length]);
+    bytes.extend(std::iter::repeat(0x22).take(usize::from(second_length)));
+    bytes.extend([0x04, 0x90, 0x3c, 0x40, 0x20, 0x01]);
+    bytes
+}
+
+#[test]
+fn double_context_requires_exact_six_then_seven_lengths() {
+    for (first, second, expected, observed) in [(5, 7, 6, 5), (6, 6, 7, 6)] {
+        assert!(matches!(
+            walk(&synthetic_double_context(first, second)),
+            Err(MixedEventWalkError::ContextLengthMismatch {
+                expected: actual_expected,
+                observed: actual_observed,
+                ..
+            }) if actual_expected == expected && actual_observed == observed
+        ));
+    }
+}
+
+#[test]
+fn double_context_rejects_malformed_current_tags_and_timings_without_scanning() {
+    let valid = synthetic_double_context(6, 7);
+
+    for bytes in [
+        valid[..11].to_vec(),
+        valid[..12].to_vec(),
+        {
+            let mut value = valid.clone();
+            value[11] = 0xfe;
+            value.extend([0x00, 0xff, 0x60, 0x07, 0, 0, 0, 0, 0, 0, 0]);
+            value
+        },
+        {
+            let mut value = valid.clone();
+            value[12] = 0x61;
+            value.extend([0x00, 0xff, 0x60, 0x07, 0, 0, 0, 0, 0, 0, 0]);
+            value
+        },
+    ] {
+        assert!(walk(&bytes).is_err());
+    }
+
+    for timing_range in [0..1, 10..11, 21..22] {
+        let mut bytes = valid.clone();
+        bytes.splice(timing_range, [0x81, 0x81, 0x81, 0x81]);
+        assert!(matches!(
+            walk(&bytes),
+            Err(MixedEventWalkError::TimingVlq { .. })
+        ));
+    }
+}
+
+#[test]
+fn double_context_requires_immediate_direct_note_and_exact_bounds() {
+    let valid = synthetic_double_context(6, 7);
+    for end in 1..valid.len() {
+        assert!(walk(&valid[..end]).is_err(), "unexpected success at {end}");
+    }
+
+    for replacement in [
+        vec![
+            0x00, 0xff, 0x60, 0x07, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x90, 0x3c, 0x40, 0x20, 1,
+        ],
+        vec![0x00, 0xff, 0x41, 0x05, 0, 0, 0, 7, 1],
+        vec![0x00, 0xd0, 0x01],
+        vec![0x00, 0x3c, 0x40, 0x20, 1],
+        vec![
+            0x00, 0x91, 0x3c, 0x40, 0x20, 1, 0x00, 0x90, 0x3c, 0x40, 0x20, 1,
+        ],
+        vec![0x00, 0x90, 0x3c],
+    ] {
+        let mut bytes = valid[..21].to_vec();
+        bytes.extend(replacement);
+        assert!(walk(&bytes).is_err());
+    }
+
+    assert!(matches!(
+        walk_bounded_mixed_events(
+            &valid,
+            MixedEventBounds {
+                event_range: 0..valid.len(),
+            },
+            MixedEventTimingBasis {
+                previous_event_position: u32::MAX,
+            },
+        ),
+        Err(MixedEventWalkError::PositionOverflow { .. })
+    ));
+}
+
 #[test]
 fn authentic_direct_patch_to_note_is_coupled() {
     let bytes = fs::read(BASELINE).unwrap();
@@ -282,7 +503,7 @@ fn authentic_bells_track_4_patch_controller_note_consumes_exactly() {
 }
 
 #[test]
-fn authentic_bells_exact_consumption_is_thirteen_of_fourteen() {
+fn authentic_bells_exact_consumption_is_fourteen_of_fourteen() {
     let bytes = fs::read(BASELINE).unwrap();
     let project = parse_project_166(&bytes).unwrap();
     let bells = project
@@ -307,8 +528,63 @@ fn authentic_bells_exact_consumption_is_thirteen_of_fourteen() {
             Ok(_) | Err(_) => rejected.push(index + 1),
         }
     }
-    assert_eq!(consumed.len(), 13);
-    assert_eq!(rejected, [6]);
+    assert_eq!(consumed.len(), 14);
+    assert!(rejected.is_empty());
+}
+
+#[test]
+fn authentic_bells_track_6_consumes_structurally_but_retains_timing_mismatch() {
+    let bytes = fs::read(BASELINE).unwrap();
+    let result = walk_bounded_mixed_events(
+        &bytes,
+        MixedEventBounds {
+            event_range: 0x11eac..0x123dd,
+        },
+        MixedEventTimingBasis::default(),
+    )
+    .unwrap();
+    assert_eq!(result.consumed_range, 0x11eac..0x123dd);
+    assert_eq!(result.logical_event_count(), 184);
+    assert_eq!(family_counts(&result), [182, 1, 1, 0, 0]);
+
+    let mut residual_single = 0;
+    let mut double = 0;
+    let mut single_lengths = Vec::new();
+    for item in &result.items {
+        match item {
+            MixedEventItem::PatchToNote(transition) => {
+                assert_eq!(transition.patch_position, 160);
+                assert_eq!(transition.first_note_position, 71_773);
+            }
+            MixedEventItem::Event(event) => match &event.event {
+                MixedEventKind::ContextMediatedNote(note) => {
+                    single_lengths.push(note.context.payload_length.value);
+                    if note.representation_range.start >= 0x121ba {
+                        residual_single += 1;
+                    }
+                }
+                MixedEventKind::DoubleContextMediatedNote(_) => double += 1,
+                _ => {}
+            },
+            MixedEventItem::Patch(_) => {}
+        }
+    }
+    assert_eq!(residual_single, 6);
+    assert_eq!(double, 3);
+    assert!(single_lengths.contains(&6));
+    assert!(single_lengths.contains(&7));
+
+    let last_position = result
+        .items
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            MixedEventItem::Event(event) => Some(event.position),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(last_position, 118_572);
+    assert_eq!(last_position + 130, 118_702);
 }
 
 fn synthetic_patch_controller_note() -> Vec<u8> {
@@ -417,17 +693,18 @@ fn rejects_current_cursor_without_scanning_for_later_valid_event() {
 }
 
 #[test]
-fn rejects_repeated_ff60_without_recovery() {
+fn rejects_unestablished_repeated_ff60_without_recovery() {
     let bytes = [
         0x00, 0xff, 0x60, 0x01, 0x11, 0x01, 0xff, 0x60, 0x01, 0x22, 0x01, 0x90, 0x3c, 0x40, 0x20,
         0x01,
     ];
     assert!(matches!(
         walk(&bytes),
-        Err(MixedEventWalkError::PatchContextMismatch {
+        Err(MixedEventWalkError::ContextLengthMismatch {
             cursor: 0,
-            offset: 6,
-            observed: Some(0xff),
+            offset: 3,
+            expected: 6,
+            observed: 1,
         })
     ));
 }

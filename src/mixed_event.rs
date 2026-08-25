@@ -67,6 +67,7 @@ pub enum MixedEventKind<'a> {
         entry_tag: Option<LocatedByte>,
     },
     ContextMediatedNote(BoundedContextMediatedNoteEntry<'a>),
+    DoubleContextMediatedNote(BoundedDoubleContextMediatedNoteEntry<'a>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,6 +83,17 @@ pub struct BoundedContextMediatedNoteEntry<'a> {
     pub representation_range: Range<usize>,
     pub leading_timing: LocatedVlq<'a>,
     pub context: BoundedFf60Context<'a>,
+    pub final_timing: LocatedVlq<'a>,
+    pub note: BoundedNoteBody<'a>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedDoubleContextMediatedNoteEntry<'a> {
+    pub representation_range: Range<usize>,
+    pub leading_timing: LocatedVlq<'a>,
+    pub first_context: BoundedFf60Context<'a>,
+    pub inter_context_timing: LocatedVlq<'a>,
+    pub second_context: BoundedFf60Context<'a>,
     pub final_timing: LocatedVlq<'a>,
     pub note: BoundedNoteBody<'a>,
 }
@@ -200,6 +212,12 @@ pub enum MixedEventWalkError {
         cursor: usize,
         offset: usize,
         observed: Option<u8>,
+    },
+    ContextLengthMismatch {
+        cursor: usize,
+        offset: usize,
+        expected: u8,
+        observed: u8,
     },
     EventPastBound {
         cursor: usize,
@@ -644,7 +662,93 @@ fn decode_context_mediated_note(
 ) -> Result<(MixedEventItem<'_>, usize, u32, ActiveEventState), MixedEventWalkError> {
     let leading_timing = located_vlq(bytes, cursor, event_end, cursor)?;
     let (context, after_context) = decode_ff60_context(bytes, context_start, event_end, cursor)?;
-    let final_timing = located_vlq(bytes, after_context, event_end, cursor)?;
+    let following_timing = located_vlq(bytes, after_context, event_end, cursor)?;
+    let following_offset = following_timing.range.end;
+
+    if bytes
+        .get(following_offset)
+        .copied()
+        .filter(|_| following_offset < event_end)
+        == Some(0x90)
+    {
+        let (note, next) = decode_note_body_at(bytes, following_offset, event_end, true)
+            .map_err(|source| MixedEventWalkError::MalformedNote { cursor, source })?;
+        let total_delta = add_position(leading_timing.value, following_timing.value, cursor)?;
+        let position = add_position(previous_position, total_delta, cursor)?;
+        let representation = BoundedContextMediatedNoteEntry {
+            representation_range: cursor..next,
+            leading_timing,
+            context,
+            final_timing: following_timing,
+            note,
+        };
+        return Ok((
+            MixedEventItem::Event(Box::new(PositionedEvent {
+                position,
+                event: MixedEventKind::ContextMediatedNote(representation),
+            })),
+            next,
+            position,
+            ActiveEventState::Note,
+        ));
+    }
+
+    let second_tag_end = following_offset.checked_add(2);
+    if second_tag_end.and_then(|end| {
+        bytes
+            .get(following_offset..end)
+            .filter(|_| end <= event_end)
+    }) == Some(&[0xff, 0x60])
+    {
+        return decode_double_context_mediated_note(
+            bytes,
+            cursor,
+            event_end,
+            previous_position,
+            leading_timing,
+            context,
+            following_timing,
+        );
+    }
+
+    Err(MixedEventWalkError::PatchContextMismatch {
+        cursor,
+        offset: following_offset,
+        observed: bytes.get(following_offset).copied(),
+    })
+}
+
+fn decode_double_context_mediated_note<'a>(
+    bytes: &'a [u8],
+    cursor: usize,
+    event_end: usize,
+    previous_position: u32,
+    leading_timing: LocatedVlq<'a>,
+    first_context: BoundedFf60Context<'a>,
+    inter_context_timing: LocatedVlq<'a>,
+) -> Result<(MixedEventItem<'a>, usize, u32, ActiveEventState), MixedEventWalkError> {
+    if first_context.payload_length.value != 6 {
+        return Err(MixedEventWalkError::ContextLengthMismatch {
+            cursor,
+            offset: first_context.payload_length.offset,
+            expected: 6,
+            observed: first_context.payload_length.value,
+        });
+    }
+
+    let second_context_start = inter_context_timing.range.end;
+    let (second_context, after_second_context) =
+        decode_ff60_context(bytes, second_context_start, event_end, cursor)?;
+    if second_context.payload_length.value != 7 {
+        return Err(MixedEventWalkError::ContextLengthMismatch {
+            cursor,
+            offset: second_context.payload_length.offset,
+            expected: 7,
+            observed: second_context.payload_length.value,
+        });
+    }
+
+    let final_timing = located_vlq(bytes, after_second_context, event_end, cursor)?;
     let status_offset = final_timing.range.end;
     if bytes
         .get(status_offset)
@@ -658,21 +762,25 @@ fn decode_context_mediated_note(
             observed: bytes.get(status_offset).copied(),
         });
     }
+
     let (note, next) = decode_note_body_at(bytes, status_offset, event_end, true)
         .map_err(|source| MixedEventWalkError::MalformedNote { cursor, source })?;
-    let total_delta = add_position(leading_timing.value, final_timing.value, cursor)?;
+    let first_sum = add_position(leading_timing.value, inter_context_timing.value, cursor)?;
+    let total_delta = add_position(first_sum, final_timing.value, cursor)?;
     let position = add_position(previous_position, total_delta, cursor)?;
-    let representation = BoundedContextMediatedNoteEntry {
+    let representation = BoundedDoubleContextMediatedNoteEntry {
         representation_range: cursor..next,
         leading_timing,
-        context,
+        first_context,
+        inter_context_timing,
+        second_context,
         final_timing,
         note,
     };
     Ok((
         MixedEventItem::Event(Box::new(PositionedEvent {
             position,
-            event: MixedEventKind::ContextMediatedNote(representation),
+            event: MixedEventKind::DoubleContextMediatedNote(representation),
         })),
         next,
         position,

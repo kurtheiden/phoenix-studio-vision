@@ -56,6 +56,8 @@ plausibility.
 - the established form with exactly one length-framed `ff 60` context record;
 - the established Patch-core-to-one-Controller-to-direct-Note form;
 - the established `ff 60` context-mediated Note entry outside Patch;
+- the authenticated fixed two-context Note entry with payload lengths `6`
+  then `7`;
 - strict exact-end termination.
 
 ## Unsupported
@@ -63,8 +65,9 @@ plausibility.
 - event-region discovery or terminal-tail discovery;
 - the older 120-byte descriptor profile;
 - SysEx, Poly Pressure, unknown statuses, and unknown `ff` tags;
-- repeated `ff 60` records, Patch-to-multiple-Controller forms, context after a
-  Patch-following Controller, other Patch contexts, or other Patch layouts;
+- arbitrary or other repeated `ff 60` forms, Patch-to-multiple-Controller
+  forms, context after a Patch-following Controller, other Patch contexts, or
+  other Patch layouts;
 - general Studio Vision channel semantics;
 - malformed or out-of-domain structures;
 - heuristic recovery, decoder probing, scan-ahead, or backtracking;
@@ -214,9 +217,14 @@ loop:
             reject every other form without scanning
             state = Note; previous_position = first-Note position
         ff 60:
-            parse exactly one context-mediated Note entry
-            position = checked(previous_position + leading timing + final timing)
-            append the Note entry with context provenance; state = Note
+            parse the first length-bounded context and following timing
+            direct 90:
+                preserve the established single-context Note entry
+            exact ff 60 when the first payload length is 6:
+                require a second payload length of 7
+                require one final timing VLQ and direct explicit 90 Note
+                append one fixed-shape double-context Note transactionally
+            reject every other form at the current cursor without scanning
             previous_position = position
         other ff tag:
             fail UnsupportedFfTag at branch
@@ -257,6 +265,9 @@ The representation distinguishes stored syntax from derived position:
   position, then Note delta and checked position;
 - `ContextMediatedNote`: leading delta VLQ, one bounded `ff 60` context, final
   timing VLQ, their checked sum, and accumulated Note position.
+- `DoubleContextMediatedNote`: leading delta VLQ, a length-`6` context,
+  inter-context delta VLQ, a length-`7` context, final delta VLQ, their checked
+  sum, and accumulated Note position.
 
 Ordinary Note, Controller, Pressure, and Bend positions add their timing value
 to the preceding logical event start. Patch position remains absolute. In the
@@ -294,6 +305,8 @@ pub struct TimedMixedEvent<'a> {
 
 pub enum MixedEventKind<'a> {
     Note(BoundedNoteEvent<'a>),
+    ContextMediatedNote(BoundedContextMediatedNoteEntry<'a>),
+    DoubleContextMediatedNote(BoundedDoubleContextMediatedNoteEntry<'a>),
     Controller(BoundedControllerRecord<'a>),
     ChannelPressure(ChannelPressureEntry<'a>),
     PitchBend(PitchBendEntry<'a>),
@@ -468,11 +481,16 @@ final timing VLQ
 90 | pitch | attack | release | duration VLQ
 ```
 
-Model `ff 60` as an observed-syntax `BoundedContextMediatedNoteEntry`, not a
-performance family and not Patch-only semantics. The same strict helper for
-one length-framed context record can be reused by Patch and non-Patch paths,
-but the surrounding timing calculation remains explicit. Exactly one context
-record is supported. Its semantic purpose is unknown.
+Model `ff 60` as observed syntax, not a performance family and not Patch-only
+semantics. The established single-context form remains
+`BoundedContextMediatedNoteEntry`. Bells Track 6 additionally establishes one
+fixed `BoundedDoubleContextMediatedNoteEntry`: exactly a length-`6` context,
+inter-context timing, a length-`7` context, final timing, and a direct explicit
+Note. The two contexts remain opaque and emit no independent musical events.
+The representation is fixed-shape rather than a general repeated-context
+collection. Any third context, different length sequence, alternate following
+family, malformed current record, or bound crossing is rejected without
+scanning or resynchronization.
 
 # Active-state exits
 
@@ -593,6 +611,8 @@ Focused tests must cover:
 - Patch-to-one-Controller-to-direct-Note, including disjoint ownership and
   checked two-step timing;
 - exactly one `ff 60`-mediated Note entry;
+- exactly two `ff 60` contexts with payload lengths `6` then `7`, including
+  exact component ownership and checked three-delta timing;
 - unsupported `ff` tag and unsupported status;
 - data byte with state `None`;
 - truncated and overlong timing/duration VLQs;
@@ -603,6 +623,9 @@ Focused tests must cover:
 - malformed/truncated Patch-following Controller or Note, `ff 60` after that
   Controller, and a second Controller;
 - exact returned item/consumed ranges and monotonic cursors for every success.
+- wrong context lengths/tags, truncation at every double-context component,
+  a third context, alternate following families, compact/alternate Note forms,
+  later-signature decoys, and accumulated-position overflow.
 
 # Existing decoder reuse
 

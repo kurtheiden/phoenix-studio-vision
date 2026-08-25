@@ -346,6 +346,13 @@ pub(crate) fn build_conversion_ready_sequence(
                                 &note.note,
                             )
                         }
+                        MixedEventKind::DoubleContextMediatedNote(note) => {
+                            DecodedExportEvent::from_note_body(
+                                positioned.position,
+                                source_ordinal,
+                                &note.note,
+                            )
+                        }
                         MixedEventKind::Controller(controller) => {
                             DecodedExportEvent::from_controller(
                                 positioned.position,

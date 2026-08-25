@@ -3,10 +3,11 @@
 Phoenix now implements the first exact-bounded Studio Vision mixed-event
 walker for event regions supplied under the authenticated 166-byte descriptor
 profile. It supports only Note, Patch, ordinary Controller, Channel Pressure,
-Pitch Bend, the established direct/one-`ff 60` Patch transition, and the
-established non-Patch `ff 60` Note-entry form. It also supports the authenticated
-Bells form in which a length-bounded Patch core is followed by exactly one
-ordinary Controller and one direct explicit Note.
+Pitch Bend, the established direct/one-`ff 60` Patch transition, the established
+non-Patch single-`ff 60` Note-entry form, and the authenticated fixed
+double-context form whose opaque payload lengths are exactly `6` then `7`. It
+also supports the authenticated Bells form in which a length-bounded Patch core
+is followed by exactly one ordinary Controller and one direct explicit Note.
 
 It does not discover track bounds, parse the seven-byte track tail, support the
 older 120-byte profile, scan for event signatures, recover malformed input, or
@@ -30,7 +31,7 @@ VLQ and classifies exactly its next byte:
 - `90`, `d0`, and `e0` explicitly enter or replace compact state;
 - `ff 41 05` decodes one Controller and clears compact state;
 - `ff 7c` invokes the strict Patch-to-Note transition;
-- `ff 60` invokes the strict context-mediated Note entry;
+- `ff 60` invokes the strict single- or fixed double-context Note entry;
 - every other status/tag is an error at the current cursor.
 
 The loop requires monotonic progress and stops before attempting another VLQ
@@ -60,8 +61,11 @@ their entry status was explicit.
 
 Patch-to-Note is returned as one coupled `BoundedPatchToNoteTransition` with
 two logical events. Patch position remains absolute; first-Note position adds
-post-PC timing and, in the extended form, final timing. A context-mediated
-Note entry preserves and adds its leading and final timing components.
+post-PC timing and, in the extended form, final timing. A single-context Note
+entry preserves and adds its leading and final timing components. The fixed
+double-context form preserves its leading, inter-context, and final timings
+and adds all three with checked arithmetic. Both forms produce one logical
+Note; their opaque contexts produce no musical events.
 
 For the Bells Patch-to-Controller-to-Note form, the walker transactionally
 returns three ordered logical items with disjoint ranges: standalone Patch core,
@@ -82,8 +86,10 @@ high-bit data, and cursor non-progress. The API returns the complete walk or
 
 No branch searches for a later status/tag, probes another decoder, backtracks,
 or resynchronizes. Tests place an unsupported `ff` branch at the current cursor
-and a valid-looking Note later; the original tag offset is returned. Repeated
-`ff 60` syntax is rejected at the second record rather than recovered.
+and a valid-looking Note later; the original tag offset is returned. The sole
+supported repeated form is exactly length `6`, timing, length `7`, timing, and
+a direct explicit Note. All other repeated `ff 60` syntax is rejected at the
+current record rather than recovered.
 The new branch likewise rejects `ff 60` after Controller, multiple Controllers,
 malformed current records, and valid-looking later signatures without scanning
 or resynchronization.
@@ -97,7 +103,11 @@ branches, data without state, truncated timing, malformed duration/payload,
 position overflow, provenance, and no scanning.
 Focused cases additionally cover malformed/truncated Patch-following
 Controllers and Notes, unsupported intervening contexts/controllers, exact
-component truncations, and later-signature negative controls.
+component truncations, and later-signature negative controls. Double-context
+coverage requires exact `6`-then-`7` lengths, exact component ownership,
+checked three-delta timing, a direct explicit Note, and rejection of wrong
+lengths/tags, truncation, a third context, alternate families, compact or
+alternate Note entry, overflow, and later-signature decoys.
 
 # Authentic Bells Tracks 3 and 4
 
@@ -107,6 +117,21 @@ positions are respectively `480/960/71040` and `180/208/71278`, with exact
 adjacent source ownership and continued Note-state suffix walking. Existing
 authenticated MIDI correlation remains complete for both tracks. Bells exact
 mixed-event consumption therefore improves from 11/14 to 13/14 tracks.
+
+# Authentic Bells Track 6
+
+Experiment 007 Track 6 `0x011eac..0x0123dd` now consumes exactly as 184 logical
+events: 182 Notes, one Patch, and one ordinary CC7. Its residual population
+contains six established single-context Notes and three fixed double-context
+Notes beginning at `0x0121ba`, `0x0122c7`, and `0x012310`. Each double form has
+exactly a length-`6` context followed by a length-`7` context and a direct
+explicit Note. Bells structural mixed-event consumption is therefore 14/14.
+
+This is structural success only. Track 6's raw walker Note positions remain
+uniformly 130 ticks earlier than the authenticated MIDI because the separate
+Controller-to-Patch timing-basis finding is not implemented here. Patch
+translation, inclusion, compatibility/readiness, and routing policy also
+remain outside this parser change; Bells is not profile-ready or export-ready.
 
 # Authentic Track 9
 
@@ -130,14 +155,15 @@ and provenance are unchanged. No grammar deviation was required.
 
 # Remaining unsupported grammar
 
-SysEx, Poly Pressure, unknown statuses/tags, repeated or other `ff 60` forms,
+SysEx, Poly Pressure, unknown statuses/tags, arbitrary or other repeated
+`ff 60` forms,
 other Patch/context layouts, Patch-to-multiple-Controller forms, context after a
 Patch-following Controller, the 120-byte profile, recovery, and MIDI export
-remain unsupported. Bells Track 6 repeated `ff 60` contexts, CC0-only Patch
-translation, inclusion policy, compatibility/readiness, and general routing
-remain separate unresolved work.
+remain unsupported. The Track 6 Controller-to-Patch timing basis, CC0-only
+Patch translation, inclusion policy, compatibility/readiness, and general
+routing remain separate unresolved work.
 
 # Single recommended next step
 
-Design MIDI writer/export integration over the validated project, sequence,
-Meter/Tempo, and mixed-event representations without broadening this parser.
+Resolve the separately reviewed Controller-to-Patch timing basis without
+broadening the fixed double-context grammar or Patch translation policy.

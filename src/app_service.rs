@@ -1759,7 +1759,9 @@ fn inventory_families(
                 }
             }
             MixedEventItem::Event(positioned) => match &positioned.event {
-                MixedEventKind::Note(_) | MixedEventKind::ContextMediatedNote(_) => {
+                MixedEventKind::Note(_)
+                | MixedEventKind::ContextMediatedNote(_)
+                | MixedEventKind::DoubleContextMediatedNote(_) => {
                     present[1] = true;
                 }
                 MixedEventKind::Controller(_) => present[2] = true,
