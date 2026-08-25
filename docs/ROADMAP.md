@@ -50,6 +50,13 @@ may change priorities.
 - [ ] Record filenames, sources, sizes, and SHA-256 digests for each artifact.
 - [ ] Record Finder type and creator metadata, resource information, printable
       strings, and evidence-based notes for each artifact.
+- [x] Document
+      [recovered/live OMS Studio Setup forensics](OMS_STUDIO_SETUP_FORENSICS.md)
+      and their relationship to Studio Vision's displayed Instrument
+      Device/Channel assignment.
+  - Experiment 032 aborted before save because its required independent
+    channel edit was unavailable; Vision's serialized Instrument channel
+    location remains unknown.
 
 ## Later possibilities
 
@@ -396,5 +403,8 @@ Subject to evidence-based format research, Phoenix aims to:
 - Reconstruct project structure and routing.
 - Offer user-approved modern instrument mappings.
 - Export to modern DAW workflows.
+- Defer evidence-gated OMS Studio Setup migration/resurrection and
+  user-approved mapping into modern macOS Audio MIDI Setup; this is an
+  important long-term capability, not an immediate implementation priority.
 
 Automatic instrument substitution must never occur without user approval.

@@ -4,6 +4,11 @@ This document records terminology and statements from the PDF publications in
 `Phoenix Research/Opcode_OMS_extracted/Opcode_OMS/OMS Applications/OMS Tech Pubs`.
 It is a documentation survey, not a description of any binary format.
 
+Recovered and live Studio Setup forensics, Studio Vision Device/Channel
+observations, historical JD-800 evidence, and the bounded receive-channel
+correlation are maintained separately in
+[`OMS_STUDIO_SETUP_FORENSICS.md`](OMS_STUDIO_SETUP_FORENSICS.md).
+
 The directory also contains `XTC Read Me`, which is not a PDF and was not read
 for this survey.
 
