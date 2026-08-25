@@ -1624,7 +1624,7 @@ int main(void) { phoenix_buffer_t b = {0}; return (int)(b.len + phoenix_abi_vers
 
     #[test]
     fn ui0f3_panic_strategy_configuration_requires_unwind() {
-        assert!(cfg!(panic = "unwind"));
+        const _: () = assert!(cfg!(panic = "unwind"));
         let manifest =
             fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
                 .unwrap();
