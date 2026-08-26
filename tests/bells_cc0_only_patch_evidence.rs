@@ -165,6 +165,57 @@ fn authentic_bells_four_tracks_establish_explicit_cc0_only_policy() {
     }
 }
 
+#[test]
+fn authentic_bells_included_channel_manifest_is_exact() {
+    let path = Path::new(MIDI);
+    if !path.is_file() {
+        return;
+    }
+    let bytes = fs::read(path).expect("authenticated Bells MIDI");
+    assert_eq!(sha256_hex(&bytes), MIDI_SHA256);
+    let tracks = parse_smf(&bytes).expect("authenticated Bells SMF");
+    let expected = [
+        (b"Track 1".as_slice(), 1),
+        (b"Track 3".as_slice(), 16),
+        (b"Track 4".as_slice(), 2),
+        (b"Track 5".as_slice(), 3),
+        (b"Track 6".as_slice(), 1),
+        (b"Track 8".as_slice(), 16),
+        (b"Track 9".as_slice(), 12),
+        (b"Track 11".as_slice(), 8),
+        (b"Track 12".as_slice(), 10),
+        (b"Track 14".as_slice(), 15),
+    ];
+    let actual = expected
+        .iter()
+        .map(|(name, channel)| {
+            let track = tracks
+                .iter()
+                .find(|track| track.name.as_deref() == Some(*name))
+                .expect("authenticated included track");
+            let observed = track
+                .channel_events
+                .iter()
+                .find(|event| event.status >> 4 <= 0xe)
+                .expect("authenticated channel event");
+            assert_eq!(observed.status & 0x0f, *channel - 1);
+            *channel
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        expected
+            .iter()
+            .map(|(_, channel)| *channel)
+            .collect::<Vec<_>>()
+    );
+    for omitted in [b"Track 2".as_slice(), b"Track 7", b"Track 10", b"Track 13"] {
+        assert!(tracks
+            .iter()
+            .all(|track| track.name.as_deref() != Some(omitted)));
+    }
+}
+
 fn expected_patch_events(case: &Case) -> Vec<ChannelEvent> {
     let channel_nibble = case.channel - 1;
     vec![

@@ -332,6 +332,10 @@ committed or specified.
       authenticated-nonempty and structural-empty omission evidence, complete
       resolved manifests, and fresh handoff revalidation. This infrastructure
       does not register or complete the Bells profile.
+- [x] Register the provenance-locked authenticated Bells for her profile with
+      its complete 14-row manifest, ten fixed output channels, explicit Patch
+      policies, four authorized omissions, and normalized authentic export
+      proof. This does not generalize Studio Vision inclusion or routing.
 - [x] Design UI0F's generic JSON dispatcher, explicit service-handle lifetime,
       separate ABI/application versioning, transport errors, and exact-length
       Rust-owned response-buffer contract; specify pointer preconditions,

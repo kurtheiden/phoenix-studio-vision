@@ -192,12 +192,13 @@ family/count facts, and the bounded generic Patch subset. The registry still
 requires `evidence_complete` and therefore remains unwired to AppService until
 authenticated profile migration supplies routing and policy evidence.
 
-## UI0C3 authenticated profile status
+## Authenticated profile status
 
-The isolated `compatibility_profiles` module now supplies the validated Ode
-research profile through the generic fallible registry constructor. It is not
-wired into AppService readiness or export; see
-`AUTHENTICATED_COMPATIBILITY_PROFILE_IMPLEMENTATION.md`.
+The isolated `compatibility_profiles` module supplies validated Ode and Bells
+research profiles through the generic fallible registry constructor. Bells is
+the exact provenance-locked 14-row profile described in
+`AUTHENTICATED_COMPATIBILITY_PROFILE_IMPLEMENTATION.md`; it is not general
+Studio Vision grammar or inferred routing.
 
 The generic Patch matcher permits an authenticated banked translation to carry
 bank values in resolved policy while observed generic bank fields remain

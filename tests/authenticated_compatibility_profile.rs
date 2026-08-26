@@ -1,6 +1,11 @@
-use phoenix::app_contract::{DiagnosticsLevel, InspectProjectRequest, CONTRACT_VERSION};
+use phoenix::app_contract::{
+    CollisionPolicy, DiagnosticsLevel, ExportSequenceRequest, InspectProjectRequest,
+    CONTRACT_VERSION,
+};
 use phoenix::app_service::AppService;
-use phoenix::compatibility::{ProfileMatch, ProfileMismatchReason, ResolvedTrackOutputDisposition};
+use phoenix::compatibility::{
+    PatchTranslationPolicy, ProfileMatch, ProfileMismatchReason, ResolvedTrackOutputDisposition,
+};
 use phoenix::compatibility_profiles::built_in_compatibility_registry;
 use std::fs;
 use std::path::Path;
@@ -23,11 +28,15 @@ fn inspect(path: &Path) -> (AppService, phoenix::app_contract::InspectProjectRes
 }
 
 fn assess(path: &Path) -> ProfileMatch {
+    assess_named(path, "Ode to Clarke")
+}
+
+fn assess_named(path: &Path, sequence_name: &str) -> ProfileMatch {
     let (service, response) = inspect(path);
     let sequence = response
         .sequences
         .iter()
-        .find(|sequence| sequence.display_name == "Ode to Clarke")
+        .find(|sequence| sequence.display_name == sequence_name)
         .expect("target sequence");
     let ordinal = service
         .sequence_ordinal_for_id(&response.session_id, &sequence.sequence_id)
@@ -39,6 +48,232 @@ fn assess(path: &Path) -> ProfileMatch {
         .expect("built-in profile validates")
         .assess(&evidence, ordinal)
         .expect("assessment should not be ambiguous")
+}
+
+#[test]
+fn authentic_bells_profile_matches_complete_manifest() {
+    let path = Path::new(SOURCE);
+    if !path.is_file() {
+        return;
+    }
+    let result = assess_named(path, "Bells for her");
+    let ProfileMatch::Matched {
+        capability,
+        resolved_policy,
+    } = result
+    else {
+        panic!("authenticated Bells source must match built-in profile");
+    };
+    assert_eq!(capability.profile_id, "studio_vision_bells_for_her_v1");
+    assert_eq!(capability.profile_version, 1);
+    assert_eq!(
+        capability.display_label,
+        "Validated research profile — Bells for her"
+    );
+    assert_eq!(resolved_policy.sequence.structural_ordinal, 1);
+    assert_eq!(resolved_policy.track_manifest.len(), 14);
+    let included = [1, 3, 4, 5, 6, 8, 9, 11, 12, 14];
+    let nonempty_omitted = [2, 7];
+    let empty_omitted = [10, 13];
+    let mut included_ordinals = Vec::new();
+    let mut nonempty_ordinals = Vec::new();
+    let mut empty_ordinals = Vec::new();
+    let mut channels = Vec::new();
+    let mut patch_policies = Vec::new();
+    for entry in &resolved_policy.track_manifest {
+        let ordinal = entry.key.pair_ordinal + 1;
+        match &entry.output {
+            ResolvedTrackOutputDisposition::Included {
+                midi_channel,
+                patches,
+            } => {
+                included_ordinals.push(ordinal);
+                channels.push(*midi_channel);
+                patch_policies.push((ordinal, patches.clone()));
+            }
+            ResolvedTrackOutputDisposition::OmittedAuthenticatedNonempty { .. } => {
+                nonempty_ordinals.push(ordinal)
+            }
+            ResolvedTrackOutputDisposition::OmittedStructuralEmpty => empty_ordinals.push(ordinal),
+        }
+    }
+    assert_eq!(included_ordinals, included);
+    assert_eq!(nonempty_ordinals, nonempty_omitted);
+    assert_eq!(empty_ordinals, empty_omitted);
+    for entry in &resolved_policy.track_manifest {
+        match entry.output {
+            ResolvedTrackOutputDisposition::OmittedAuthenticatedNonempty {
+                decoded_event_count,
+                ref decoded_event_families,
+                ref patches,
+            } => {
+                let expected_count = match entry.key.pair_ordinal + 1 {
+                    2 => 83,
+                    7 => 165,
+                    ordinal => panic!("unexpected nonempty omission {ordinal}"),
+                };
+                assert_eq!(decoded_event_count, expected_count);
+                assert_eq!(
+                    decoded_event_families,
+                    &[
+                        phoenix::compatibility::EvidenceEventFamily::Patch,
+                        phoenix::compatibility::EvidenceEventFamily::Note
+                    ]
+                );
+                assert_eq!(patches.len(), 1);
+            }
+            ResolvedTrackOutputDisposition::OmittedStructuralEmpty => {}
+            ResolvedTrackOutputDisposition::Included { .. } => {}
+        }
+    }
+    assert_eq!(channels, vec![1, 16, 2, 3, 1, 16, 12, 8, 10, 15]);
+    assert_eq!(
+        patch_policies,
+        vec![
+            (1, vec![PatchTranslationPolicy::ProgramOnly { program: 16 }]),
+            (
+                3,
+                vec![PatchTranslationPolicy::BankSelectMsbAndProgram {
+                    msb: 81,
+                    program: 25
+                }]
+            ),
+            (
+                4,
+                vec![PatchTranslationPolicy::BankSelectAndProgram {
+                    msb: 81,
+                    lsb: 1,
+                    program: 34
+                }]
+            ),
+            (
+                5,
+                vec![PatchTranslationPolicy::BankSelectAndProgram {
+                    msb: 80,
+                    lsb: 0,
+                    program: 70
+                }]
+            ),
+            (
+                6,
+                vec![PatchTranslationPolicy::BankSelectMsbAndProgram {
+                    msb: 81,
+                    program: 35
+                }]
+            ),
+            (
+                8,
+                vec![PatchTranslationPolicy::BankSelectMsbAndProgram {
+                    msb: 81,
+                    program: 25
+                }]
+            ),
+            (
+                9,
+                vec![PatchTranslationPolicy::BankSelectMsbAndProgram {
+                    msb: 81,
+                    program: 122
+                }]
+            ),
+            (
+                11,
+                vec![PatchTranslationPolicy::BankSelectAndProgram {
+                    msb: 80,
+                    lsb: 0,
+                    program: 12
+                }]
+            ),
+            (12, Vec::new()),
+            (14, Vec::new()),
+        ]
+    );
+}
+
+#[test]
+fn authentic_bells_is_ready_and_exports_only_included_tracks() {
+    let path = Path::new(SOURCE);
+    if !path.is_file() {
+        return;
+    }
+    let mut service = AppService::new();
+    let response = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: path.to_string_lossy().into_owned(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("authentic Bells source should inspect");
+    let sequence = response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Bells for her")
+        .expect("Bells sequence");
+    assert_eq!(
+        sequence
+            .export_capability
+            .as_ref()
+            .map(|c| c.profile_id.as_str()),
+        Some("studio_vision_bells_for_her_v1")
+    );
+    assert!(matches!(
+        sequence.readiness,
+        phoenix::app_contract::Readiness::Ready
+    ));
+    let destination = std::env::temp_dir().join(format!(
+        "phoenix-bells-profile-{}-{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&destination).expect("temporary destination");
+    let exported = service
+        .export_sequence(ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: response.session_id,
+            sequence_id: sequence.sequence_id.clone(),
+            destination_folder: destination.to_string_lossy().into_owned(),
+            filename_stem: "Bells for her".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .expect("Bells export should be conversion-ready");
+    assert_eq!(exported.musical_track_count, 10);
+    assert_eq!(exported.total_smf_track_count, 11);
+    assert_eq!(exported.counts.notes, 3_186);
+    assert_eq!(exported.counts.programs, 8);
+    assert_eq!(exported.counts.bank_select_msb, 7);
+    assert_eq!(exported.counts.bank_select_lsb, 3);
+    assert_eq!(exported.counts.controllers, 395);
+    assert_eq!(exported.counts.pressure, 32);
+    assert_eq!(exported.counts.pitch_bend, 102);
+    assert!(destination.join("Bells for her.mid").is_file());
+    let generated = fs::read(destination.join("Bells for her.mid")).expect("generated SMF");
+    assert_eq!(&generated[..4], b"MThd");
+    assert_eq!(&generated[8..10], &[0, 1]);
+    assert_eq!(&generated[10..12], &[0, 11]);
+    assert_eq!(&generated[12..14], &[1, 224]);
+    let names = [
+        b"Track 1".as_slice(),
+        b"Track 3",
+        b"Track 4",
+        b"Track 5",
+        b"Track 6",
+        b"Track 8",
+        b"Track 9",
+        b"Track 11",
+        b"Track 12",
+        b"Track 14",
+    ];
+    let positions = names
+        .iter()
+        .map(|name| {
+            generated
+                .windows(name.len())
+                .position(|window| window == *name)
+                .expect("generated musical track name")
+        })
+        .collect::<Vec<_>>();
+    assert!(positions.windows(2).all(|pair| pair[0] < pair[1]));
+    fs::remove_dir_all(destination).ok();
 }
 
 #[test]

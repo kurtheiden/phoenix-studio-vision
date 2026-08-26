@@ -647,3 +647,12 @@ handoff freshly revalidates both and emits parser structural order filtered by
 Included. These are software-policy facts only: no Studio Vision inclusion,
 mute, enable, playback, or routing field has been decoded, and no Bells profile
 is registered by this mechanism milestone.
+
+The authenticated `Bells for her` profile is now registered as
+`studio_vision_bells_for_her_v1`. Its exact 14-row manifest authorizes output
+for Vision rows 1, 3, 4, 5, 6, 8, 9, 11, 12, and 14; rows 2 and 7 are exact
+nonempty authenticated omissions; rows 10 and 13 are exact structural-empty
+omissions. This is compatibility-profile output policy rather than a decoded
+Vision inclusion or routing semantic. The resulting SMF has ten musical tracks
+in filtered structural order and uses independent event-by-event normalized
+musical reconciliation rather than byte equality.

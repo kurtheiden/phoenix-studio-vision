@@ -1408,3 +1408,18 @@ Resolved policy retains the complete manifest. Export handoff freshly walks
 every row, emits only Included rows in parser structural order, and invents no
 channel, Patch translation, gap track, or empty placeholder for omissions.
 The Bells profile remains a separate milestone.
+
+## 2026-08-26: register the provenance-locked Bells output profile
+
+**Status:** Implemented for the authenticated Bells fixture
+
+`studio_vision_bells_for_her_v1` matches the exact project hash/size, sequence
+identity, and all 14 structural rows. It authorizes ten fixed-channel Included
+rows, two authenticated nonempty omissions (Tracks 2 and 7), and two
+structural-empty omissions (Tracks 10 and 13). The omission dispositions are
+profile output policy only; no Vision mute, enable, playback, routing, or
+inclusion field is claimed. Handoff emits only the ten Included rows in parser
+structural order and freshly revalidates omissions. Authentic proof parses the
+generated and historical SMFs independently and compares Notes and supported
+channel-event families event-by-event by normalized musical semantics, with
+the established zero-velocity Note-Off exception.

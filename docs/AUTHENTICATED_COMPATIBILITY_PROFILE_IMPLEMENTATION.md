@@ -117,13 +117,30 @@ The existing D2/D3/D4/D5 proof tests remain authoritative and unchanged. UI0C3
 migrates their authenticated manifest/policy into a declarative production
 profile without replacing the independent proof path.
 
+# UI0C5 Bells profile
+
+The built-in registry now includes the provenance-locked
+`studio_vision_bells_for_her_v1` profile. It matches the exact authenticated
+project/sequence and complete 14-row structural manifest: ten Included output
+rows, Tracks 2 and 7 as authenticated nonempty omissions, and Tracks 10 and
+13 as structural-empty omissions. Included channels and Patch translations
+are fixed authenticated override policy; omitted rows receive neither
+channels nor Patch translations. This is compatibility-profile output policy,
+not a decoded Vision mute, enable, playback, routing, or inclusion field.
+Handoff emits ten musical tracks in parser structural order and freshly
+revalidates every omitted row. The authentic generated-export proof parses
+both SMFs and compares Notes and every supported channel-event family
+event-by-event. The comparison target is normalized musical reconciliation,
+not byte equality; historical zero-velocity Note-Off substitutions remain an
+explicit reference exception.
+
 # Explicit exclusions
 
-No AppService readiness wiring, `Ready` status, UI export capability, MIDI
-writing, parser/decoder grammar, channel derivation, runtime profile loading,
-FFI, serialization, or dependency was added.
+No general Studio Vision inclusion/routing semantics, runtime profile loading,
+FFI, or public contract change was added. Bells readiness and export are
+available only after its exact provenance-locked profile match.
 
-# UI0C3 gate
+# UI0C3/UI0C5 gate
 
 The gate passes when the isolated profile validates, the authentic fixture
 matches exactly, renamed identical bytes match, mutated bytes and same-name
@@ -132,6 +149,5 @@ behavior changes.
 
 # Single recommended next step
 
-Design UI0C4's Core-only profile assessment handoff into AppService without
-promoting readiness or enabling export until the revalidation contract is
-explicit.
+Keep Bells-specific normalized proof and future profile declarations separate
+from any general Studio Vision routing or inclusion recovery.

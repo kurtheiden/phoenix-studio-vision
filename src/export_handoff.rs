@@ -1132,6 +1132,9 @@ pub(crate) mod tests {
             .sequences
             .iter()
             .filter_map(|sequence| {
+                if sequence.display_name != "Ode to Clarke" {
+                    return None;
+                }
                 let fresh = service
                     .revalidated_policy_for_sequence(&response.session_id, &sequence.sequence_id)
                     .ok()?;

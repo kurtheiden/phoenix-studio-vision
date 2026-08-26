@@ -269,7 +269,10 @@ fn optional_authentic_fixture_projects_readiness_per_sequence() {
             .assessment_for_sequence(&response.session_id, &sequence.sequence_id)
             .expect("every discovered sequence must have an assessment");
         assert_eq!(status.capability.is_some(), status.has_resolved_policy);
-        if sequence.display_name == "Ode to Clarke" {
+        if matches!(
+            sequence.display_name.as_str(),
+            "Ode to Clarke" | "Bells for her"
+        ) {
             assert_eq!(status.match_kind, SequenceAssessmentKind::Matched);
             assert!(status.has_resolved_policy);
             assert_eq!(sequence.readiness, Readiness::Ready);
@@ -286,7 +289,7 @@ fn optional_authentic_fixture_projects_readiness_per_sequence() {
             assert!(sequence.export_capability.is_none());
         }
     }
-    assert_eq!(matched, 1);
+    assert_eq!(matched, 2);
     assert_eq!(
         response.project.overall_readiness,
         Readiness::PartiallySupported

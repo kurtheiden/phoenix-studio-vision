@@ -371,3 +371,16 @@ pressure or bend support in Studio Vision generally.
 Design the first exact-bounded mixed-event walker for the established Note,
 Patch, Controller, Channel Pressure, and Pitch Bend grammar. Keep unknown
 branches and unsupported profiles as deterministic errors; do not scan.
+
+# Authenticated Bells profile boundary
+
+The registered Bells profile uses the existing bounded families and exact
+logical counts for all 14 structural rows. Ten rows are Included output policy;
+Tracks 2 and 7 are authenticated nonempty omissions; Tracks 10 and 13 are
+structural-empty omissions. The disposition is not a decoded Studio Vision
+mute, enable, playback, routing, or inclusion field. The authenticated proof
+checks the dense Track 9 population (120 Controllers and 32 Channel Pressure)
+and Track 14 population (272 Controllers and 102 Pitch Bend) through the
+existing walker/evidence model. Generated output is independently parsed and
+reconciled to the authenticated MIDI event-by-event by normalized musical
+semantics.
