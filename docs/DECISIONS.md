@@ -1423,3 +1423,21 @@ structural order and freshly revalidates omissions. Authentic proof parses the
 generated and historical SMFs independently and compares Notes and supported
 channel-event families event-by-event by normalized musical semantics, with
 the established zero-velocity Note-Off exception.
+
+## 2026-08-26: preserve the open-source 0.1 release boundary
+
+**Status:** Accepted OS0 release plan
+
+Phoenix begins preparation for a first public open-source release provisionally
+labelled `0.1.0-alpha`. Five gates govern readiness: generalization beyond
+`newest STUFF`, safe unsupported behavior, nontechnical usability, distribution,
+and blind validation. The current critical path is OS1 cross-project and blind
+validation; OS2 usability/hardening and OS3 packaging may proceed in parallel.
+
+All 18 `newest STUFF` sequences are not required for 0.1, and no broad routing,
+inclusion, 120-byte, or additional event-family reverse engineering is started
+merely to expand the sequence count. Recovery correctness and provenance policy
+remain responsibilities of the open Core. Future commercial workflow or
+intelligence may layer above that Core but must not be required for basic
+recovery. This is a product/architecture boundary, not a licensing or pricing
+decision. See `docs/OPEN_SOURCE_RELEASE_PLAN.md` for the normative scope.

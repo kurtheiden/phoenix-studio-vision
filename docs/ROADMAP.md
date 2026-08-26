@@ -396,6 +396,30 @@ committed or specified.
 This milestone remains compatibility-profile gated and does not establish
 general Studio Vision parsing.
 
+## Open-source 0.1 release preparation
+
+- [x] **OS0 — Open-Source 0.1 Readiness Assessment.** Establish the five
+      release gates, provisional `0.1.0-alpha` label, authenticated baseline,
+      and conservative open-source/commercial boundary.
+- [ ] **OS1 — Cross-project and blind validation.** **NEXT.** Validate common
+      parser behavior on permission-cleared projects not used for development;
+      safe Unsupported results count as useful evidence. Current critical path;
+      relative size M.
+- [ ] **OS2 — Public usability and release hardening.** **PLANNED.** Address
+      unsupported/malformed and stress guidance, privacy/diagnostic wording,
+      accessibility, README workflow, About/version, and the MIDI-only
+      external-audio limitation. Relative size M.
+- [ ] **OS3 — 0.1-alpha distribution.** **PLANNED.** Establish release
+      identity/architecture, release build, signing/notarization posture,
+      downloadable packaging, checksums, release notes, and clean-Mac install
+      guidance. Relative size M/L.
+
+The 0.1 target does not require support for all 18 `newest STUFF` sequences.
+Additional reverse engineering after Bells is deliberately prioritized by OS1
+findings rather than continued sequence-by-sequence expansion. No release gate
+is marked passed beyond the OS0 assessment results recorded in
+`docs/OPEN_SOURCE_RELEASE_PLAN.md`.
+
 UI1 is complete. The architecture's earlier UI2 inspection, UI3 export, and
 most UI4 results plan was delivered within UI1B–UI1E; those labels are
 historical rather than future milestones. UI5 hardening is the next named
