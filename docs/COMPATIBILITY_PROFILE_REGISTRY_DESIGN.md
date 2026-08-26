@@ -107,24 +107,33 @@ Track expectations are internal rows keyed by structural identity, not names:
 
 ```text
 TrackExpectation {
-    descriptor_ordinal
+    key: descriptor/pair ordinals
     descriptor_range
-    pair_ordinal
     primary_range
     exact_event_range
     expected_label_bytes: optional bytes
-    channel_policy_id
-    patch_policy_id: optional id
+    output: Included { mandatory channel, Patch expectations }
+          | Omitted { AuthenticatedNonempty evidence | StructuralEmpty }
 }
 ```
 
-The row set must have exact cardinality, unique ordinals, complete association,
-and exact ranges. Missing, extra, reordered, or shifted rows reject the
-candidate. Labels may corroborate identity but can never be the sole key.
+The row set must have exact cardinality, unique keys, complete association, and
+exact ranges. Missing, extra, duplicate, or shifted rows reject the candidate;
+profile declaration order is not output authority. Labels may corroborate
+identity but can never be the sole key.
+
+The disposition is authenticated compatibility-profile **output policy**, not
+a decoded Studio Vision mute, enable, playback, routing, or inclusion field.
+An authenticated nonempty omission matches exact logical count, canonical
+event families, and exact Patch observations without carrying a translation.
+A structural-empty omission matches only a zero-length event range, zero
+logical events, no families, and no Patches. Omitted rows have neither an
+invented channel nor an invented Patch translation. Included and omitted rows
+together remain the complete structural manifest.
 
 # Channel policy
 
-Channel assignment is declarative and complete. Each authenticated row names a
+Channel assignment is declarative and complete for every Included row. Each such row names a
 structural track key and a validated human MIDI channel; there is no default,
 name-only lookup, or inferred channel. A missing row, duplicate key, invalid
 channel, or observed mismatch rejects the entire profile. The resulting

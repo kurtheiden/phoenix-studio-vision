@@ -9,7 +9,10 @@
 #![allow(dead_code)]
 
 use crate::app_service::FreshValidatedSequence;
-use crate::compatibility::PatchTranslationPolicy;
+use crate::compatibility::{
+    EvidenceEventFamily, OmittedPatchExpectation, PatchTranslationPolicy,
+    ResolvedTrackOutputDisposition,
+};
 use crate::meter::{decode_bounded_initial_meter, InitialMeterBounds};
 use crate::midi_export::{
     ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent, DecodedExportEventKind,
@@ -135,7 +138,7 @@ pub(crate) fn build_conversion_ready_sequence(
         }
     };
     if bindings.len() != sequence.track_pairs.len()
-        || fresh.resolved_policy.tracks.len() != bindings.len()
+        || fresh.resolved_policy.track_manifest.len() != bindings.len()
         || evidence_sequence.tracks.len() != bindings.len()
     {
         return Err(ConversionReadyError::TrackCoverage(
@@ -164,9 +167,9 @@ pub(crate) fn build_conversion_ready_sequence(
         meter.fourth_payload.value,
     );
 
-    let mut tracks = Vec::with_capacity(fresh.resolved_policy.tracks.len());
+    let mut tracks = Vec::with_capacity(fresh.resolved_policy.track_manifest.len());
     let mut seen_keys = std::collections::BTreeSet::new();
-    for policy_track in &fresh.resolved_policy.tracks {
+    for policy_track in &fresh.resolved_policy.track_manifest {
         if !seen_keys.insert(policy_track.key.clone()) {
             return Err(ConversionReadyError::PolicyMismatch(
                 "duplicate resolved track policy key".into(),
@@ -174,11 +177,16 @@ pub(crate) fn build_conversion_ready_sequence(
         }
     }
     for (track_index, binding) in bindings.iter().enumerate() {
-        let policy_track = fresh.resolved_policy.tracks.iter().find(|policy_track| {
-            u32::try_from(binding.descriptor_ordinal).ok()
-                == Some(policy_track.key.descriptor_ordinal)
-                && u32::try_from(binding.pair_ordinal).ok() == Some(policy_track.key.pair_ordinal)
-        });
+        let policy_track = fresh
+            .resolved_policy
+            .track_manifest
+            .iter()
+            .find(|policy_track| {
+                u32::try_from(binding.descriptor_ordinal).ok()
+                    == Some(policy_track.key.descriptor_ordinal)
+                    && u32::try_from(binding.pair_ordinal).ok()
+                        == Some(policy_track.key.pair_ordinal)
+            });
         let Some(policy_track) = policy_track else {
             return Err(ConversionReadyError::TrackCoverage(format!(
                 "missing policy for descriptor {} / pair {}",
@@ -216,13 +224,10 @@ pub(crate) fn build_conversion_ready_sequence(
                 "fresh structural evidence differs for track {track_index}"
             )));
         }
-        let channel = MidiChannel::new(policy_track.midi_channel).map_err(|error| {
-            ConversionReadyError::PolicyMismatch(format!("invalid channel: {error:?}"))
-        })?;
         let walk = walk_bounded_mixed_events(
             &fresh.source_bytes,
             MixedEventBounds {
-                event_range: bounds.event_range,
+                event_range: bounds.event_range.clone(),
             },
             MixedEventTimingBasis::default(),
         )
@@ -235,6 +240,39 @@ pub(crate) fn build_conversion_ready_sequence(
                 "walk did not consume exact range for track {track_index}"
             )));
         }
+        let (midi_channel, policy_patches) = match &policy_track.output {
+            ResolvedTrackOutputDisposition::Included {
+                midi_channel,
+                patches,
+            } => (*midi_channel, patches),
+            ResolvedTrackOutputDisposition::OmittedAuthenticatedNonempty {
+                decoded_event_count,
+                decoded_event_families,
+                patches,
+            } => {
+                validate_nonempty_omission(
+                    track_index,
+                    &walk,
+                    evidence_track,
+                    *decoded_event_count,
+                    decoded_event_families,
+                    patches,
+                )?;
+                continue;
+            }
+            ResolvedTrackOutputDisposition::OmittedStructuralEmpty => {
+                validate_structural_empty_omission(
+                    track_index,
+                    &bounds.event_range,
+                    &walk,
+                    evidence_track,
+                )?;
+                continue;
+            }
+        };
+        let channel = MidiChannel::new(midi_channel).map_err(|error| {
+            ConversionReadyError::PolicyMismatch(format!("invalid channel: {error:?}"))
+        })?;
         let mut events = Vec::with_capacity(walk.logical_event_count());
         let mut source_ordinal = 0_u64;
         let mut used_patch_indices = std::collections::BTreeSet::new();
@@ -269,7 +307,7 @@ pub(crate) fn build_conversion_ready_sequence(
                             ))
                         })?;
                     used_patch_indices.insert(patch_index);
-                    let translation = policy_track.patches.get(patch_index).ok_or_else(|| {
+                    let translation = policy_patches.get(patch_index).ok_or_else(|| {
                         ConversionReadyError::PolicyMismatch(format!(
                             "Patch policy missing for track {track_index}"
                         ))
@@ -314,7 +352,7 @@ pub(crate) fn build_conversion_ready_sequence(
                             ))
                         })?;
                     used_patch_indices.insert(patch_index);
-                    let translation = policy_track.patches.get(patch_index).ok_or_else(|| {
+                    let translation = policy_patches.get(patch_index).ok_or_else(|| {
                         ConversionReadyError::PolicyMismatch(format!(
                             "Patch policy missing for track {track_index}"
                         ))
@@ -386,7 +424,7 @@ pub(crate) fn build_conversion_ready_sequence(
                 "decoded event count overflows fixed-width evidence for track {track_index}"
             ))
         })?;
-        if used_patch_indices.len() != policy_track.patches.len()
+        if used_patch_indices.len() != policy_patches.len()
             || event_count != evidence_track.decoded_event_count
         {
             return Err(ConversionReadyError::PolicyMismatch(format!(
@@ -415,6 +453,137 @@ pub(crate) fn build_conversion_ready_sequence(
         meter_policy: MeterPolicy::HistoricalWhenKnownOtherwiseStandard,
         tracks,
     })
+}
+
+fn validate_nonempty_omission(
+    track_index: usize,
+    walk: &crate::mixed_event::MixedEventWalk<'_>,
+    evidence: &crate::compatibility::TrackEvidence,
+    expected_count: u64,
+    expected_families: &[EvidenceEventFamily],
+    expected_patches: &[OmittedPatchExpectation],
+) -> Result<(), ConversionReadyError> {
+    let (count, families, patches) = omission_inventory(walk)?;
+    if count == 0
+        || count != expected_count
+        || families != expected_families
+        || patches != expected_patches
+        || evidence.decoded_event_count != count
+        || evidence.decoded_event_families != families
+        || !patch_evidence_matches_omission(&evidence.patch_evidence, &patches)
+    {
+        return Err(ConversionReadyError::PolicyMismatch(format!(
+            "authenticated nonempty omission evidence differs for track {track_index}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_structural_empty_omission(
+    track_index: usize,
+    event_range: &Range<usize>,
+    walk: &crate::mixed_event::MixedEventWalk<'_>,
+    evidence: &crate::compatibility::TrackEvidence,
+) -> Result<(), ConversionReadyError> {
+    let (count, families, patches) = omission_inventory(walk)?;
+    if event_range.start != event_range.end
+        || count != 0
+        || !families.is_empty()
+        || !patches.is_empty()
+        || evidence.decoded_event_count != 0
+        || !evidence.decoded_event_families.is_empty()
+        || !evidence.patch_evidence.is_empty()
+    {
+        return Err(ConversionReadyError::PolicyMismatch(format!(
+            "structural-empty omission evidence differs for track {track_index}"
+        )));
+    }
+    Ok(())
+}
+
+fn omission_inventory(
+    walk: &crate::mixed_event::MixedEventWalk<'_>,
+) -> Result<(u64, Vec<EvidenceEventFamily>, Vec<OmittedPatchExpectation>), ConversionReadyError> {
+    let mut present = [false; 5];
+    let mut patches = Vec::new();
+    for (item_index, item) in walk.items.iter().enumerate() {
+        match item {
+            MixedEventItem::Patch(patch) => {
+                present[0] = true;
+                patches.push(omitted_patch(
+                    item_index,
+                    &patch.patch.representation_range,
+                    patch.patch.program_change.value,
+                )?);
+            }
+            MixedEventItem::PatchToNote(transition) => {
+                present[0] = true;
+                present[1] = true;
+                patches.push(omitted_patch(
+                    item_index,
+                    &transition.patch.representation_range,
+                    transition.patch.program_change.value,
+                )?);
+            }
+            MixedEventItem::Event(positioned) => match &positioned.event {
+                MixedEventKind::Note(_)
+                | MixedEventKind::ContextMediatedNote(_)
+                | MixedEventKind::DoubleContextMediatedNote(_) => present[1] = true,
+                MixedEventKind::Controller(_) => present[2] = true,
+                MixedEventKind::ChannelPressure { .. } => present[3] = true,
+                MixedEventKind::PitchBend { .. } => present[4] = true,
+            },
+        }
+    }
+    let canonical = [
+        EvidenceEventFamily::Patch,
+        EvidenceEventFamily::Note,
+        EvidenceEventFamily::Controller,
+        EvidenceEventFamily::ChannelPressure,
+        EvidenceEventFamily::PitchBend,
+    ];
+    let families = canonical
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, family)| present[index].then_some(family))
+        .collect();
+    let count = u64::try_from(walk.logical_event_count()).map_err(|_| {
+        ConversionReadyError::PolicyMismatch("omission event count overflows u64".into())
+    })?;
+    patches.sort_by_key(|patch| patch.source_ordinal);
+    Ok((count, families, patches))
+}
+
+fn omitted_patch(
+    item_index: usize,
+    range: &Range<usize>,
+    program: u8,
+) -> Result<OmittedPatchExpectation, ConversionReadyError> {
+    Ok(OmittedPatchExpectation {
+        source_ordinal: u32::try_from(item_index).map_err(|_| {
+            ConversionReadyError::PolicyMismatch("omitted Patch ordinal overflows u32".into())
+        })?,
+        source_range: byte_range(range)?,
+        decoded_program: program,
+        decoded_bank_msb: None,
+        decoded_bank_lsb: None,
+    })
+}
+
+fn patch_evidence_matches_omission(
+    observed: &[crate::compatibility::PatchEvidence],
+    expected: &[OmittedPatchExpectation],
+) -> bool {
+    observed.len() == expected.len()
+        && expected.iter().all(|expected_patch| {
+            observed.iter().any(|observed_patch| {
+                observed_patch.source_ordinal == expected_patch.source_ordinal
+                    && observed_patch.source_range == expected_patch.source_range
+                    && observed_patch.decoded_program == expected_patch.decoded_program
+                    && observed_patch.decoded_bank_msb == expected_patch.decoded_bank_msb
+                    && observed_patch.decoded_bank_lsb == expected_patch.decoded_bank_lsb
+            })
+        })
 }
 
 fn patch_translation(policy: &PatchTranslationPolicy) -> PatchTranslation {
@@ -473,8 +642,8 @@ pub(crate) mod tests {
     use crate::app_service::AppService;
     use crate::compatibility::{
         ByteRange, ParserProfileId, PatchEvidence, ProfileEvidence, ProfileId, ProfileVersion,
-        ResolvedProfilePolicy, ResolvedSequenceIdentity, ResolvedTrackPolicy, SequenceEvidence,
-        TrackEvidence, TrackKey,
+        ResolvedProfilePolicy, ResolvedSequenceIdentity, ResolvedTrackManifestEntry,
+        ResolvedTrackOutputDisposition, SequenceEvidence, TrackEvidence, TrackKey,
     };
     use crate::midi_export::DecodedExportEventKind;
     use std::{fs, path::Path};
@@ -508,6 +677,7 @@ pub(crate) mod tests {
             b"internal-b",
             b"Track A",
             b"Track B",
+            b"Track C",
         ];
         let count = labels.len();
         let mut bytes = vec![0xa5; ROOT_HEADER_LENGTH];
@@ -537,7 +707,7 @@ pub(crate) mod tests {
         push_record(&mut bytes, 0x02, &tempo);
         push_record(&mut bytes, 0x29, &[]);
 
-        let track_events = [patch_to_note(42), vec![0, 0x90, 65, 70, 16, 2]];
+        let track_events = [patch_to_note(42), vec![0, 0x90, 65, 70, 16, 2], Vec::new()];
         for events in track_events {
             let mut payload = vec![0x11; 14];
             payload.extend(events);
@@ -607,23 +777,29 @@ pub(crate) mod tests {
                 primary_range: fixed_range(&pair.primary.record_range),
                 exact_event_range: Some(fixed_range(&bounds.event_range)),
                 label_bytes: descriptor.label.as_ref().unwrap().bytes.to_vec(),
-                decoded_event_families: Vec::new(),
+                decoded_event_families: match index {
+                    0 => vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note],
+                    1 => vec![EvidenceEventFamily::Note],
+                    _ => Vec::new(),
+                },
                 decoded_event_count: walk.logical_event_count() as u64,
                 patch_evidence,
                 observed_channel: None,
                 evidence_complete: false,
             });
-            policies.push(ResolvedTrackPolicy {
+            policies.push(ResolvedTrackManifestEntry {
                 key,
-                midi_channel: [3, 11][index],
-                patches: if index == 0 {
-                    vec![PatchTranslationPolicy::BankSelectAndProgram {
-                        msb: 81,
-                        lsb: 2,
-                        program: 42,
-                    }]
-                } else {
-                    Vec::new()
+                output: ResolvedTrackOutputDisposition::Included {
+                    midi_channel: [3, 11, 7][index],
+                    patches: if index == 0 {
+                        vec![PatchTranslationPolicy::BankSelectAndProgram {
+                            msb: 81,
+                            lsb: 2,
+                            program: 42,
+                        }]
+                    } else {
+                        Vec::new()
+                    },
                 },
             });
         }
@@ -658,9 +834,18 @@ pub(crate) mod tests {
                     structural_ordinal: 0,
                     sequence_range,
                 },
-                tracks: policies,
+                track_manifest: policies,
             },
         }
+    }
+
+    fn included_patches_mut(
+        entry: &mut ResolvedTrackManifestEntry,
+    ) -> &mut Vec<PatchTranslationPolicy> {
+        let ResolvedTrackOutputDisposition::Included { patches, .. } = &mut entry.output else {
+            panic!("expected included track policy")
+        };
+        patches
     }
 
     #[test]
@@ -689,7 +874,7 @@ pub(crate) mod tests {
     #[test]
     fn portable_handoff_preserves_structure_policy_metadata_and_ownership() {
         let mut fresh = portable_fresh();
-        fresh.resolved_policy.tracks.reverse();
+        fresh.resolved_policy.track_manifest.reverse();
         let ready = build_conversion_ready_sequence(&fresh).unwrap();
         drop(fresh);
 
@@ -702,7 +887,11 @@ pub(crate) mod tests {
                 .iter()
                 .map(|track| track.name.as_slice())
                 .collect::<Vec<_>>(),
-            vec![b"Track A".as_slice(), b"Track B".as_slice()]
+            vec![
+                b"Track A".as_slice(),
+                b"Track B".as_slice(),
+                b"Track C".as_slice(),
+            ]
         );
         assert_eq!(
             ready
@@ -710,7 +899,7 @@ pub(crate) mod tests {
                 .iter()
                 .map(|track| track.channel_assignment.channel.get())
                 .collect::<Vec<_>>(),
-            vec![3, 11]
+            vec![3, 11, 7]
         );
         assert!(matches!(
             ready.tracks[0].events[0].kind,
@@ -721,16 +910,67 @@ pub(crate) mod tests {
         ));
         ready.with_multitrack_input(|input| {
             assert_eq!(input.sequence_name, b"Portable Sequence");
-            assert_eq!(input.tracks.len(), 2);
+            assert_eq!(input.tracks.len(), 3);
             assert_eq!(input.tracks[0].name, b"Track A");
             assert_eq!(input.tracks[1].name, b"Track B");
+            assert_eq!(input.tracks[2].name, b"Track C");
         });
+    }
+
+    #[test]
+    fn portable_handoff_freshly_revalidates_omissions_and_filters_output() {
+        let mut fresh = portable_fresh();
+        let omitted_evidence = &fresh.evidence.sequences[0].tracks[0];
+        let omitted_patches = omitted_evidence
+            .patch_evidence
+            .iter()
+            .map(|patch| OmittedPatchExpectation {
+                source_ordinal: patch.source_ordinal,
+                source_range: patch.source_range,
+                decoded_program: patch.decoded_program,
+                decoded_bank_msb: patch.decoded_bank_msb,
+                decoded_bank_lsb: patch.decoded_bank_lsb,
+            })
+            .collect();
+        fresh.resolved_policy.track_manifest[0].output =
+            ResolvedTrackOutputDisposition::OmittedAuthenticatedNonempty {
+                decoded_event_count: omitted_evidence.decoded_event_count,
+                decoded_event_families: omitted_evidence.decoded_event_families.clone(),
+                patches: omitted_patches,
+            };
+        fresh.resolved_policy.track_manifest[2].output =
+            ResolvedTrackOutputDisposition::OmittedStructuralEmpty;
+        fresh.resolved_policy.track_manifest.reverse();
+
+        let ready = build_conversion_ready_sequence(&fresh).unwrap();
+        assert_eq!(ready.tracks.len(), 1);
+        assert_eq!(ready.tracks[0].name, b"Track B");
+
+        let mut drift = fresh;
+        let omitted = drift
+            .resolved_policy
+            .track_manifest
+            .iter_mut()
+            .find(|entry| entry.key == TrackKey::new(2, 0))
+            .unwrap();
+        let ResolvedTrackOutputDisposition::OmittedAuthenticatedNonempty {
+            decoded_event_count,
+            ..
+        } = &mut omitted.output
+        else {
+            unreachable!()
+        };
+        *decoded_event_count += 1;
+        assert!(matches!(
+            build_conversion_ready_sequence(&drift),
+            Err(ConversionReadyError::PolicyMismatch(_))
+        ));
     }
 
     #[test]
     fn portable_handoff_preserves_authenticated_msb_only_patch_policy() {
         let mut fresh = portable_fresh();
-        fresh.resolved_policy.tracks[0].patches[0] =
+        included_patches_mut(&mut fresh.resolved_policy.track_manifest[0])[0] =
             PatchTranslationPolicy::BankSelectMsbAndProgram {
                 msb: 81,
                 program: 42,
@@ -785,7 +1025,7 @@ pub(crate) mod tests {
         }
 
         let mut missing = fresh.clone();
-        missing.resolved_policy.tracks.pop();
+        missing.resolved_policy.track_manifest.pop();
         assert!(matches!(
             build_conversion_ready_sequence(&missing),
             Err(ConversionReadyError::TrackCoverage(_))
@@ -794,22 +1034,23 @@ pub(crate) mod tests {
         let mut extra = fresh.clone();
         extra
             .resolved_policy
-            .tracks
-            .push(extra.resolved_policy.tracks[0].clone());
+            .track_manifest
+            .push(extra.resolved_policy.track_manifest[0].clone());
         assert!(matches!(
             build_conversion_ready_sequence(&extra),
             Err(ConversionReadyError::TrackCoverage(_))
         ));
 
         let mut duplicate = fresh.clone();
-        duplicate.resolved_policy.tracks[1].key = duplicate.resolved_policy.tracks[0].key.clone();
+        duplicate.resolved_policy.track_manifest[1].key =
+            duplicate.resolved_policy.track_manifest[0].key.clone();
         assert!(matches!(
             build_conversion_ready_sequence(&duplicate),
             Err(ConversionReadyError::PolicyMismatch(_))
         ));
 
         let mut inconsistent = fresh;
-        inconsistent.resolved_policy.tracks[0].key = TrackKey::new(99, 99);
+        inconsistent.resolved_policy.track_manifest[0].key = TrackKey::new(99, 99);
         assert!(matches!(
             build_conversion_ready_sequence(&inconsistent),
             Err(ConversionReadyError::TrackCoverage(_))
@@ -829,15 +1070,14 @@ pub(crate) mod tests {
         let fresh = portable_fresh();
 
         let mut missing = fresh.clone();
-        missing.resolved_policy.tracks[0].patches.clear();
+        included_patches_mut(&mut missing.resolved_policy.track_manifest[0]).clear();
         assert!(matches!(
             build_conversion_ready_sequence(&missing),
             Err(ConversionReadyError::PolicyMismatch(_))
         ));
 
         let mut extra = fresh.clone();
-        extra.resolved_policy.tracks[0]
-            .patches
+        included_patches_mut(&mut extra.resolved_policy.track_manifest[0])
             .push(PatchTranslationPolicy::ProgramOnly { program: 42 });
         assert!(matches!(
             build_conversion_ready_sequence(&extra),
@@ -845,7 +1085,7 @@ pub(crate) mod tests {
         ));
 
         let mut program_only = fresh;
-        program_only.resolved_policy.tracks[0].patches[0] =
+        included_patches_mut(&mut program_only.resolved_policy.track_manifest[0])[0] =
             PatchTranslationPolicy::ProgramOnly { program: 42 };
         let ready = build_conversion_ready_sequence(&program_only).unwrap();
         assert!(matches!(
@@ -963,23 +1203,23 @@ pub(crate) mod tests {
         ));
 
         let mut incomplete = fresh.clone();
-        incomplete.resolved_policy.tracks.pop();
+        incomplete.resolved_policy.track_manifest.pop();
         assert!(matches!(
             build_conversion_ready_sequence(&incomplete),
             Err(ConversionReadyError::TrackCoverage(_))
         ));
 
         let mut extra = fresh.clone();
-        let extra_row = extra.resolved_policy.tracks[0].clone();
-        extra.resolved_policy.tracks.push(extra_row);
+        let extra_row = extra.resolved_policy.track_manifest[0].clone();
+        extra.resolved_policy.track_manifest.push(extra_row);
         assert!(matches!(
             build_conversion_ready_sequence(&extra),
             Err(ConversionReadyError::TrackCoverage(_))
         ));
 
         let mut duplicate = fresh;
-        let duplicate_key = duplicate.resolved_policy.tracks[0].key.clone();
-        duplicate.resolved_policy.tracks[1].key = duplicate_key;
+        let duplicate_key = duplicate.resolved_policy.track_manifest[0].key.clone();
+        duplicate.resolved_policy.track_manifest[1].key = duplicate_key;
         assert!(matches!(
             build_conversion_ready_sequence(&duplicate),
             Err(ConversionReadyError::PolicyMismatch(_))

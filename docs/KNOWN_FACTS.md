@@ -637,3 +637,13 @@ musical plausibility. It establishes the first bounded mixed-walker design gate
 for the supported families only. Unknown tags/statuses, unobserved families,
 other profiles, and malformed high-bit data remain unsupported rather than
 guessed.
+
+Generic authenticated compatibility infrastructure can now account for every
+structural track while authorizing selected rows to produce no output. A
+nonempty omission retains exact logical count, canonical event families, and
+exact untranslated Patch observations; a structural-empty omission must have a
+zero-length event range, zero events, no families, and no Patch evidence. The
+handoff freshly revalidates both and emits parser structural order filtered by
+Included. These are software-policy facts only: no Studio Vision inclusion,
+mute, enable, playback, or routing field has been decoded, and no Bells profile
+is registered by this mechanism milestone.

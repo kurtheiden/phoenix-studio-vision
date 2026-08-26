@@ -1980,8 +1980,10 @@ pub(crate) mod tests {
     use super::*;
     use crate::app_contract::{CollisionPolicy, ExportSequenceRequest, OperationId};
     use crate::compatibility::{
-        CompatibilityProfile, PatchExpectation, PatchTranslationPolicy, ProfileId, ProfileVersion,
-        ProjectExpectation, SequenceExpectation, TrackChannelPolicy, TrackExpectation, TrackKey,
+        CompatibilityProfile, IncludedTrackOutputExpectation, PatchExpectation,
+        PatchTranslationPolicy, ProfileId, ProfileVersion, ProjectExpectation,
+        ResolvedTrackOutputDisposition, SequenceExpectation, TrackChannelPolicy, TrackExpectation,
+        TrackKey, TrackOutputDispositionExpectation,
     };
     use crate::midi_export::{ExportCounts as MidiExportCounts, UntranslatedMetadata};
     use crate::multitrack_export::{MultitrackExportReport, MultitrackExportResult};
@@ -2157,23 +2159,29 @@ pub(crate) mod tests {
                             primary_range: track.primary_range,
                             exact_event_range: track.exact_event_range,
                             expected_label_bytes: Some(track.label_bytes.clone()),
-                            channel_policy: TrackChannelPolicy::new(key, [3, 11][index]).unwrap(),
-                            patch_expectations: track
-                                .patch_evidence
-                                .iter()
-                                .map(|patch| PatchExpectation {
-                                    source_ordinal: patch.source_ordinal,
-                                    source_range: patch.source_range,
-                                    decoded_program: patch.decoded_program,
-                                    decoded_bank_msb: patch.decoded_bank_msb,
-                                    decoded_bank_lsb: patch.decoded_bank_lsb,
-                                    translation: PatchTranslationPolicy::BankSelectAndProgram {
-                                        msb: 81,
-                                        lsb: 2,
-                                        program: patch.decoded_program,
-                                    },
-                                })
-                                .collect(),
+                            output: TrackOutputDispositionExpectation::Included(
+                                IncludedTrackOutputExpectation {
+                                    channel_policy: TrackChannelPolicy::new(key, [3, 11, 7][index])
+                                        .unwrap(),
+                                    patch_expectations: track
+                                        .patch_evidence
+                                        .iter()
+                                        .map(|patch| PatchExpectation {
+                                            source_ordinal: patch.source_ordinal,
+                                            source_range: patch.source_range,
+                                            decoded_program: patch.decoded_program,
+                                            decoded_bank_msb: patch.decoded_bank_msb,
+                                            decoded_bank_lsb: patch.decoded_bank_lsb,
+                                            translation:
+                                                PatchTranslationPolicy::BankSelectAndProgram {
+                                                    msb: 81,
+                                                    lsb: 2,
+                                                    program: patch.decoded_program,
+                                                },
+                                        })
+                                        .collect(),
+                                },
+                            ),
                         }
                     })
                     .collect(),
@@ -2251,8 +2259,8 @@ pub(crate) mod tests {
         assert_eq!(first.sequence_display_name, "Portable Sequence");
         assert_eq!(first.compatibility_profile.profile_id, "portable-ui0d2");
         assert!(!first.result.smf_bytes.is_empty());
-        assert_eq!(first.result.report.musical_track_count, 2);
-        assert_eq!(first.result.report.total_smf_track_count, 3);
+        assert_eq!(first.result.report.musical_track_count, 3);
+        assert_eq!(first.result.report.total_smf_track_count, 4);
         assert_eq!(first.result.report.totals.notes, 2);
         assert_eq!(first.result.report.totals.program_changes, 1);
         assert_eq!(first.result.report.totals.bank_select_msb, 1);
@@ -2417,6 +2425,23 @@ pub(crate) mod tests {
         assert_eq!(error.operation, AppOperation::ExportSequence);
 
         service.registry = Some(portable_registry(&fs::read(&path).unwrap()));
+        let stored_policy = service
+            .sessions
+            .get_mut(&response.session_id)
+            .unwrap()
+            .assessments
+            .get_mut(&request.sequence_id)
+            .unwrap()
+            .resolved_policy
+            .as_mut()
+            .unwrap();
+        let original_output = stored_policy.track_manifest[0].output.clone();
+        stored_policy.track_manifest[0].output =
+            ResolvedTrackOutputDisposition::OmittedStructuralEmpty;
+        let error = service.prepare_export_sequence(&request).unwrap_err();
+        assert_eq!(error.diagnostic_code, "profile_policy_changed");
+        assert_eq!(error.operation, AppOperation::ExportSequence);
+
         service
             .sessions
             .get_mut(&response.session_id)
@@ -2427,8 +2452,27 @@ pub(crate) mod tests {
             .resolved_policy
             .as_mut()
             .unwrap()
-            .tracks[0]
-            .midi_channel = 16;
+            .track_manifest[0]
+            .output = original_output;
+        service
+            .sessions
+            .get_mut(&response.session_id)
+            .unwrap()
+            .assessments
+            .get_mut(&request.sequence_id)
+            .unwrap()
+            .resolved_policy
+            .as_mut()
+            .unwrap()
+            .track_manifest[0]
+            .output = ResolvedTrackOutputDisposition::Included {
+            midi_channel: 16,
+            patches: vec![PatchTranslationPolicy::BankSelectAndProgram {
+                msb: 81,
+                lsb: 2,
+                program: 42,
+            }],
+        };
         let error = service.prepare_export_sequence(&request).unwrap_err();
         assert_eq!(error.diagnostic_code, "profile_policy_changed");
         assert_eq!(error.operation, AppOperation::ExportSequence);
@@ -2519,8 +2563,8 @@ pub(crate) mod tests {
             response.compatibility_profile,
             Some(expected.compatibility_profile)
         );
-        assert_eq!(response.musical_track_count, 2);
-        assert_eq!(response.total_smf_track_count, 3);
+        assert_eq!(response.musical_track_count, 3);
+        assert_eq!(response.total_smf_track_count, 4);
         assert_eq!(response.counts.notes, 2);
         assert_eq!(response.counts.programs, 1);
         assert_eq!(response.counts.bank_select_msb, 1);
@@ -3300,7 +3344,7 @@ pub(crate) mod tests {
                     structural_ordinal: 0,
                     sequence_range: ByteRange::new(0, 0).unwrap(),
                 },
-                tracks: Vec::new(),
+                track_manifest: Vec::new(),
             }),
             diagnostic_code: None,
             technical_detail: None,

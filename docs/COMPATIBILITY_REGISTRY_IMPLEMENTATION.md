@@ -43,12 +43,17 @@ an authenticated policy to supply.
 `ProjectExpectation` requires exact SHA-256, byte size, parser profile, and
 declared sequence count. SHA-256 format is validated as 64 hexadecimal bytes.
 `SequenceExpectation` requires exact ordinal, sequence/name ranges and bytes,
-descriptor/pair counts, and a complete ordered track expectation set.
+descriptor/pair counts, and a complete track manifest. Each `TrackExpectation`
+has a closed disposition: `Included` owns its mandatory channel and translated
+Patch policies; `Omitted` owns either exact authenticated-nonempty evidence or
+the parameterless structural-empty policy. The latter two are output policy,
+not decoded Studio Vision inclusion semantics.
 
 # Channel policy
 
-`TrackChannelPolicy` validates human MIDI channels 1..=16. Every expected track
-must have one keyed policy; there is no default or name lookup.
+`TrackChannelPolicy` validates human MIDI channels 1..=16. Every Included track
+must have one keyed policy; omitted tracks cannot carry one. There is no
+default or name lookup.
 
 # Patch policy
 
@@ -63,9 +68,10 @@ optional-LSB, sentinel, or opaque fallback.
 # Resolved policy
 
 Successful matching produces an owned `ResolvedProfilePolicy` containing the
-profile identity, matched sequence identity, every channel assignment, and
-validated Patch translations. It is Core-only and can later be retained in an
-AppService session; no handle or export behavior is added in UI0C1.
+profile identity, matched sequence identity, and every structural row in
+canonical observed order. Its closed resolved disposition either carries the
+Included channel/Patch translations or exact nonempty/structural-empty omission
+authority. The complete manifest participates in source-revalidation equality.
 
 # Match results
 

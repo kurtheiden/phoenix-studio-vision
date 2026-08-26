@@ -1,6 +1,6 @@
 use phoenix::app_contract::{DiagnosticsLevel, InspectProjectRequest, CONTRACT_VERSION};
 use phoenix::app_service::AppService;
-use phoenix::compatibility::{ProfileMatch, ProfileMismatchReason};
+use phoenix::compatibility::{ProfileMatch, ProfileMismatchReason, ResolvedTrackOutputDisposition};
 use phoenix::compatibility_profiles::built_in_compatibility_registry;
 use std::fs;
 use std::path::Path;
@@ -61,20 +61,26 @@ fn authentic_profile_matches_complete_policy() {
         "Validated research profile — Ode to Clarke"
     );
     assert_eq!(resolved_policy.sequence.structural_ordinal, 14);
-    assert_eq!(resolved_policy.tracks.len(), 9);
+    assert_eq!(resolved_policy.track_manifest.len(), 9);
     assert_eq!(
         resolved_policy
-            .tracks
+            .track_manifest
             .iter()
-            .map(|track| track.midi_channel)
+            .map(|track| match track.output {
+                ResolvedTrackOutputDisposition::Included { midi_channel, .. } => midi_channel,
+                _ => panic!("Ode tracks must remain included"),
+            })
             .collect::<Vec<_>>(),
         vec![1, 2, 10, 10, 10, 1, 10, 15, 10]
     );
     assert_eq!(
         resolved_policy
-            .tracks
+            .track_manifest
             .iter()
-            .map(|track| track.patches.len())
+            .map(|track| match &track.output {
+                ResolvedTrackOutputDisposition::Included { patches, .. } => patches.len(),
+                _ => panic!("Ode tracks must remain included"),
+            })
             .sum::<usize>(),
         4
     );

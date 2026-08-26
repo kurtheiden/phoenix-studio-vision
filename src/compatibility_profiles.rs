@@ -5,9 +5,10 @@
 //! research policy, not general Studio Vision support.
 
 use crate::compatibility::{
-    ByteRange, CompatibilityProfile, CompatibilityRegistry, ParserProfileId, PatchExpectation,
-    PatchTranslationPolicy, ProfileDefinitionError, ProfileId, ProfileVersion, ProjectExpectation,
-    SequenceExpectation, TrackChannelPolicy, TrackExpectation, TrackKey,
+    ByteRange, CompatibilityProfile, CompatibilityRegistry, IncludedTrackOutputExpectation,
+    ParserProfileId, PatchExpectation, PatchTranslationPolicy, ProfileDefinitionError, ProfileId,
+    ProfileVersion, ProjectExpectation, SequenceExpectation, TrackChannelPolicy, TrackExpectation,
+    TrackKey, TrackOutputDispositionExpectation,
 };
 
 const ODE_PROFILE_ID: &str = "studio_vision_ode_to_clarke_v1";
@@ -52,8 +53,10 @@ fn track(
         primary_range: range(primary_range.0, primary_range.1),
         exact_event_range: Some(range(event_range.0, event_range.1)),
         expected_label_bytes: Some(label.to_vec()),
-        channel_policy: TrackChannelPolicy::new(key, channel)?,
-        patch_expectations: patches,
+        output: TrackOutputDispositionExpectation::Included(IncludedTrackOutputExpectation {
+            channel_policy: TrackChannelPolicy::new(key, channel)?,
+            patch_expectations: patches,
+        }),
     })
 }
 

@@ -292,12 +292,14 @@ normalization, Rust 1.70, and a compatible license.
 
 # Unsupported-data policy
 
-The first implementation fails the whole selected sequence on any unsupported
-nonempty structure, event family, missing channel, or unsafe Patch translation.
-It may omit only a proven structurally empty track, with a report entry. There
-is no silent event or track omission. A later opt-in recovery mode may skip an
-entire track with warnings, but skipping individual events is not acceptable
-because it can change musical state and timing semantics.
+The generic adapter fails the whole selected sequence on any unsupported
+nonempty structure, event family, missing Included-track channel, or unsafe
+Patch translation. A provenance-locked compatibility profile may explicitly
+authorize either an exact authenticated nonempty omission or a structural-empty
+omission. This is profile output policy, not a decoded Studio Vision flag.
+Omitted rows carry no channel or translation and are freshly revalidated before
+being filtered; there is no silent event or track omission. Skipping individual
+events remains unacceptable because it can change musical state and timing.
 
 # Export report
 

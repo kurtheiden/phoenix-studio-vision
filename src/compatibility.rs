@@ -228,14 +228,44 @@ pub struct PatchExpectation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OmittedPatchExpectation {
+    pub source_ordinal: u32,
+    pub source_range: ByteRange,
+    pub decoded_program: u8,
+    pub decoded_bank_msb: Option<u8>,
+    pub decoded_bank_lsb: Option<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IncludedTrackOutputExpectation {
+    pub channel_policy: TrackChannelPolicy,
+    pub patch_expectations: Vec<PatchExpectation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthenticatedTrackOmissionExpectation {
+    AuthenticatedNonempty {
+        decoded_event_count: u64,
+        decoded_event_families: Vec<EvidenceEventFamily>,
+        patch_expectations: Vec<OmittedPatchExpectation>,
+    },
+    StructuralEmpty,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TrackOutputDispositionExpectation {
+    Included(IncludedTrackOutputExpectation),
+    Omitted(AuthenticatedTrackOmissionExpectation),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrackExpectation {
     pub key: TrackKey,
     pub descriptor_range: ByteRange,
     pub primary_range: ByteRange,
     pub exact_event_range: Option<ByteRange>,
     pub expected_label_bytes: Option<Vec<u8>>,
-    pub channel_policy: TrackChannelPolicy,
-    pub patch_expectations: Vec<PatchExpectation>,
+    pub output: TrackOutputDispositionExpectation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -259,10 +289,23 @@ pub struct CompatibilityProfile {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedTrackPolicy {
+pub struct ResolvedTrackManifestEntry {
     pub key: TrackKey,
-    pub midi_channel: u8,
-    pub patches: Vec<PatchTranslationPolicy>,
+    pub output: ResolvedTrackOutputDisposition,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ResolvedTrackOutputDisposition {
+    Included {
+        midi_channel: u8,
+        patches: Vec<PatchTranslationPolicy>,
+    },
+    OmittedAuthenticatedNonempty {
+        decoded_event_count: u64,
+        decoded_event_families: Vec<EvidenceEventFamily>,
+        patches: Vec<OmittedPatchExpectation>,
+    },
+    OmittedStructuralEmpty,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -276,7 +319,7 @@ pub struct ResolvedProfilePolicy {
     pub profile_id: ProfileId,
     pub profile_version: ProfileVersion,
     pub sequence: ResolvedSequenceIdentity,
-    pub tracks: Vec<ResolvedTrackPolicy>,
+    pub track_manifest: Vec<ResolvedTrackManifestEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -334,6 +377,7 @@ pub enum ProfileDefinitionError {
         track: TrackKey,
         source_ordinal: u32,
     },
+    InvalidOmissionEvidence(TrackKey),
     IncompleteTrackEvidence(TrackKey),
 }
 
@@ -418,32 +462,105 @@ fn validate_profile(profile: &CompatibilityProfile) -> Result<(), ProfileDefinit
             if !track_keys.insert(track.key.clone()) {
                 return Err(ProfileDefinitionError::DuplicateTrackKey(track.key.clone()));
             }
-            if track.channel_policy.key != track.key {
-                return Err(ProfileDefinitionError::DuplicateTrackKey(track.key.clone()));
-            }
-            if track.exact_event_range.is_none() {
+            let Some(event_range) = track.exact_event_range else {
                 return Err(ProfileDefinitionError::IncompleteTrackEvidence(
                     track.key.clone(),
                 ));
-            }
-            let mut patch_ordinals = HashSet::new();
-            for patch in &track.patch_expectations {
-                if !patch_ordinals.insert(patch.source_ordinal) {
-                    return Err(ProfileDefinitionError::DuplicatePatchOrdinal {
-                        track: track.key.clone(),
-                        source_ordinal: patch.source_ordinal,
-                    });
+            };
+            match &track.output {
+                TrackOutputDispositionExpectation::Included(included) => {
+                    if included.channel_policy.key != track.key {
+                        return Err(ProfileDefinitionError::DuplicateTrackKey(track.key.clone()));
+                    }
+                    let mut patch_ordinals = HashSet::new();
+                    for patch in &included.patch_expectations {
+                        if !patch_ordinals.insert(patch.source_ordinal) {
+                            return Err(ProfileDefinitionError::DuplicatePatchOrdinal {
+                                track: track.key.clone(),
+                                source_ordinal: patch.source_ordinal,
+                            });
+                        }
+                        if !patch_matches_translation(patch) {
+                            return Err(ProfileDefinitionError::PatchPolicyMismatch {
+                                track: track.key.clone(),
+                                source_ordinal: patch.source_ordinal,
+                            });
+                        }
+                    }
                 }
-                if !patch_matches_translation(patch) {
-                    return Err(ProfileDefinitionError::PatchPolicyMismatch {
-                        track: track.key.clone(),
-                        source_ordinal: patch.source_ordinal,
-                    });
+                TrackOutputDispositionExpectation::Omitted(
+                    AuthenticatedTrackOmissionExpectation::AuthenticatedNonempty {
+                        decoded_event_count,
+                        decoded_event_families,
+                        patch_expectations,
+                    },
+                ) => {
+                    if *decoded_event_count == 0
+                        || event_range.length() == 0
+                        || !families_are_canonical_nonempty(decoded_event_families)
+                        || *decoded_event_count < decoded_event_families.len() as u64
+                        || *decoded_event_count < patch_expectations.len() as u64
+                        || decoded_event_families.contains(&EvidenceEventFamily::Patch)
+                            != !patch_expectations.is_empty()
+                        || patch_expectations
+                            .iter()
+                            .any(|patch| patch.source_range.length() == 0)
+                    {
+                        return Err(ProfileDefinitionError::InvalidOmissionEvidence(
+                            track.key.clone(),
+                        ));
+                    }
+                    if let Some(source_ordinal) =
+                        duplicate_omitted_patch_ordinal(patch_expectations)
+                    {
+                        return Err(ProfileDefinitionError::DuplicatePatchOrdinal {
+                            track: track.key.clone(),
+                            source_ordinal,
+                        });
+                    }
+                }
+                TrackOutputDispositionExpectation::Omitted(
+                    AuthenticatedTrackOmissionExpectation::StructuralEmpty,
+                ) => {
+                    if event_range.length() != 0 {
+                        return Err(ProfileDefinitionError::InvalidOmissionEvidence(
+                            track.key.clone(),
+                        ));
+                    }
                 }
             }
         }
     }
     Ok(())
+}
+
+fn families_are_canonical_nonempty(families: &[EvidenceEventFamily]) -> bool {
+    !families.is_empty()
+        && families
+            .iter()
+            .map(|family| canonical_family_index(*family))
+            .collect::<Option<Vec<_>>>()
+            .is_some_and(|indices| indices.windows(2).all(|pair| pair[0] < pair[1]))
+}
+
+fn canonical_family_index(family: EvidenceEventFamily) -> Option<u8> {
+    match family {
+        EvidenceEventFamily::Patch => Some(0),
+        EvidenceEventFamily::Note => Some(1),
+        EvidenceEventFamily::Controller => Some(2),
+        EvidenceEventFamily::ChannelPressure => Some(3),
+        EvidenceEventFamily::PitchBend => Some(4),
+        EvidenceEventFamily::ProgramChange
+        | EvidenceEventFamily::Tempo
+        | EvidenceEventFamily::Meter => None,
+    }
+}
+
+fn duplicate_omitted_patch_ordinal(patches: &[OmittedPatchExpectation]) -> Option<u32> {
+    let mut ordinals = HashSet::new();
+    patches
+        .iter()
+        .find_map(|patch| (!ordinals.insert(patch.source_ordinal)).then_some(patch.source_ordinal))
 }
 
 fn patch_matches_translation(patch: &PatchExpectation) -> bool {
@@ -515,11 +632,11 @@ fn assess_profile(
             return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
         }
     }
-    let mut resolved_tracks = Vec::with_capacity(expected.track_expectations.len());
-    for expectation in &expected.track_expectations {
-        let Some(observed_track) = observed.tracks.iter().find(|track| {
-            track.descriptor_ordinal == expectation.key.descriptor_ordinal
-                && track.pair_ordinal == expectation.key.pair_ordinal
+    let mut resolved_manifest = Vec::with_capacity(expected.track_expectations.len());
+    for observed_track in &observed.tracks {
+        let Some(expectation) = expected.track_expectations.iter().find(|expectation| {
+            observed_track.descriptor_ordinal == expectation.key.descriptor_ordinal
+                && observed_track.pair_ordinal == expectation.key.pair_ordinal
         }) else {
             return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
         };
@@ -536,37 +653,80 @@ fn assess_profile(
         if observed_track.exact_event_range.is_none() {
             return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
         }
-        if observed_track
-            .observed_channel
-            .is_some_and(|channel| channel != expectation.channel_policy.midi_channel)
-        {
-            return rejected(profile, ProfileMismatchReason::ChannelPolicyMismatch);
-        }
-        if expectation.patch_expectations.len() != observed_track.patch_evidence.len() {
-            return rejected(profile, ProfileMismatchReason::PatchPolicyMismatch);
-        }
-        let mut resolved_patches = Vec::with_capacity(expectation.patch_expectations.len());
-        for patch_expectation in &expectation.patch_expectations {
-            let Some(observed_patch) = observed_track
-                .patch_evidence
-                .iter()
-                .find(|patch| patch.source_ordinal == patch_expectation.source_ordinal)
-            else {
-                return rejected(profile, ProfileMismatchReason::PatchPolicyMismatch);
-            };
-            if observed_patch.source_range != patch_expectation.source_range
-                || observed_patch.decoded_program != patch_expectation.decoded_program
-                || observed_patch.decoded_bank_msb != patch_expectation.decoded_bank_msb
-                || observed_patch.decoded_bank_lsb != patch_expectation.decoded_bank_lsb
-            {
-                return rejected(profile, ProfileMismatchReason::PatchPolicyMismatch);
+        let output = match &expectation.output {
+            TrackOutputDispositionExpectation::Included(included) => {
+                if observed_track
+                    .observed_channel
+                    .is_some_and(|channel| channel != included.channel_policy.midi_channel)
+                {
+                    return rejected(profile, ProfileMismatchReason::ChannelPolicyMismatch);
+                }
+                if included.patch_expectations.len() != observed_track.patch_evidence.len() {
+                    return rejected(profile, ProfileMismatchReason::PatchPolicyMismatch);
+                }
+                let mut resolved_patches = Vec::with_capacity(included.patch_expectations.len());
+                for patch_expectation in &included.patch_expectations {
+                    let Some(observed_patch) = observed_track
+                        .patch_evidence
+                        .iter()
+                        .find(|patch| patch.source_ordinal == patch_expectation.source_ordinal)
+                    else {
+                        return rejected(profile, ProfileMismatchReason::PatchPolicyMismatch);
+                    };
+                    if !patch_evidence_matches_expectation(observed_patch, patch_expectation) {
+                        return rejected(profile, ProfileMismatchReason::PatchPolicyMismatch);
+                    }
+                    resolved_patches.push(patch_expectation.translation.clone());
+                }
+                ResolvedTrackOutputDisposition::Included {
+                    midi_channel: included.channel_policy.midi_channel,
+                    patches: resolved_patches,
+                }
             }
-            resolved_patches.push(patch_expectation.translation.clone());
-        }
-        resolved_tracks.push(ResolvedTrackPolicy {
+            TrackOutputDispositionExpectation::Omitted(
+                AuthenticatedTrackOmissionExpectation::AuthenticatedNonempty {
+                    decoded_event_count,
+                    decoded_event_families,
+                    patch_expectations,
+                },
+            ) => {
+                if observed_track.decoded_event_count != *decoded_event_count
+                    || observed_track.decoded_event_families != *decoded_event_families
+                    || patch_expectations.len() != observed_track.patch_evidence.len()
+                    || !patch_expectations.iter().all(|expected_patch| {
+                        observed_track.patch_evidence.iter().any(|observed_patch| {
+                            omitted_patch_evidence_matches(observed_patch, expected_patch)
+                        })
+                    })
+                {
+                    return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
+                }
+                let mut patches = patch_expectations.clone();
+                patches.sort_by_key(|patch| patch.source_ordinal);
+                ResolvedTrackOutputDisposition::OmittedAuthenticatedNonempty {
+                    decoded_event_count: *decoded_event_count,
+                    decoded_event_families: decoded_event_families.clone(),
+                    patches,
+                }
+            }
+            TrackOutputDispositionExpectation::Omitted(
+                AuthenticatedTrackOmissionExpectation::StructuralEmpty,
+            ) => {
+                if expectation
+                    .exact_event_range
+                    .map_or(true, |range| range.length() != 0)
+                    || observed_track.decoded_event_count != 0
+                    || !observed_track.decoded_event_families.is_empty()
+                    || !observed_track.patch_evidence.is_empty()
+                {
+                    return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
+                }
+                ResolvedTrackOutputDisposition::OmittedStructuralEmpty
+            }
+        };
+        resolved_manifest.push(ResolvedTrackManifestEntry {
             key: expectation.key.clone(),
-            midi_channel: expectation.channel_policy.midi_channel,
-            patches: resolved_patches,
+            output,
         });
     }
     ProfileMatch::Matched {
@@ -580,9 +740,30 @@ fn assess_profile(
                 structural_ordinal: observed.structural_ordinal,
                 sequence_range: observed.sequence_range,
             },
-            tracks: resolved_tracks,
+            track_manifest: resolved_manifest,
         },
     }
+}
+
+fn patch_evidence_matches_expectation(
+    observed: &PatchEvidence,
+    expected: &PatchExpectation,
+) -> bool {
+    observed.source_range == expected.source_range
+        && observed.decoded_program == expected.decoded_program
+        && observed.decoded_bank_msb == expected.decoded_bank_msb
+        && observed.decoded_bank_lsb == expected.decoded_bank_lsb
+}
+
+fn omitted_patch_evidence_matches(
+    observed: &PatchEvidence,
+    expected: &OmittedPatchExpectation,
+) -> bool {
+    observed.source_ordinal == expected.source_ordinal
+        && observed.source_range == expected.source_range
+        && observed.decoded_program == expected.decoded_program
+        && observed.decoded_bank_msb == expected.decoded_bank_msb
+        && observed.decoded_bank_lsb == expected.decoded_bank_lsb
 }
 
 fn rejected(profile: &CompatibilityProfile, reason: ProfileMismatchReason) -> ProfileMatch {

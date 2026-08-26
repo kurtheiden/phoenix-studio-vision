@@ -1392,3 +1392,19 @@ This is authenticated profile translation policy, not general Patch grammar.
 Phoenix does not infer it from `ff 51 ff`, interpret a sentinel, change Patch
 timing, or modify Program-only/full-bank behavior. Bells profile assembly
 remains separate.
+
+## 2026-08-26: represent authenticated track omission as closed profile output policy
+
+**Status:** Implemented as generic compatibility infrastructure
+
+Each structural `TrackExpectation` now has a closed output disposition.
+`Included` owns the mandatory channel and Patch translations;
+`AuthenticatedNonempty` omission owns exact decoded count, canonical family,
+and untranslated Patch evidence; `StructuralEmpty` owns no variable evidence
+and matches only an exactly empty event range. This does not decode a Studio
+Vision mute, enable, playback, routing, or inclusion field.
+
+Resolved policy retains the complete manifest. Export handoff freshly walks
+every row, emits only Included rows in parser structural order, and invents no
+channel, Patch translation, gap track, or empty placeholder for omissions.
+The Bells profile remains a separate milestone.

@@ -85,8 +85,45 @@ fn expectation(patches: Vec<PatchExpectation>) -> TrackExpectation {
         primary_range: range(300, 400),
         exact_event_range: Some(range(320, 390)),
         expected_label_bytes: Some(b"Piano".to_vec()),
-        channel_policy: TrackChannelPolicy::new(key, 1).expect("valid channel"),
-        patch_expectations: patches,
+        output: TrackOutputDispositionExpectation::Included(IncludedTrackOutputExpectation {
+            channel_policy: TrackChannelPolicy::new(key, 1).expect("valid channel"),
+            patch_expectations: patches,
+        }),
+    }
+}
+
+fn omitted_nonempty_expectation(
+    count: u64,
+    families: Vec<EvidenceEventFamily>,
+    patches: Vec<OmittedPatchExpectation>,
+) -> TrackExpectation {
+    let mut value = expectation(Vec::new());
+    value.output = TrackOutputDispositionExpectation::Omitted(
+        AuthenticatedTrackOmissionExpectation::AuthenticatedNonempty {
+            decoded_event_count: count,
+            decoded_event_families: families,
+            patch_expectations: patches,
+        },
+    );
+    value
+}
+
+fn structural_empty_expectation() -> TrackExpectation {
+    let mut value = expectation(Vec::new());
+    value.exact_event_range = Some(range(320, 320));
+    value.output = TrackOutputDispositionExpectation::Omitted(
+        AuthenticatedTrackOmissionExpectation::StructuralEmpty,
+    );
+    value
+}
+
+fn omitted_patch_fields(program: u8, msb: Option<u8>, lsb: Option<u8>) -> OmittedPatchExpectation {
+    OmittedPatchExpectation {
+        source_ordinal: 4,
+        source_range: range(40, 48),
+        decoded_program: program,
+        decoded_bank_msb: msb,
+        decoded_bank_lsb: lsb,
     }
 }
 
@@ -167,7 +204,13 @@ fn exact_match_returns_capability_and_resolved_policy() {
             display_label: "Synthetic validated profile".into(),
         }
     );
-    assert_eq!(resolved_policy.tracks[0].midi_channel, 1);
+    assert!(matches!(
+        resolved_policy.track_manifest[0].output,
+        ResolvedTrackOutputDisposition::Included {
+            midi_channel: 1,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -383,13 +426,14 @@ fn msb_only_policy_requires_program_matching_msb_and_structurally_absent_lsb() {
         else {
             panic!("expected MSB-only policy match")
         };
-        assert_eq!(
-            resolved_policy.tracks[0].patches,
-            vec![PatchTranslationPolicy::BankSelectMsbAndProgram {
-                msb: 81,
-                program: 7,
-            }]
-        );
+        assert!(matches!(
+            &resolved_policy.track_manifest[0].output,
+            ResolvedTrackOutputDisposition::Included { patches, .. }
+                if patches == &vec![PatchTranslationPolicy::BankSelectMsbAndProgram {
+                    msb: 81,
+                    program: 7,
+                }]
+        ));
     }
 
     let cases = [
@@ -512,4 +556,194 @@ fn evidence_and_profiles_are_owned() {
     let (evidence, profile) = make_values();
     assert_eq!(evidence.sequences[0].name_bytes, b"Piano Song");
     assert_eq!(profile.id.as_str(), "synthetic-profile");
+}
+
+#[test]
+fn authenticated_nonempty_omission_matches_without_channel_or_translation() {
+    let expected_patch = omitted_patch_fields(7, None, None);
+    let profile = profile_with(omitted_nonempty_expectation(
+        2,
+        vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note],
+        vec![expected_patch.clone()],
+    ));
+    let registry = CompatibilityRegistry::new(vec![profile]).expect("valid omission profile");
+    let mut observed = track(None, vec![patch_fields(7, None, None)]);
+    observed.decoded_event_families = vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note];
+    let ProfileMatch::Matched {
+        resolved_policy, ..
+    } = registry.assess(&evidence_with(observed), 0).unwrap()
+    else {
+        panic!("expected omission match")
+    };
+    assert_eq!(
+        resolved_policy.track_manifest[0].output,
+        ResolvedTrackOutputDisposition::OmittedAuthenticatedNonempty {
+            decoded_event_count: 2,
+            decoded_event_families: vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note],
+            patches: vec![expected_patch],
+        }
+    );
+}
+
+#[test]
+fn structural_empty_omission_matches_only_exact_empty_evidence() {
+    let registry = CompatibilityRegistry::new(vec![profile_with(structural_empty_expectation())])
+        .expect("valid structural-empty profile");
+    let mut empty = track(None, Vec::new());
+    empty.exact_event_range = Some(range(320, 320));
+    empty.decoded_event_count = 0;
+    empty.decoded_event_families.clear();
+    let result = registry.assess(&evidence_with(empty.clone()), 0).unwrap();
+    assert!(matches!(
+        result,
+        ProfileMatch::Matched {
+            resolved_policy: ResolvedProfilePolicy { track_manifest, .. },
+            ..
+        } if matches!(track_manifest[0].output, ResolvedTrackOutputDisposition::OmittedStructuralEmpty)
+    ));
+
+    empty.decoded_event_count = 1;
+    empty.decoded_event_families = vec![EvidenceEventFamily::Note];
+    assert!(matches!(
+        registry.assess(&evidence_with(empty), 0).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn nonempty_omission_rejects_all_exact_evidence_drift() {
+    let expected = omitted_patch_fields(7, Some(81), Some(2));
+    let registry = CompatibilityRegistry::new(vec![profile_with(omitted_nonempty_expectation(
+        2,
+        vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note],
+        vec![expected],
+    ))])
+    .unwrap();
+    let observed = || {
+        let mut value = track(None, vec![patch_fields(7, Some(81), Some(2))]);
+        value.decoded_event_families = vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note];
+        value
+    };
+    let mut cases = Vec::new();
+    let mut wrong_count = observed();
+    wrong_count.decoded_event_count = 3;
+    cases.push(wrong_count);
+    let mut wrong_families = observed();
+    wrong_families.decoded_event_families = vec![EvidenceEventFamily::Note];
+    cases.push(wrong_families);
+    let mut wrong_cardinality = observed();
+    wrong_cardinality.patch_evidence.clear();
+    cases.push(wrong_cardinality);
+    for mutate in [
+        |patch: &mut PatchEvidence| patch.source_ordinal += 1,
+        |patch: &mut PatchEvidence| patch.source_range = range(41, 48),
+        |patch: &mut PatchEvidence| patch.decoded_program += 1,
+        |patch: &mut PatchEvidence| patch.decoded_bank_msb = Some(80),
+        |patch: &mut PatchEvidence| patch.decoded_bank_lsb = Some(3),
+    ] {
+        let mut value = observed();
+        mutate(&mut value.patch_evidence[0]);
+        cases.push(value);
+    }
+    for value in cases {
+        assert!(matches!(
+            registry.assess(&evidence_with(value), 0).unwrap(),
+            ProfileMatch::Rejected {
+                reason: ProfileMismatchReason::TrackManifestMismatch,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn malformed_omission_declarations_are_rejected() {
+    for expectation in [
+        omitted_nonempty_expectation(0, vec![EvidenceEventFamily::Note], Vec::new()),
+        omitted_nonempty_expectation(1, Vec::new(), Vec::new()),
+        omitted_nonempty_expectation(
+            1,
+            vec![EvidenceEventFamily::Note, EvidenceEventFamily::Note],
+            Vec::new(),
+        ),
+        omitted_nonempty_expectation(
+            1,
+            vec![EvidenceEventFamily::Note, EvidenceEventFamily::Patch],
+            Vec::new(),
+        ),
+        omitted_nonempty_expectation(1, vec![EvidenceEventFamily::Patch], Vec::new()),
+    ] {
+        assert!(matches!(
+            CompatibilityRegistry::new(vec![profile_with(expectation)]),
+            Err(ProfileDefinitionError::InvalidOmissionEvidence(_))
+        ));
+    }
+
+    let mut duplicate_patch = omitted_nonempty_expectation(
+        2,
+        vec![EvidenceEventFamily::Patch],
+        vec![
+            omitted_patch_fields(7, None, None),
+            omitted_patch_fields(8, None, None),
+        ],
+    );
+    let TrackOutputDispositionExpectation::Omitted(
+        AuthenticatedTrackOmissionExpectation::AuthenticatedNonempty {
+            patch_expectations, ..
+        },
+    ) = &mut duplicate_patch.output
+    else {
+        unreachable!()
+    };
+    patch_expectations[1].source_ordinal = patch_expectations[0].source_ordinal;
+    assert!(matches!(
+        CompatibilityRegistry::new(vec![profile_with(duplicate_patch)]),
+        Err(ProfileDefinitionError::DuplicatePatchOrdinal { .. })
+    ));
+
+    let mut nonempty_range = structural_empty_expectation();
+    nonempty_range.exact_event_range = Some(range(320, 321));
+    assert!(matches!(
+        CompatibilityRegistry::new(vec![profile_with(nonempty_range)]),
+        Err(ProfileDefinitionError::InvalidOmissionEvidence(_))
+    ));
+}
+
+#[test]
+fn duplicate_keys_reject_for_every_disposition_combination() {
+    let included = expectation(Vec::new());
+    let omitted = omitted_nonempty_expectation(2, vec![EvidenceEventFamily::Note], Vec::new());
+    for pair in [
+        [included.clone(), included.clone()],
+        [omitted.clone(), omitted.clone()],
+        [included.clone(), omitted.clone()],
+    ] {
+        let mut profile = profile_with(pair[0].clone());
+        profile.sequences[0]
+            .track_expectations
+            .push(pair[1].clone());
+        assert!(matches!(
+            CompatibilityRegistry::new(vec![profile]),
+            Err(ProfileDefinitionError::DuplicateTrackKey(_))
+        ));
+    }
+}
+
+#[test]
+fn nonempty_and_structural_empty_dispositions_do_not_interchange() {
+    let nonempty_registry = CompatibilityRegistry::new(vec![profile_with(
+        omitted_nonempty_expectation(2, vec![EvidenceEventFamily::Note], Vec::new()),
+    )])
+    .unwrap();
+    let mut empty = track(None, Vec::new());
+    empty.exact_event_range = Some(range(320, 320));
+    empty.decoded_event_count = 0;
+    empty.decoded_event_families.clear();
+    assert!(matches!(
+        nonempty_registry.assess(&evidence_with(empty), 0).unwrap(),
+        ProfileMatch::Rejected { .. }
+    ));
 }

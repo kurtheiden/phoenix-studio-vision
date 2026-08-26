@@ -48,6 +48,14 @@ authority. Resolved policy rows are matched by structural key, so changing
 their vector order cannot reorder output tracks. Missing, extra, duplicate, or
 structurally inconsistent policy coverage fails the handoff.
 
+The handoff freshly walks every resolved row, including omissions. Included
+rows alone become conversion-ready tracks; authenticated-nonempty omissions
+must reproduce their exact count, canonical families, and Patch observations,
+while structural-empty omissions must remain exactly empty. Omitted rows never
+receive dummy channels or Patch translations. Output ordering is fresh parser
+structural order filtered by `Included`, so omissions create no ordinal-gap or
+empty placeholder tracks.
+
 # Failure boundaries
 
 The internal `ConversionReadyError` distinguishes sequence identity drift,

@@ -328,6 +328,10 @@ committed or specified.
       irreversible commit point.
 - [x] Implement UI0E contract-invariant tests and the explicit
       `cancellation_not_supported` operation without adding transport.
+- [x] Implement generic provenance-locked track output dispositions with exact
+      authenticated-nonempty and structural-empty omission evidence, complete
+      resolved manifests, and fresh handoff revalidation. This infrastructure
+      does not register or complete the Bells profile.
 - [x] Design UI0F's generic JSON dispatcher, explicit service-handle lifetime,
       separate ABI/application versioning, transport errors, and exact-length
       Rust-owned response-buffer contract; specify pointer preconditions,
