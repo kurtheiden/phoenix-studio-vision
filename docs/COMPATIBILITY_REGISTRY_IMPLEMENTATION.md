@@ -52,10 +52,13 @@ must have one keyed policy; there is no default or name lookup.
 
 # Patch policy
 
-The declarative variants are `ProgramOnly` and `BankSelectAndProgram`.
-`PatchExpectation` binds the source ordinal/range and decoded values to the
-translation. Construction rejects a policy whose translation does not equal
-its expected decoded evidence. There is no guessed or opaque fallback.
+The declarative variants are `ProgramOnly`, `BankSelectMsbAndProgram`, and
+`BankSelectAndProgram`. `PatchExpectation` binds the source ordinal/range and
+decoded values to the translation. The MSB-only form permits an absent decoded
+MSB under authenticated profile authority, rejects a contradictory present
+MSB, and requires decoded LSB to be absent. Construction rejects a policy whose
+translation does not match its expected evidence. There is no guessed bank,
+optional-LSB, sentinel, or opaque fallback.
 
 # Resolved policy
 

@@ -418,6 +418,13 @@ correspond one-for-one to project records of the form `timing VLQ | ff 41 | 05
 Tracks 3, 4, and 6 independently match CC7=127, and Track 14 supplies 272
 matching CC1 records. Context meanings and broader generality remain unknown.
 
+Authenticated Bells Tracks 3, 6, 8, and 9 independently export one CC0=81 and
+one Program Change, with no CC32, at their established Patch ticks/channels:
+480/16/25, 290/1/35, 370/16/25, and 1,920/12/122. Phoenix now exposes this only
+as explicit authenticated profile policy through
+`BankSelectMsbAndProgram`/`ConfirmedBankSelectMsb`; it does not infer the policy
+from `ff 51 ff` or establish universal Studio Vision bank optionality.
+
 The production `controller` module now decodes one exact caller-bounded
 ordinary Controller record and returns timing, tag, payload, context, number,
 value, and absolute byte provenance. Authentic fixed-offset tests cover Tracks

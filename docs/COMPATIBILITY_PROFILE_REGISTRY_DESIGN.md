@@ -134,10 +134,11 @@ assignments remain inside `ProfilePolicy` and never enter app DTOs.
 
 Patch translation is also declarative. A `PatchExpectation` is keyed by the
 track key and source Patch identity/ordinal, and names only an independently
-confirmed classification such as program-only or confirmed CC0/CC32/program.
-The matcher validates the decoded Patch evidence before enabling that
-translation. There is no default Program Change, guessed bank, opaque-tail
-fallback, or reference-MIDI inference at runtime.
+confirmed classification such as program-only, authenticated
+CC0/program-without-CC32, or confirmed CC0/CC32/program. The matcher validates
+the decoded Patch evidence before enabling that translation. There is no
+default Program Change, guessed bank, optional-LSB fallback, opaque-tail
+inference, or reference-MIDI lookup at runtime.
 
 # Match results
 

@@ -37,9 +37,11 @@ mixed-event walker for event adaptation.
 Every parser track association must be ordinal and every track must have one
 matching policy/evidence row. Authenticated MIDI channels are validated through
 the existing `MidiChannel` type. Patch transitions consume the corresponding
-fresh Patch evidence and the authenticated `ProgramOnly` or
-`BankSelectAndProgram` translation. There are no defaults, inferred channels,
-or fallback translations.
+fresh Patch evidence and an authenticated `ProgramOnly`,
+`BankSelectMsbAndProgram`, or `BankSelectAndProgram` translation. The MSB-only
+mapping supplies CC0 policy without inspecting opaque Patch bytes and retains
+walker timing, decoded Program, and the profile-authorized channel. There are
+no defaults, inferred channels, or fallback translations.
 
 Parser/descriptor structural order is the sole musical-track ordering
 authority. Resolved policy rows are matched by structural key, so changing

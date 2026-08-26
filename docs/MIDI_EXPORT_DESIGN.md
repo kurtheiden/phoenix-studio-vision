@@ -149,11 +149,11 @@ event position while preserving the raw stored Patch component separately.
 
 Bank selection is narrower. Controlled evidence identifies direct CC0 and
 CC32 bytes for the established `ff <cc0> <cc32>` tail, and authentic exports
-show those messages before Program Change. However optional/sentinel semantics
-remain partial. The first exporter may emit Bank Select only when the adapter
-recognizes that exact independently confirmed three-byte form; it emits CC0,
-then CC32, then Program Change. `ff ff ff` and every other tail are reported as
-untranslated Patch metadata, never guessed as banks.
+show those messages before Program Change. An authenticated profile may also
+authorize an MSB-only form that emits CC0 then Program Change and deliberately
+emits no CC32. This is an explicit profile translation, not an optional-LSB
+fallback or a Patch-byte inference. General optional/sentinel semantics remain
+partial; opaque tails never select a bank policy themselves.
 
 Device/instrument name and opaque Patch contexts have no channel-message
 equivalent. They remain in the export report. Under strict first-version

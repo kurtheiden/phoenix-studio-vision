@@ -238,7 +238,7 @@ fn pressure_and_pitch_bend_map_without_value_transformation() {
 }
 
 #[test]
-fn patch_supports_confirmed_program_only_and_bank_translation() {
+fn patch_supports_confirmed_program_only_msb_only_and_full_bank_translation() {
     let program_only = event(
         100,
         0,
@@ -254,6 +254,29 @@ fn patch_supports_confirmed_program_only_and_bank_translation() {
         ChannelMessage::ProgramChange { channel, program }
             if channel.get() == 15 && program.get() == 23
     ));
+
+    let msb_only = event(
+        290,
+        1,
+        DecodedExportEventKind::Patch {
+            program: 35,
+            translation: PatchTranslation::ConfirmedBankSelectMsb { msb: 81 },
+        },
+    );
+    let result = adapt(&[msb_only], 12).unwrap();
+    assert_eq!(result.scheduled_events.len(), 2);
+    assert_eq!(result.counts.bank_select_msb, 1);
+    assert_eq!(result.counts.bank_select_lsb, 0);
+    assert_eq!(result.counts.program_changes, 1);
+    assert!(result
+        .scheduled_events
+        .iter()
+        .all(|scheduled| scheduled.absolute_tick == 290));
+    let serialized = serialize_musical_track(&result.scheduled_events).unwrap();
+    assert_eq!(
+        &serialized.as_bytes()[8..],
+        &[0x82, 0x22, 0xbb, 0, 81, 0, 0xcb, 35, 0, 0xff, 0x2f, 0]
+    );
 
     let banked = event(
         480,

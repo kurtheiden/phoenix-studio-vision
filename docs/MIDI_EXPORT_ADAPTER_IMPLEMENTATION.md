@@ -88,13 +88,17 @@ events and cannot collide with source-event ordinals.
 Patch translation must be classified explicitly upstream:
 
 - `ProgramOnlyConfirmed` emits Program Change;
+- `ConfirmedBankSelectMsb { msb }` emits CC0 and Program Change at the
+  supplied derived Patch position, increments only the MSB bank count, and
+  emits no CC32;
 - `ConfirmedBankSelect { msb, lsb }` emits CC0, CC32, and Program Change at
   the supplied derived Patch position;
 - `UnsupportedOpaque` returns `UnsupportedPatchTranslation`.
 
 The only first-version policy is `StrictKnownOnly`. The adapter never inspects
 opaque Patch bytes to derive a bank form or interpret a sentinel. Phase A
-same-tick priorities order the bank messages before Program Change.
+same-tick priorities order CC0, optional policy-authorized CC32, and Program
+Change deterministically.
 
 # Meter policy
 

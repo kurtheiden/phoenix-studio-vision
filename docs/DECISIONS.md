@@ -1376,3 +1376,19 @@ zero-prior authenticated Patch cases remain numerically unchanged. This bounded
 state rule supersedes only the earlier universal absolute-timing interpretation;
 it does not establish a universal Studio Vision grammar or alter Patch
 translation, compatibility, readiness, inclusion, routing, OMS, or UI policy.
+
+## 2026-08-26: represent authenticated CC0-only Patch output explicitly
+
+**Status:** Implemented as generic authenticated profile policy
+
+Four independent `Bells for her` tracks export CC0=81 followed by Program
+Change at their derived Patch ticks and emit no CC32. Phoenix represents this
+with `BankSelectMsbAndProgram { msb, program }` and maps it to
+`ConfirmedBankSelectMsb { msb }`. The adapter emits CC0 then Program Change on
+the supplied profile-authorized channel; the variant has no LSB field, so
+absence cannot become CC32=0.
+
+This is authenticated profile translation policy, not general Patch grammar.
+Phoenix does not infer it from `ff 51 ff`, interpret a sentinel, change Patch
+timing, or modify Program-only/full-bank behavior. Bells profile assembly
+remains separate.

@@ -129,6 +129,9 @@ committed or specified.
       direct CC0 storage alongside Experiment 028's direct CC32 result.
 - [ ] Remove Bank Select from Track 2 in one controlled save to test whether
       `ff 51 01 -> ff ff ff` before designing optional bank semantics.
+- [x] Implement an explicit authenticated `BankSelectMsbAndProgram` policy for
+      the four Bells CC0+Program/no-CC32 cases, preserving general bank
+      optionality as unresolved and leaving Bells profile assembly pending.
 - [x] Inventory MIDI event families across all seven available Project 001
       exports using a non-duplicative three-export-set view; document 6,109
       Notes, 5,112 Controllers across 14 CC numbers, 440 Pitch Bends, 38

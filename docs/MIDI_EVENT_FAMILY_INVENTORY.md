@@ -180,7 +180,7 @@ the expanded evidence set.
 | Family | Status | Boundary of claim |
 |---|---|---|
 | Notes | IMPLEMENTED | bounded timing/property/duration decoder and extensive controlled/authentic validation; discovery and general track ownership unresolved |
-| Patch / Program / bank | IMPLEMENTED | caller-bounded shared Patch decoder; PC, CC0, and CC32 values established; bank optionality not exposed |
+| Patch / Program / bank | IMPLEMENTED | caller-bounded shared Patch decoder; PC, CC0, and CC32 values established; explicit authenticated profile policy supports Program-only, CC0+Program without CC32, and full CC0+CC32+Program while general bank optionality remains unresolved |
 | Control Change | IMPLEMENTED BOUNDED | exact-bound `ff 41 05` decoder with authentic CC1/CC7 fixtures; discovery and container integration remain absent |
 | Pitch Bend | IMPLEMENTED BOUNDED RUN | exact-bound decoder and all nine authentic `e0`-entered Track 14 runs; discovery and broader forms absent |
 | Channel Pressure | IMPLEMENTED BOUNDED RUN | exact-bound decoder and authentic 32-event `d0`-entered stateful-run fixture; discovery and broader forms absent |
@@ -307,7 +307,7 @@ container semantics. Bank-removal optionality remains a separate Patch issue.
 | event_family | present_in_exports | occurrence_count | sequences | tracks | current_status | musical_importance | shared_decoder_leverage | natural_ground_truth_quality | controlled_experiment_needed | priority |
 |---|---|---:|---:|---:|---|---|---|---|---|---:|
 | Note | yes | 6,109 starts | 3 | 36 | IMPLEMENTED bounded | CRITICAL | high | strong | no for known grammar | covered |
-| Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded; transition grammar correlated | HIGH | high | strong | no further Patch experiment | covered |
+| Patch/Program/bank | yes | 38 PC | 3 | 30 | IMPLEMENTED bounded; authenticated policy includes four replicated Bells CC0+Program/no-CC32 cases; general optionality unresolved | HIGH | high | strong | no for authenticated profile policy | covered |
 | Controller | yes; 395 ordinary `Bells for her` events proven, plus Patch bank exports | 5,112 in the earlier three-set inventory, plus 405 in the later provenance export | 4 export sets | 29 earlier plus identified `Bells for her` tracks | IMPLEMENTED BOUNDED | HIGH | very high | strong for CC1/CC7 scope | no | covered |
 | Pitch Bend | yes; 102 proven `Bells for her` events plus older unresolved population | 440 in earlier snapshot plus 102 in later provenance export | 2 export sets | 2 earlier plus identified Track 14 | IMPLEMENTED BOUNDED RUN | HIGH | high | strong for one nine-run population | no for observed contract | covered |
 | Tempo | yes; bounded initial `Bells for her` form proven | 3 in earlier snapshot plus 1 later provenance export | 4 export sets | 4 conductor tracks | IMPLEMENTED BOUNDED INITIAL | HIGH | medium | strong for initial form | no for bounded initial form | covered |

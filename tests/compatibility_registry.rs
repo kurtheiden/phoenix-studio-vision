@@ -125,6 +125,20 @@ fn banked_patch_fields(msb: Option<u8>, lsb: Option<u8>, program: u8) -> PatchEx
     }
 }
 
+fn msb_only_patch(msb: Option<u8>, lsb: Option<u8>, program: u8) -> PatchExpectation {
+    PatchExpectation {
+        source_ordinal: 4,
+        source_range: range(40, 48),
+        decoded_program: program,
+        decoded_bank_msb: msb,
+        decoded_bank_lsb: lsb,
+        translation: PatchTranslationPolicy::BankSelectMsbAndProgram {
+            msb: 81,
+            program: 7,
+        },
+    }
+}
+
 #[test]
 fn empty_registry_is_no_match() {
     let result = CompatibilityRegistry::empty()
@@ -351,6 +365,66 @@ fn banked_policy_accepts_absent_or_matching_banks_but_rejects_contradictions() {
             reason: ProfileMismatchReason::PatchPolicyMismatch,
             ..
         }
+    ));
+}
+
+#[test]
+fn msb_only_policy_requires_program_matching_msb_and_structurally_absent_lsb() {
+    for observed_msb in [None, Some(81)] {
+        let result = exact_registry(vec![msb_only_patch(observed_msb, None, 7)])
+            .assess(
+                &evidence_with(track(None, vec![patch_fields(7, observed_msb, None)])),
+                0,
+            )
+            .expect("assessment");
+        let ProfileMatch::Matched {
+            resolved_policy, ..
+        } = result
+        else {
+            panic!("expected MSB-only policy match")
+        };
+        assert_eq!(
+            resolved_policy.tracks[0].patches,
+            vec![PatchTranslationPolicy::BankSelectMsbAndProgram {
+                msb: 81,
+                program: 7,
+            }]
+        );
+    }
+
+    let cases = [
+        (msb_only_patch(None, None, 7), patch_fields(8, None, None)),
+        (
+            msb_only_patch(Some(81), None, 7),
+            patch_fields(7, Some(80), None),
+        ),
+        (
+            msb_only_patch(None, None, 7),
+            patch_fields(7, None, Some(0)),
+        ),
+        (
+            msb_only_patch(Some(81), None, 7),
+            patch_fields(7, Some(81), Some(2)),
+        ),
+    ];
+    for (expectation, observed) in cases {
+        let registry = exact_registry(vec![expectation]);
+        assert!(matches!(
+            registry
+                .assess(&evidence_with(track(None, vec![observed])), 0)
+                .expect("assessment"),
+            ProfileMatch::Rejected {
+                reason: ProfileMismatchReason::PatchPolicyMismatch,
+                ..
+            }
+        ));
+    }
+
+    let invalid_lsb_declaration =
+        profile_with(expectation(vec![msb_only_patch(Some(81), Some(2), 7)]));
+    assert!(matches!(
+        CompatibilityRegistry::new(vec![invalid_lsb_declaration]),
+        Err(ProfileDefinitionError::PatchPolicyMismatch { .. })
     ));
 }
 

@@ -420,6 +420,9 @@ pub(crate) fn build_conversion_ready_sequence(
 fn patch_translation(policy: &PatchTranslationPolicy) -> PatchTranslation {
     match policy {
         PatchTranslationPolicy::ProgramOnly { .. } => PatchTranslation::ProgramOnlyConfirmed,
+        PatchTranslationPolicy::BankSelectMsbAndProgram { msb, .. } => {
+            PatchTranslation::ConfirmedBankSelectMsb { msb: *msb }
+        }
         PatchTranslationPolicy::BankSelectAndProgram { msb, lsb, .. } => {
             PatchTranslation::ConfirmedBankSelect {
                 msb: *msb,
@@ -667,6 +670,13 @@ pub(crate) mod tests {
             PatchTranslation::ProgramOnlyConfirmed
         );
         assert_eq!(
+            patch_translation(&PatchTranslationPolicy::BankSelectMsbAndProgram {
+                msb: 1,
+                program: 7,
+            }),
+            PatchTranslation::ConfirmedBankSelectMsb { msb: 1 }
+        );
+        assert_eq!(
             patch_translation(&PatchTranslationPolicy::BankSelectAndProgram {
                 msb: 1,
                 lsb: 2,
@@ -715,6 +725,34 @@ pub(crate) mod tests {
             assert_eq!(input.tracks[0].name, b"Track A");
             assert_eq!(input.tracks[1].name, b"Track B");
         });
+    }
+
+    #[test]
+    fn portable_handoff_preserves_authenticated_msb_only_patch_policy() {
+        let mut fresh = portable_fresh();
+        fresh.resolved_policy.tracks[0].patches[0] =
+            PatchTranslationPolicy::BankSelectMsbAndProgram {
+                msb: 81,
+                program: 42,
+            };
+        let ready = build_conversion_ready_sequence(&fresh).unwrap();
+
+        assert_eq!(ready.tracks[0].channel_assignment.channel.get(), 3);
+        assert_eq!(
+            ready.tracks[0].channel_assignment.provenance,
+            ChannelAssignmentProvenance::AuthenticatedOverride
+        );
+        assert!(matches!(
+            ready.tracks[0].events[0],
+            DecodedExportEvent {
+                absolute_position: 0,
+                kind: DecodedExportEventKind::Patch {
+                    program: 42,
+                    translation: PatchTranslation::ConfirmedBankSelectMsb { msb: 81 },
+                },
+                ..
+            }
+        ));
     }
 
     #[test]

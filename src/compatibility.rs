@@ -213,6 +213,7 @@ impl TrackChannelPolicy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PatchTranslationPolicy {
     ProgramOnly { program: u8 },
+    BankSelectMsbAndProgram { msb: u8, program: u8 },
     BankSelectAndProgram { msb: u8, lsb: u8, program: u8 },
 }
 
@@ -450,6 +451,11 @@ fn patch_matches_translation(patch: &PatchExpectation) -> bool {
         PatchTranslationPolicy::ProgramOnly { program } => {
             patch.decoded_program == program
                 && patch.decoded_bank_msb.is_none()
+                && patch.decoded_bank_lsb.is_none()
+        }
+        PatchTranslationPolicy::BankSelectMsbAndProgram { msb, program } => {
+            patch.decoded_program == program
+                && patch.decoded_bank_msb.map_or(true, |value| value == msb)
                 && patch.decoded_bank_lsb.is_none()
         }
         PatchTranslationPolicy::BankSelectAndProgram { msb, lsb, program } => {

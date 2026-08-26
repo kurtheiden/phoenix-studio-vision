@@ -54,6 +54,7 @@ pub enum PatchPolicy {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PatchTranslation {
     ProgramOnlyConfirmed,
+    ConfirmedBankSelectMsb { msb: u8 },
     ConfirmedBankSelect { msb: u8, lsb: u8 },
     UnsupportedOpaque,
 }
@@ -468,32 +469,48 @@ pub fn adapt_track(
                         source_range: event.source_range.clone(),
                     });
                 }
-                if let PatchTranslation::ConfirmedBankSelect { msb, lsb } = translation {
-                    scheduled_events.push(ScheduledEvent {
-                        absolute_tick: event.absolute_position,
-                        stable_ordinal: source_stable_ordinal,
-                        message: crate::smf::ChannelMessage::ControlChange {
-                            channel,
-                            controller: midi_data(event, 0)?,
-                            value: midi_data(event, msb)?,
-                        },
-                    });
-                    scheduled_events.push(ScheduledEvent {
-                        absolute_tick: event.absolute_position,
-                        stable_ordinal: source_stable_ordinal,
-                        message: crate::smf::ChannelMessage::ControlChange {
-                            channel,
-                            controller: midi_data(event, 32)?,
-                            value: midi_data(event, lsb)?,
-                        },
-                    });
-                    counts.bank_select_msb += 1;
-                    counts.bank_select_lsb += 1;
-                } else if translation == PatchTranslation::UnsupportedOpaque {
-                    return Err(MidiExportError::UnsupportedPatchTranslation {
-                        source_ordinal: event.source_ordinal,
-                        source_range: event.source_range.clone(),
-                    });
+                match translation {
+                    PatchTranslation::ProgramOnlyConfirmed => {}
+                    PatchTranslation::ConfirmedBankSelectMsb { msb } => {
+                        scheduled_events.push(ScheduledEvent {
+                            absolute_tick: event.absolute_position,
+                            stable_ordinal: source_stable_ordinal,
+                            message: crate::smf::ChannelMessage::ControlChange {
+                                channel,
+                                controller: midi_data(event, 0)?,
+                                value: midi_data(event, msb)?,
+                            },
+                        });
+                        counts.bank_select_msb += 1;
+                    }
+                    PatchTranslation::ConfirmedBankSelect { msb, lsb } => {
+                        scheduled_events.push(ScheduledEvent {
+                            absolute_tick: event.absolute_position,
+                            stable_ordinal: source_stable_ordinal,
+                            message: crate::smf::ChannelMessage::ControlChange {
+                                channel,
+                                controller: midi_data(event, 0)?,
+                                value: midi_data(event, msb)?,
+                            },
+                        });
+                        scheduled_events.push(ScheduledEvent {
+                            absolute_tick: event.absolute_position,
+                            stable_ordinal: source_stable_ordinal,
+                            message: crate::smf::ChannelMessage::ControlChange {
+                                channel,
+                                controller: midi_data(event, 32)?,
+                                value: midi_data(event, lsb)?,
+                            },
+                        });
+                        counts.bank_select_msb += 1;
+                        counts.bank_select_lsb += 1;
+                    }
+                    PatchTranslation::UnsupportedOpaque => {
+                        return Err(MidiExportError::UnsupportedPatchTranslation {
+                            source_ordinal: event.source_ordinal,
+                            source_range: event.source_range.clone(),
+                        });
+                    }
                 }
                 scheduled_events.push(ScheduledEvent {
                     absolute_tick: event.absolute_position,
