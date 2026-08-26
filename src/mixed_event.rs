@@ -110,9 +110,15 @@ pub struct BoundedPatchToNoteTransition<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PositionedPatch<'a> {
+    pub position: u32,
+    pub patch: BoundedPatchCore<'a>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixedEventItem<'a> {
     Event(Box<PositionedEvent<'a>>),
-    Patch(Box<BoundedPatchCore<'a>>),
+    Patch(Box<PositionedPatch<'a>>),
     PatchToNote(Box<BoundedPatchToNoteTransition<'a>>),
 }
 
@@ -281,7 +287,7 @@ pub fn walk_bounded_mixed_events(
 
         let tag_offset = timing_end.checked_add(1);
         if first == 0xff && tag_offset.and_then(|offset| bytes.get(offset).copied()) == Some(0x7c) {
-            let outcome = decode_patch_transition(bytes, cursor, end)?;
+            let outcome = decode_patch_transition(bytes, cursor, end, previous_position)?;
             require_advance(cursor, outcome.next, end)?;
             items.extend(outcome.items);
             cursor = outcome.next;
@@ -478,6 +484,7 @@ fn decode_patch_transition(
     bytes: &[u8],
     cursor: usize,
     event_end: usize,
+    previous_position: u32,
 ) -> Result<PatchDispatch<'_>, MixedEventWalkError> {
     let core = decode_bounded_patch_core(
         bytes,
@@ -488,12 +495,13 @@ fn decode_patch_transition(
     )
     .map_err(|source| MixedEventWalkError::MalformedPatch { cursor, source })?;
     let payload_end = core.representation_range.end;
+    let patch_position = add_position(previous_position, core.position.value, cursor)?;
     let post_pc = located_vlq(bytes, payload_end, event_end, cursor)?;
     let mut transition_cursor = post_pc.range.end;
 
     let controller_tag_end = transition_cursor.checked_add(2);
     if controller_tag_end.and_then(|end| bytes.get(transition_cursor..end)) == Some(&[0xff, 0x41]) {
-        return decode_patch_controller_note(bytes, event_end, core);
+        return decode_patch_controller_note(bytes, event_end, patch_position, core);
     }
 
     let (context, final_timing) = match bytes.get(transition_cursor).copied() {
@@ -541,10 +549,10 @@ fn decode_patch_transition(
     } else {
         post_pc.value
     };
-    let first_note_position = add_position(patch.position.value, interval, cursor)?;
+    let first_note_position = add_position(patch_position, interval, cursor)?;
     let transition = BoundedPatchToNoteTransition {
         representation_range: cursor..next,
-        patch_position: patch.position.value,
+        patch_position,
         first_note_position,
         patch,
         context,
@@ -562,6 +570,7 @@ fn decode_patch_transition(
 fn decode_patch_controller_note<'a>(
     bytes: &'a [u8],
     event_end: usize,
+    patch_position: u32,
     patch: BoundedPatchCore<'a>,
 ) -> Result<PatchDispatch<'a>, MixedEventWalkError> {
     let controller_cursor = patch.representation_range.end;
@@ -603,7 +612,7 @@ fn decode_patch_controller_note<'a>(
         source,
     })?;
     let controller_position = add_position(
-        patch.position.value,
+        patch_position,
         controller.timing_delta.value,
         controller_cursor,
     )?;
@@ -619,7 +628,10 @@ fn decode_patch_controller_note<'a>(
 
     Ok(PatchDispatch {
         items: vec![
-            MixedEventItem::Patch(Box::new(patch)),
+            MixedEventItem::Patch(Box::new(PositionedPatch {
+                position: patch_position,
+                patch,
+            })),
             MixedEventItem::Event(Box::new(PositionedEvent {
                 position: controller_position,
                 event: MixedEventKind::Controller(controller),

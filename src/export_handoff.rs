@@ -241,14 +241,14 @@ pub(crate) fn build_conversion_ready_sequence(
         for item in walk.items {
             match item {
                 MixedEventItem::Patch(patch) => {
-                    let patch_start =
-                        u64::try_from(patch.representation_range.start).map_err(|_| {
+                    let patch_start = u64::try_from(patch.patch.representation_range.start)
+                        .map_err(|_| {
                             ConversionReadyError::PolicyMismatch(format!(
                                 "Patch range overflows fixed-width evidence for track {track_index}"
                             ))
                         })?;
                     let patch_end =
-                        u64::try_from(patch.representation_range.end).map_err(|_| {
+                        u64::try_from(patch.patch.representation_range.end).map_err(|_| {
                             ConversionReadyError::PolicyMismatch(format!(
                             "Patch range overflows fixed-width evidence for track {track_index}"
                         ))
@@ -275,11 +275,11 @@ pub(crate) fn build_conversion_ready_sequence(
                         ))
                     })?;
                     events.push(DecodedExportEvent {
-                        absolute_position: patch.position.value,
+                        absolute_position: patch.position,
                         source_ordinal,
-                        source_range: Some(patch.representation_range),
+                        source_range: Some(patch.patch.representation_range),
                         kind: DecodedExportEventKind::Patch {
-                            program: patch.program_change.value,
+                            program: patch.patch.program_change.value,
                             translation: patch_translation(translation),
                         },
                     });
@@ -320,6 +320,7 @@ pub(crate) fn build_conversion_ready_sequence(
                         ))
                     })?;
                     events.push(DecodedExportEvent::from_patch(
+                        transition.patch_position,
                         source_ordinal,
                         &transition.patch,
                         patch_translation(translation),
@@ -577,8 +578,8 @@ pub(crate) mod tests {
                 .filter_map(|(ordinal, item)| match item {
                     MixedEventItem::Patch(patch) => Some(PatchEvidence {
                         source_ordinal: ordinal as u32,
-                        source_range: fixed_range(&patch.representation_range),
-                        decoded_program: patch.program_change.value,
+                        source_range: fixed_range(&patch.patch.representation_range),
+                        decoded_program: patch.patch.program_change.value,
                         decoded_bank_msb: None,
                         decoded_bank_lsb: None,
                     }),

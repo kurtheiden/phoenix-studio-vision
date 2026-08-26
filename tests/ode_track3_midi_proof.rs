@@ -356,6 +356,7 @@ fn build_and_compare_proof() -> Result<ProofOutcome, ProofError> {
             MixedEventItem::PatchToNote(transition) => {
                 validate_track3_patch(transition)?;
                 decoded.push(DecodedExportEvent::from_patch(
+                    transition.patch_position,
                     ordinal,
                     &transition.patch,
                     PatchTranslation::ConfirmedBankSelect { msb: 81, lsb: 2 },

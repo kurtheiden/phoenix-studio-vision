@@ -89,7 +89,7 @@ Patch translation must be classified explicitly upstream:
 
 - `ProgramOnlyConfirmed` emits Program Change;
 - `ConfirmedBankSelect { msb, lsb }` emits CC0, CC32, and Program Change at
-  the Patch absolute position;
+  the supplied derived Patch position;
 - `UnsupportedOpaque` returns `UnsupportedPatchTranslation`.
 
 The only first-version policy is `StrictKnownOnly`. The adapter never inspects

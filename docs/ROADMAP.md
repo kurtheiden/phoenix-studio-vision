@@ -96,9 +96,10 @@ committed or specified.
 - [x] Replicate the Program Change field using a deliberately non-adjacent
       value: Experiment 024 confirms `PC 23 -> PC 100` as aligned
       `0x17 -> 0x64`, with Patch name and all 84 notes unchanged.
-- [x] Isolate the Patch-event absolute timing representation with a
-      position-only change: Experiment 025 confirms `84 12` = 530 to
-      `84 13` = 531 at `0x31886–0x31887`.
+- [x] Isolate the stored Patch-position component with a position-only change:
+      Experiment 025 confirms `84 12` = 530 to `84 13` = 531 at
+      `0x31886–0x31887`; later nonzero-prior evidence establishes accumulated
+      event-stream derivation.
 - [x] Change only the Patch name to a same-length value: Experiment 026
       confirms the direct ASCII payload at `0x31891–0x3189c`.
 - [x] Change only the Patch name to a shorter value: Experiment 027 confirms

@@ -74,8 +74,8 @@ explicit `MidiExportPolicy`, never as parser conclusions.
 
 The authenticated evidence establishes a four-beat coordinate with 480 Studio
 Vision position units per beat/quarter, decoded positions equal to correlated
-SMF absolute ticks, and authenticated exports declaring division 480. Patch
-absolute positions, Note/Controller/Pressure/Bend accumulated positions, Note
+SMF absolute ticks, and authenticated exports declaring division 480. Derived
+Patch positions, Note/Controller/Pressure/Bend accumulated positions, Note
 durations, and export ticks agree directly across the correlated populations.
 
 - A. Studio Vision internal position units per quarter understood: **YES for
@@ -144,7 +144,8 @@ is applied, preserving the established 14-bit value exactly.
 # Patch / Program Change
 
 `BoundedPatchRepresentation.program_change` maps directly to `Cn program`
-after `0..=127` validation. Patch position is its decoded absolute position.
+after `0..=127` validation. The mixed-event walker supplies Patch's derived
+event position while preserving the raw stored Patch component separately.
 
 Bank selection is narrower. Controlled evidence identifies direct CC0 and
 CC32 bytes for the established `ff <cc0> <cc32>` tail, and authentic exports

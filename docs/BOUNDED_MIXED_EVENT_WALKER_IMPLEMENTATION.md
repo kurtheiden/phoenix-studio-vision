@@ -60,19 +60,22 @@ checked accumulated positions. Pressure and Bend entries preserve whether
 their entry status was explicit.
 
 Patch-to-Note is returned as one coupled `BoundedPatchToNoteTransition` with
-two logical events. Patch position remains absolute; first-Note position adds
-post-PC timing and, in the extended form, final timing. A single-context Note
-entry preserves and adds its leading and final timing components. The fixed
-double-context form preserves its leading, inter-context, and final timings
+two logical events. The raw stored Patch component is preserved while derived
+Patch position adds it to the retained previous event position. First-Note
+position then adds post-PC timing and, in the extended form, final timing. A
+single-context Note entry preserves and adds its leading and final timing
+components. The fixed double-context form preserves its leading,
+inter-context, and final timings
 and adds all three with checked arithmetic. Both forms produce one logical
 Note; their opaque contexts produce no musical events.
 
 For the Bells Patch-to-Controller-to-Note form, the walker transactionally
 returns three ordered logical items with disjoint ranges: standalone Patch core,
-ordinary Controller, and explicit Note. Patch position is stored absolute;
-Controller position adds its timing delta; Note position adds its own delta to
-the Controller position. Successful continuation begins after the Note in Note
-state.
+ordinary Controller, and explicit Note. `PositionedPatch` preserves the raw
+core and supplies the separately derived event position. Controller position
+adds its timing delta to derived Patch position; Note position adds its own
+delta to the Controller position. Successful continuation begins after the
+Note in Note state.
 
 # Error and transactional behavior
 
@@ -127,11 +130,12 @@ Notes beginning at `0x0121ba`, `0x0122c7`, and `0x012310`. Each double form has
 exactly a length-`6` context followed by a length-`7` context and a direct
 explicit Note. Bells structural mixed-event consumption is therefore 14/14.
 
-This is structural success only. Track 6's raw walker Note positions remain
-uniformly 130 ticks earlier than the authenticated MIDI because the separate
-Controller-to-Patch timing-basis finding is not implemented here. Patch
-translation, inclusion, compatibility/readiness, and routing policy also
-remain outside this parser change; Bells is not profile-ready or export-ready.
+Track 6's CC7 position is 130 and its raw Patch component remains 160. Retaining
+the Controller basis derives Patch position 290 and first-Note position 71,903.
+All 182 Note starts, endings, and explicit release velocities reconcile with
+the authenticated MIDI. Patch translation, inclusion,
+compatibility/readiness, and routing policy remain outside this timing change;
+Bells is not profile-ready or export-ready.
 
 # Authentic Track 9
 
@@ -159,11 +163,10 @@ SysEx, Poly Pressure, unknown statuses/tags, arbitrary or other repeated
 `ff 60` forms,
 other Patch/context layouts, Patch-to-multiple-Controller forms, context after a
 Patch-following Controller, the 120-byte profile, recovery, and MIDI export
-remain unsupported. The Track 6 Controller-to-Patch timing basis, CC0-only
-Patch translation, inclusion policy, compatibility/readiness, and general
-routing remain separate unresolved work.
+remain unsupported. CC0-only Patch translation, inclusion policy,
+compatibility/readiness, and general routing remain separate unresolved work.
 
 # Single recommended next step
 
-Resolve the separately reviewed Controller-to-Patch timing basis without
-broadening the fixed double-context grammar or Patch translation policy.
+Resolve Bells Patch translation and inclusion policy only through separate
+evidence-gated work; do not broaden the mixed-event grammar.

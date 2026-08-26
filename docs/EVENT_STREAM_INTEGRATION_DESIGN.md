@@ -28,9 +28,9 @@ incomplete.
 
 ## Patch
 
-`patch::decode_bounded_patch_representation` still requires the exact absolute-
-position VLQ start and an exclusive caller boundary immediately after a known
-first-Note `90` status. It decodes the absolute Patch position, `ff 7c`, the
+`patch::decode_bounded_patch_representation` still requires the exact stored
+Patch-position VLQ start and an exclusive caller boundary immediately after a
+known first-Note `90` status. It decodes the raw Patch component, `ff 7c`, the
 payload through direct PC, a neutral post-PC VLQ component, preserved trailing
 bytes, and the terminal Note-status transition.
 
@@ -83,10 +83,11 @@ Use checked accumulation and fail without changing state on overflow.
   established, add the interval to the previous Note start. This is valid only
   inside a caller-asserted, evidence-backed Note chain; it is not yet a generic
   mixed-stream rule.
-- Patch: its leading position is absolute, so set the Patch event start to that
-  decoded value rather than adding it. Do not use `post_pc_timing_component`
-  alone to position the following Note. Track 3 #2 and Track 9 demonstrate
-  compound Patch-to-first-Note timing.
+- Patch: preserve its raw leading component, then derive the Patch event start
+  by adding it to the retained previous event start. Do not use
+  `post_pc_timing_component` alone to position the following Note. Track 3 #2
+  and Track 9 demonstrate compound Patch-to-first-Note timing; Bells Track 6
+  establishes the nonzero preceding-event basis.
 
 No single uniform `delta()` trait should be imposed across these families.
 
@@ -105,10 +106,10 @@ immediately following that VLQ. It must not search forward.
   entry. Under active Bend state, a first byte below `80` selects the two-byte
   continuation; a high-bit byte exits state. This derives all nine run bounds.
 - **Patch — SUPPORTED FOR THE ESTABLISHED TRANSITION GRAMMAR.** Exact following
-  bytes `ff 7c` identify Patch after its absolute-position VLQ. Payload length,
-  post-PC VLQ, immediate `90` or one validated length-framed `ff 60` extension,
-  final VLQ, and `90` derive the next cursor without scanning. Other optional
-  forms remain unsupported.
+  bytes `ff 7c` identify Patch after its stored position-component VLQ. Payload
+  length, post-PC VLQ, immediate `90` or one validated length-framed `ff 60`
+  extension, final VLQ, and `90` derive the next cursor without scanning. Other
+  optional forms remain unsupported.
 - **Note — SUPPORTED WITH ACTIVE STATE.** After the timing VLQ, a first byte
   below `80` selects Note continuation: three property bytes plus duration VLQ.
   A high-bit byte exits state. Explicit `90` establishes Note entry/re-entry.
@@ -145,11 +146,12 @@ Patch, 120 ordinary Controllers, and 32 Channel Pressure events.
 
 At `0x143c8`, the walker can derive and decode the zero-delta CC7 record through
 `0x143d1`, committing absolute event start zero under the known track-origin
-contract. At `0x143d1`, `8f 00 | ff 7c` identifies the Patch and its absolute
-position 1,920. The transition then uses post-PC `87 99 02` = 117,890, one
-length-framed `ff 60 07` context record, final timing `81 40` = 192, and `90`
-at `0x143fc`. The summed 118,082 units equal the independently established
-Patch-to-first-Note interval. Experiment 031's controlled +1 result confirms
+contract. At `0x143d1`, `8f 00 | ff 7c` identifies the Patch; retained previous
+position zero plus stored component 1,920 derives position 1,920. The
+transition then uses post-PC `87 99 02` = 117,890, one length-framed
+`ff 60 07` context record, final timing `81 40` = 192, and `90` at `0x143fc`.
+The summed 118,082 units equal the independently established Patch-to-first-
+Note interval. Experiment 031's controlled +1 result confirms
 the same timing ownership in the other established extended form.
 
 Thus the established grammar now derives the first Note status and timing
@@ -233,8 +235,9 @@ Note-chain profile, the implemented exact-bounded Channel Pressure decoder,
 and the implemented exact-bounded Pitch Bend run decoder meet this contract.
 Both stateful families require an explicit active-family mode and exact run bounds.
 Do not expose a generic mixed profile until current-cursor state exit is
-established. Patch absolute timing and its direct/extended first-Note interval
-must remain family-specific updates, not be coerced into one uniform delta.
+established. Patch raw-component accumulation and its direct/extended
+first-Note interval must remain family-specific updates, not be coerced into
+one uniform delta.
 
 # Sequence-level Meter and Tempo separation
 
@@ -277,7 +280,8 @@ scan-ahead or heuristic fallback.
   accumulation are ready inside a Controller-only bounded region.
 - Consecutive known Notes have derivable local ends and validated start-to-start
   intervals inside asserted Note chains.
-- `ff 7c` identifies the Patch family locally and Patch position is absolute.
+- `ff 7c` identifies the Patch family locally; derived Patch position adds the
+  raw stored component to the retained previous event position.
 - Direct and one-`ff 60` extended Patch transitions derive first-Note status
   and interval without scanning for the established corpus.
 - The exact Channel Pressure run uses one explicit `d0` entry and 31 compact

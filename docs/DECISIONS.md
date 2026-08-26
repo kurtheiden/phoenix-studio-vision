@@ -1358,3 +1358,21 @@ audio discovery/relinking, complete resurrection reporting, DAW/Logic
 generation, instrument remapping, drag/drop/recent files, sandbox and security-
 scoped bookmarks, artwork/visual polish, signing/notarization/distribution, and
 universal/XCFramework packaging remain deferred.
+
+## 2026-08-26: accumulate the raw Patch component from retained event position
+
+**Status:** Implemented for the bounded 166-profile mixed-event walker
+
+Experiment 025 directly established that the stored Patch component responds
+to the displayed Patch-position edit in a zero-prior case. That experiment
+could not distinguish an absolute event-stream position from a component
+accumulated from a preceding event at position zero.
+
+Authenticated Bells Track 6 supplies the missing nonzero-prior evidence: CC7
+is at 130, the raw Patch component is 160, and the authenticated Patch-derived
+CC0/Program position is 290. Phoenix therefore preserves the raw component and
+derives Patch position as checked `previous_position + raw_component`. Existing
+zero-prior authenticated Patch cases remain numerically unchanged. This bounded
+state rule supersedes only the earlier universal absolute-timing interpretation;
+it does not establish a universal Studio Vision grammar or alter Patch
+translation, compatibility, readiness, inclusion, routing, OMS, or UI policy.

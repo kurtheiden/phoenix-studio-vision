@@ -258,10 +258,12 @@ There is no branch that tries another decoder after failure.
 The representation distinguishes stored syntax from derived position:
 
 - `Delta`: one raw timing VLQ and the checked accumulated position;
-- `PatchAbsolute`: the raw Patch position VLQ and its direct absolute value;
-- `PatchFirstNote`: Patch absolute position, post-PC timing VLQ, optional
+- `PatchComponent`: the raw stored Patch position VLQ and its source range;
+- `PatchPosition`: the checked sum of the retained previous event position and
+  raw Patch component;
+- `PatchFirstNote`: derived Patch position, post-PC timing VLQ, optional
   bounded `ff 60` context, optional final timing VLQ, and derived Note position;
-- `PatchControllerNote`: Patch absolute position, Controller delta and checked
+- `PatchControllerNote`: derived Patch position, Controller delta and checked
   position, then Note delta and checked position;
 - `ContextMediatedNote`: leading delta VLQ, one bounded `ff 60` context, final
   timing VLQ, their checked sum, and accumulated Note position.
@@ -269,9 +271,10 @@ The representation distinguishes stored syntax from derived position:
   inter-context delta VLQ, a length-`7` context, final delta VLQ, their checked
   sum, and accumulated Note position.
 
-Ordinary Note, Controller, Pressure, and Bend positions add their timing value
-to the preceding logical event start. Patch position remains absolute. In the
-direct Patch form, the post-PC component is the complete first-Note interval.
+Ordinary Note, Controller, Pressure, Bend, and Patch positions add their stored
+timing component to the preceding logical event start. The raw Patch component
+remains preserved separately from its derived event position. In the direct
+Patch form, the post-PC component is the complete first-Note interval.
 In the established extended form, that interval is post-PC plus final timing.
 Experiment 031 directly validates the latter ownership.
 
@@ -292,8 +295,13 @@ pub struct MixedEventWalk<'a> {
 
 pub enum MixedEventItem<'a> {
     Event(TimedMixedEvent<'a>),
-    Patch(BoundedPatchCore<'a>),
+    Patch(PositionedPatch<'a>),
     PatchToNote(BoundedPatchToNoteTransition<'a>),
+}
+
+pub struct PositionedPatch<'a> {
+    pub position: u32,
+    pub patch: BoundedPatchCore<'a>,
 }
 
 pub struct TimedMixedEvent<'a> {
@@ -461,8 +469,9 @@ Note timing VLQ | 90 | pitch | attack | release | duration VLQ
 
 The factored Patch core ends at declared `payload_end`. Exactly one ordinary
 Controller begins there and ends at its value byte. Exactly one direct explicit
-Note begins at that Controller end. The three ranges are disjoint. Patch
-position is absolute; Controller position adds its delta to Patch position;
+Note begins at that Controller end. The three ranges are disjoint. Derived
+Patch position adds its raw component to the retained previous position;
+Controller position adds its delta to Patch position;
 Note position adds its delta to Controller position. The completed branch
 leaves Note state.
 

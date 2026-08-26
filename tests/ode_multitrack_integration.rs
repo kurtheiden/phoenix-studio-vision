@@ -447,6 +447,7 @@ fn validate_and_assemble(bytes: &[u8], manifest: &SequenceManifest) -> Result<D2
                         .ok_or_else(|| D2Error::Patch(row_index, "unexpected Patch".into()))?;
                     validate_patch(row_index, transition, expected)?;
                     events.push(DecodedExportEvent::from_patch(
+                        transition.patch_position,
                         ordinal,
                         &transition.patch,
                         expected.translation,

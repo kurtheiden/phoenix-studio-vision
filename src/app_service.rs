@@ -1731,12 +1731,12 @@ fn inventory_families(
                 present[0] = true;
                 if let (Ok(source_ordinal), Some(source_range)) = (
                     u32::try_from(item_index),
-                    owned_range(&patch.representation_range),
+                    owned_range(&patch.patch.representation_range),
                 ) {
                     patch_evidence.push(PatchEvidence {
                         source_ordinal,
                         source_range,
-                        decoded_program: patch.program_change.value,
+                        decoded_program: patch.patch.program_change.value,
                         decoded_bank_msb: None,
                         decoded_bank_lsb: None,
                     });

@@ -435,8 +435,9 @@ fn assert_bells_patch_controller_note(
     let MixedEventItem::Patch(patch) = &result.items[0] else {
         panic!("expected standalone Patch")
     };
-    assert_eq!(patch.representation_range, patch_range);
-    assert_eq!(patch.position.value, positions[0]);
+    assert_eq!(patch.patch.representation_range, patch_range);
+    assert_eq!(patch.patch.position.value, positions[0]);
+    assert_eq!(patch.position, positions[0]);
 
     let MixedEventItem::Event(controller) = &result.items[1] else {
         panic!("expected Controller")
@@ -461,7 +462,7 @@ fn assert_bells_patch_controller_note(
     assert_eq!(note.representation_range, note_range);
     assert!(note.status.is_some());
     assert_eq!(
-        patch.representation_range.end,
+        patch.patch.representation_range.end,
         controller.record_range.start
     );
     assert_eq!(controller.record_range.end, note.representation_range.start);
@@ -533,7 +534,7 @@ fn authentic_bells_exact_consumption_is_fourteen_of_fourteen() {
 }
 
 #[test]
-fn authentic_bells_track_6_consumes_structurally_but_retains_timing_mismatch() {
+fn authentic_bells_track_6_consumes_and_uses_retained_controller_timing_basis() {
     let bytes = fs::read(BASELINE).unwrap();
     let result = walk_bounded_mixed_events(
         &bytes,
@@ -550,11 +551,13 @@ fn authentic_bells_track_6_consumes_structurally_but_retains_timing_mismatch() {
     let mut residual_single = 0;
     let mut double = 0;
     let mut single_lengths = Vec::new();
+    let mut controller_position = None;
     for item in &result.items {
         match item {
             MixedEventItem::PatchToNote(transition) => {
-                assert_eq!(transition.patch_position, 160);
-                assert_eq!(transition.first_note_position, 71_773);
+                assert_eq!(transition.patch.position.value, 160);
+                assert_eq!(transition.patch_position, 290);
+                assert_eq!(transition.first_note_position, 71_903);
             }
             MixedEventItem::Event(event) => match &event.event {
                 MixedEventKind::ContextMediatedNote(note) => {
@@ -564,6 +567,11 @@ fn authentic_bells_track_6_consumes_structurally_but_retains_timing_mismatch() {
                     }
                 }
                 MixedEventKind::DoubleContextMediatedNote(_) => double += 1,
+                MixedEventKind::Controller(controller) => {
+                    assert_eq!(controller.controller_number.value, 7);
+                    assert_eq!(controller.controller_value.value, 127);
+                    controller_position = Some(event.position);
+                }
                 _ => {}
             },
             MixedEventItem::Patch(_) => {}
@@ -571,6 +579,7 @@ fn authentic_bells_track_6_consumes_structurally_but_retains_timing_mismatch() {
     }
     assert_eq!(residual_single, 6);
     assert_eq!(double, 3);
+    assert_eq!(controller_position, Some(130));
     assert!(single_lengths.contains(&6));
     assert!(single_lengths.contains(&7));
 
@@ -583,8 +592,7 @@ fn authentic_bells_track_6_consumes_structurally_but_retains_timing_mismatch() {
             _ => None,
         })
         .unwrap();
-    assert_eq!(last_position, 118_572);
-    assert_eq!(last_position + 130, 118_702);
+    assert_eq!(last_position, 118_702);
 }
 
 fn synthetic_patch_controller_note() -> Vec<u8> {
@@ -592,6 +600,150 @@ fn synthetic_patch_controller_note() -> Vec<u8> {
         0x00, 0xff, 0x7c, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x19, 0x01, 0xff, 0x41, 0x05,
         0x00, 0x01, 0x00, 0x07, 0x7f, 0x02, 0x90, 0x3c, 0x40, 0x20, 0x01,
     ]
+}
+
+fn synthetic_patch_note(raw_patch_component: u8) -> Vec<u8> {
+    vec![
+        raw_patch_component,
+        0xff,
+        0x7c,
+        0x07,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x19,
+        0x02,
+        0x90,
+        0x3c,
+        0x40,
+        0x20,
+        0x01,
+    ]
+}
+
+fn synthetic_controller() -> [u8; 9] {
+    [0x0a, 0xff, 0x41, 0x05, 0x00, 0x00, 0x00, 0x07, 0x7f]
+}
+
+#[test]
+fn nonzero_timing_basis_accumulates_the_raw_patch_component() {
+    let bytes = synthetic_patch_note(5);
+    let result = walk_bounded_mixed_events(
+        &bytes,
+        MixedEventBounds {
+            event_range: 0..bytes.len(),
+        },
+        MixedEventTimingBasis {
+            previous_event_position: 100,
+        },
+    )
+    .unwrap();
+    let MixedEventItem::PatchToNote(transition) = &result.items[0] else {
+        panic!("expected coupled Patch")
+    };
+    assert_eq!(transition.patch.position.value, 5);
+    assert_eq!(transition.patch_position, 105);
+    assert_eq!(transition.first_note_position, 107);
+}
+
+#[test]
+fn controller_to_patch_note_retains_the_controller_position() {
+    let mut bytes = synthetic_controller().to_vec();
+    bytes.extend(synthetic_patch_note(5));
+    let result = walk(&bytes).unwrap();
+    let MixedEventItem::Event(controller) = &result.items[0] else {
+        panic!("expected Controller")
+    };
+    assert_eq!(controller.position, 10);
+    let MixedEventItem::PatchToNote(transition) = &result.items[1] else {
+        panic!("expected coupled Patch")
+    };
+    assert_eq!(transition.patch.position.value, 5);
+    assert_eq!(transition.patch_position, 15);
+    assert_eq!(transition.first_note_position, 17);
+}
+
+#[test]
+fn controller_to_patch_controller_note_accumulates_each_position() {
+    let mut patch = synthetic_patch_controller_note();
+    patch[0] = 5;
+    let mut bytes = synthetic_controller().to_vec();
+    bytes.extend(patch);
+    let result = walk(&bytes).unwrap();
+    let MixedEventItem::Patch(patch) = &result.items[1] else {
+        panic!("expected positioned Patch")
+    };
+    assert_eq!(patch.patch.position.value, 5);
+    assert_eq!(patch.position, 15);
+    let MixedEventItem::Event(controller) = &result.items[2] else {
+        panic!("expected Patch-following Controller")
+    };
+    assert_eq!(controller.position, 16);
+    let MixedEventItem::Event(note) = &result.items[3] else {
+        panic!("expected Patch-following Note")
+    };
+    assert_eq!(note.position, 18);
+}
+
+#[test]
+fn patch_position_overflow_fails_transactionally() {
+    let bytes = synthetic_patch_note(1);
+    assert!(matches!(
+        walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds {
+                event_range: 0..bytes.len(),
+            },
+            MixedEventTimingBasis {
+                previous_event_position: u32::MAX,
+            },
+        ),
+        Err(MixedEventWalkError::PositionOverflow {
+            cursor: 0,
+            left: u32::MAX,
+            right: 1,
+        })
+    ));
+
+    let direct = synthetic_patch_note(5);
+    assert!(matches!(
+        walk_bounded_mixed_events(
+            &direct,
+            MixedEventBounds {
+                event_range: 0..direct.len(),
+            },
+            MixedEventTimingBasis {
+                previous_event_position: u32::MAX - 5,
+            },
+        ),
+        Err(MixedEventWalkError::PositionOverflow {
+            cursor: 0,
+            left: u32::MAX,
+            right: 2,
+        })
+    ));
+
+    let mut controller = synthetic_patch_controller_note();
+    controller[0] = 5;
+    assert!(matches!(
+        walk_bounded_mixed_events(
+            &controller,
+            MixedEventBounds {
+                event_range: 0..controller.len(),
+            },
+            MixedEventTimingBasis {
+                previous_event_position: u32::MAX - 5,
+            },
+        ),
+        Err(MixedEventWalkError::PositionOverflow {
+            cursor: 11,
+            left: u32::MAX,
+            right: 1,
+        })
+    ));
 }
 
 #[test]

@@ -5,6 +5,17 @@ not establish a file signature, structure, or parser behavior.
 
 ## Exact-bounded mixed-event walker validation
 
+- Bells Track 6 directly distinguishes the raw stored Patch component from its
+  derived event-stream position: CC7 is at 130, the raw component is 160, and
+  the authenticated Patch-derived CC0/Program position is 290. The bounded
+  166-profile walker therefore derives Patch position as checked retained
+  previous position plus raw component while preserving the raw VLQ and range.
+- With that retained basis, all 182 Track 6 Note starts, endings, and explicit
+  release velocities reconcile with the authenticated Studio Vision export.
+  This supersedes a universal absolute interpretation of the zero-prior
+  controlled Patch-position observations; it does not establish universal
+  Studio Vision timing grammar.
+
 - The implemented 166-profile walker consumes Bells Track 9
   `0x0143c8..0x014957` as exactly 184 logical events: 31 Notes, one Patch, 120
   Controllers, and 32 Channel Pressure events.
@@ -247,7 +258,7 @@ classification but not establishing exact semantics. Patch framing, type, and
 timing remain partial or unknown.
 
 Experiment 025 moved only the same Patch event from `1·2·50` to `1·2·51` in a
-fresh Experiment 007 duplicate. The primary absolute-position field at
+fresh Experiment 007 duplicate. The primary stored position component at
 `0x31886–0x31887` changed from 7-bit VLQ `84 12` = 530 to `84 13` = 531,
 exactly matching the established 4/4, 480-units-per-beat coordinate. A local
 interval component at `0x318a6–0x318a7` changed `c5 4c` = 8,908 to `c5 4b`
@@ -257,11 +268,12 @@ interval component at `0x318a6–0x318a7` changed `c5 4c` = 8,908 to `c5 4b`
 The confirmed PC field remains `0x17`, literal `Ming Dynasty` remains
 unchanged, and the complete 84-note stream plus all 83 note-to-note timing
 fields are byte-identical. Patch timing uses the same numeric unit and 7-bit
-VLQ mechanics as established note timing, while its primary field is absolute
-rather than a note-to-note interval. The primary Patch span is now strongly
-supported from `0x31886` through `0x318a7`, but unresolved metadata, compound
-interval ownership, complete end framing, and the Patch event-type
-discriminator remain partial.
+VLQ mechanics as established note timing. This zero-prior case distinguishes
+the stored component from a note-to-note interval but not absolute from
+previous-position-relative event-stream derivation. The primary Patch span is
+now strongly supported from `0x31886` through `0x318a7`, but unresolved
+metadata, compound interval ownership, complete end framing, and the Patch
+event-type discriminator remain partial.
 
 Experiment 026 changed only the editable Patch name from `Ming Dynasty` to the
 equal-length `Phoenix Test` in a fresh Experiment 007 duplicate. The aligned
@@ -270,7 +282,7 @@ strings without relocation. The preceding byte at `0x31890` remains `0x0c`,
 strongly suggesting a Pascal-style length prefix, but equal-length evidence
 does not establish its behavior or a general fixed/variable field width.
 
-The Patch absolute-position VLQ remains `84 12` = 530, the direct PC field
+The stored Patch-position VLQ remains `84 12` = 530, the direct PC field
 remains `0x17`, both Patch-to-first-note timing components remain stable, and
 the complete 84-note stream plus 83 note-to-note timing fields are
 byte-identical. The name payload remained stable in PC-only Experiments 023/024
@@ -290,8 +302,9 @@ structure relocates by `-5`.
 The PC byte moves from `0x318a5` to `0x318a0` and remains `0x17`. The first-note
 properties and complete chain move from `0x318b5–0x31afe` to
 `0x318b0–0x31af9` and remain byte-identical across all 84 note properties and
-83 timing fields. Absolute Patch position remains `84 12` = 530 at its fixed
-pre-name offset. A local payload-length field changes `1b` = 27 to `16` = 22,
+83 timing fields. The stored Patch-position component remains `84 12` = 530 at
+its fixed pre-name offset. A local payload-length field changes `1b` = 27 to
+`16` = 22,
 exactly spanning its following bytes through PC, and a broader 32-bit size
 candidate changes 653 to 648. Six downstream offset-like fields also decrease
 by five. These results establish a one-byte-length-prefixed variable-length
@@ -299,8 +312,9 @@ ASCII name with no fixed-width padding and justify a bounded diagnostic parser
 spike for this known representation, not a general Patch parser.
 
 The bounded Track 3 #2 Patch decoder spike accepts an explicit start and end,
-does not scan, and decodes only confirmed absolute position, one-byte-length-
-prefixed ASCII name, direct PC, and the transition to `0x90`. Read-only tests
+does not scan, and decodes only the confirmed stored position component,
+one-byte-length-prefixed ASCII name, direct PC, and the transition to `0x90`.
+Read-only tests
 derive the expected semantic states from Experiments 007 and 023–027. The
 five 12-character states reach Note status at `0x318b4`; Experiment 027 derives
 the relocated offset `0x318af`. Malformed bounds/VLQs, truncated or non-ASCII
@@ -312,8 +326,8 @@ remain unsupported.
 An independent authentic event is now strongly identified at `0x31300` as
 `Ode to Clarke` / `Track 3` / `JV-1080`: MIDI PC 29 at tick 480, four complete
 following note rows, literal `Wavox`, and the project timing fields agree. It
-repeats a two-byte absolute-position VLQ plus `ff 7c`, one-byte-length-prefixed
-ASCII name, direct PC, two-byte post-PC VLQ, and transition to Note status
+repeats a two-byte stored position-component VLQ plus `ff 7c`, one-byte-length-
+prefixed ASCII name, direct PC, two-byte post-PC VLQ, and transition to Note status
 `0x90`. Its payload-length relationship and pre-name, post-name, and pre-Note
 context differ from Track 3 #2. The unchanged bounded decoder therefore fails
 at `0x31305`. This is partial generalization evidence for the semantic fields,

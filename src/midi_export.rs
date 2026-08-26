@@ -200,12 +200,13 @@ impl DecodedExportEvent {
     }
 
     pub fn from_patch(
+        absolute_position: u32,
         source_ordinal: u64,
         patch: &BoundedPatchRepresentation<'_>,
         translation: PatchTranslation,
     ) -> Self {
         Self {
-            absolute_position: patch.position.value,
+            absolute_position,
             source_ordinal,
             source_range: Some(patch.representation_range.clone()),
             kind: DecodedExportEventKind::Patch {
