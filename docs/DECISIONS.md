@@ -1455,3 +1455,28 @@ remain responsibilities of the open Core. Future commercial workflow or
 intelligence may layer above that Core but must not be required for basic
 recovery. This is a product/architecture boundary, not a licensing or pricing
 decision. See `docs/OPEN_SOURCE_RELEASE_PLAN.md` for the normative scope.
+
+## 2026-08-27: require metadata-only intake for untouched OS1 reserves
+
+**Status:** Accepted protocol; execution pending independent implementation review
+
+The previously inventoried authentic-project pool cannot supply qualifying OS1
+blind evidence because every family received content-derived Phoenix research
+exposure. Untouched private reserve material must therefore enter OS1 only
+through `docs/OS1_RESERVE_INTAKE_PROTOCOL.md`, subordinate to the governing
+blind-validation protocol.
+
+Before any reserve path is supplied, freeze and independently review bounded
+metadata helpers, candidate-only enumeration, the owner exposure attestation,
+reference quarantine, and private operational controls. Intake permits only
+provenance metadata and complete-data-fork SHA-256 for identity, duplicate and
+development-history correlation, and neutral ordering; it forbids content
+inspection through selection review.
+
+Choose one family representative by a total provenance precedence ending in a
+neutral hash tie-breaker; unresolved discretion excludes the family. Require
+affirmative later-reference availability. Freeze Candidates #1 and #2 plus the
+entire eligible fallback order before Phoenix sees either, and never replace a
+candidate because of a Phoenix outcome. Private validation authority does not
+authorize publication, and candidate-specific inventory, provenance,
+references, artifacts, and outputs remain outside the repository.

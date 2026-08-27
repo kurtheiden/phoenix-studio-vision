@@ -65,6 +65,12 @@ project need not become exportable.
 
 **OS0 status: UNKNOWN / NOT YET EXECUTED.**
 
+Untouched private reserve material may enter OS1 only through the metadata-only
+preselection firewall in
+[`OS1_RESERVE_INTAKE_PROTOCOL.md`](OS1_RESERVE_INTAKE_PROTOCOL.md). Private
+validation permission does not authorize publication of projects, references,
+music, provenance, or validation outputs.
+
 ## Phoenix Open-Source 0.1 MUST
 
 - inspect local Studio Vision candidates without modifying source files;

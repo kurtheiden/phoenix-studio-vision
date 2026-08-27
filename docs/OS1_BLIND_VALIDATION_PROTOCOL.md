@@ -196,3 +196,9 @@ provenance, hashes, high-level historical information, and filesystem metadata.
 It must not use internal Studio Vision structure, Phoenix parsing results,
 reference MIDI, or expected track/event/channel/Patch/controller information.
 Candidate #1 is not selected or inspected by this protocol.
+
+When previously untouched reserve artifacts are used, candidate intake and
+selection must first follow
+[`OS1_RESERVE_INTAKE_PROTOCOL.md`](OS1_RESERVE_INTAKE_PROTOCOL.md) as the
+required preselection firewall. This document remains governing; if the two
+protocols conflict, this blind-validation protocol controls.

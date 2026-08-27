@@ -410,6 +410,18 @@ general Studio Vision parsing.
             candidate inventory/selection under the adopted protocol; no
             candidate contents have been inspected and Gate 1/Gate 5 remain
             unpassed.
+      - [x] **OS1B/OS1C eligibility correction.** The existing candidate pool
+            is development-exposed and supplies no qualifying blind family;
+            the stopped attempt is an eligibility result, not a Phoenix
+            conversion result. Private candidate identities remain outside
+            this roadmap.
+      - [x] **OS1C-R reserve-intake protocol adoption.** Adopt the strict
+            metadata-only firewall, deterministic representative and complete
+            hash order, affirmative later-reference requirement, privacy
+            boundary, and independent-review gate.
+      - [ ] **OS1C-R execution.** Pending a narrow independent review of the
+            durable protocol and its exact bounded metadata helpers. Do not
+            request or enumerate the untouched reserve before that review.
 - [ ] **OS2 — Public usability and release hardening.** **PLANNED.** Address
       unsupported/malformed and stress guidance, privacy/diagnostic wording,
       accessibility, README workflow, About/version, and the MIDI-only
