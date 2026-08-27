@@ -405,6 +405,11 @@ general Studio Vision parsing.
       parser behavior on permission-cleared projects not used for development;
       safe Unsupported results count as useful evidence. Current critical path;
       relative size M.
+      - [x] **OS1A — Blind validation protocol preregistration.** Designed and
+            adopted before candidate selection. The next OS1 activity is
+            candidate inventory/selection under the adopted protocol; no
+            candidate contents have been inspected and Gate 1/Gate 5 remain
+            unpassed.
 - [ ] **OS2 — Public usability and release hardening.** **PLANNED.** Address
       unsupported/malformed and stress guidance, privacy/diagnostic wording,
       accessibility, README workflow, About/version, and the MIDI-only

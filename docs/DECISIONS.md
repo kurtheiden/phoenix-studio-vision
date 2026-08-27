@@ -1424,6 +1424,20 @@ generated and historical SMFs independently and compares Notes and supported
 channel-event families event-by-event by normalized musical semantics, with
 the established zero-velocity Note-Off exception.
 
+## 2026-08-26: preregister the OS1 blind validation protocol
+
+**Status:** Accepted OS1A protocol
+
+The OS1 blind-validation protocol was established before candidate selection or
+internal inspection. Phoenix-only observations must be frozen before any
+reference evidence is revealed. A false Ready result is presumptively
+release-blocking; a conservative, accurate Unsupported result may be positive
+validation evidence. Gate 5 requires at least two genuinely distinct FULLY
+BLIND or REFERENCE-BLIND logical projects. Code, profile, parser, fixture,
+hash, opaque-byte interpretation, and candidate-substitution tuning is
+prohibited during a blind run. Candidate selection and analysis remain
+separate subsequent tasks under `docs/OS1_BLIND_VALIDATION_PROTOCOL.md`.
+
 ## 2026-08-26: preserve the open-source 0.1 release boundary
 
 **Status:** Accepted OS0 release plan
