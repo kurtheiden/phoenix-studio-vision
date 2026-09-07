@@ -67,7 +67,8 @@ Approved Topic-1 summary:
 
 - 14 top-level serialized schemas
 - one RECORD stream grammar
-- 55 `OS1_METADATA_HELPER_ERRORS_V2` members
+- 59 `OS1_METADATA_HELPER_ERRORS_V2` members after the approved additive
+  Topic-1 amendment below
 - maximum schema-derived successful RECORD line: 1124 bytes including LF
 - maximum complete RECORD: 4,603,904 bytes
 - gap accounting: 3 fully closed, 15 partially closed, 2 outside Topic 1, and
@@ -76,42 +77,82 @@ Approved Topic-1 summary:
 - forward compatibility passed
 - all I1–I6 closed
 
-## Topic 2 — NEXT
+Approved additive Topic-1 error-taxonomy amendment:
+`docs/OS1_TOPIC1_ERROR_TAXONOMY_CLARIFICATION_FOR_TOPIC2_V1.md`
 
-Status: **NOT STARTED**
+- 383 lines
+- SHA-256:
+  `b0443f34180aa2dd5aa721bbd5f77333fc4d9a1c39bf03aca938fdb5ba144f53`
+
+Final independent amendment review:
+`docs/OS1_TOPIC1_ERROR_TAXONOMY_CLARIFICATION_FOR_TOPIC2_V1_REVIEW.md`
+
+- 263 lines
+- SHA-256:
+  `0530e4106ae73406633a86acfda3ac30a833f1e67a54f76f694e9cf5046c6f1a`
+
+The amendment and approving review are committed durable Topic-1 authority.
+They add four errors without changing Topic-1 schemas, canonical bytes, digest
+domains, privacy, pathname nonauthority, RECORD grammar, stderr, or exit
+grammar.
+
+## Topic 2 — COMPLETE AND DURABLE
+
+Status: **APPROVED AND COMMITTED**
 
 Title: **Custody authority, lifecycle, and validator registry**
 
-This is the exact next design task. Topic 2 must consume Topic-1 schemas and
-error authority without changing them.
+Design:
+`docs/OS1_CUSTODY_AUTHORITY_LIFECYCLE_AND_VALIDATOR_REGISTRY_V1.md`
 
-Topic 2 should close the reconciliation gaps delegated to custody authority,
-lifecycle and state transitions, root/preflight/path-map authority creation and
-validation, executable review/authorization lifecycle, validator registry,
-one-use/run/reservation authority mechanics, and related custody procedures.
-This checkpoint does not invent a detailed Topic-2 specification.
+- 1213 lines
+- SHA-256:
+  `406c8703da2454423308fbd347d2c0f2126228ba9c90a9ac00282e597a06869c`
 
-The first future action is:
+Final independent review:
+`docs/OS1_CUSTODY_AUTHORITY_LIFECYCLE_AND_VALIDATOR_REGISTRY_V1_REVIEW.md`
 
-**AUTHOR OS1 TARGETED RE-SPECIFICATION TOPIC 2**
+- 227 lines
+- SHA-256:
+  `e0ded24de01d51695b8881fa929142cd1426a38aca1291de03461ca44849e55f`
 
-Then:
+Approval result:
 
-**INDEPENDENTLY REVIEW TOPIC 2**
+- `TOPIC 2 APPROVED: YES`
+- `BLOCKER 0`
+- `IMPORTANT 0`
+- `MINOR 0`
+- unresolved Topic-2 implementation-critical decisions: `0`
 
-Then, only if approved:
+Topic-2 gap state:
 
-**COPY THE APPROVING REVIEW INTO THE REPOSITORY BYTE-FOR-BYTE**
+- G-002: `CLOSED BY TOPIC 2`
+- G-003: `CLOSED BY TOPIC 2`
+- G-004: `CLOSED BY TOPIC 2`
+- G-005: `CLOSED BY TOPIC 2`
+- G-009: `CLOSED BY TOPIC 2`
+- G-010: `CLOSED BY TOPIC 2`
+- G-011: `CLOSED BY TOPIC 2`
+- G-012: `CLOSED BY TOPIC 2`
+- G-013: `CLOSED BY TOPIC 2`
+- G-014: `PARTIALLY CLOSED`; Topic-2 placement/identity authority is closed,
+  while Topics 3–5 retain assigned producer enforcement.
+- G-028: `PARTIALLY CLOSED`; Topic 2 closes the normative registry, ordering,
+  and error mapping, while Topic 6 retains deterministic fixtures/assertions.
 
-Then:
+## Topic 3 — NEXT
 
-**COMMIT AND PUSH THE TOPIC-2 DESIGN AND ITS APPROVING REVIEW TOGETHER**
+Status: **NOT STARTED**
 
-Do not begin Topic 3 until Topic 2 has a durable approved checkpoint.
+Title: **Enumeration and MAP production**
+
+This is the exact next targeted re-specification topic. Its design must consume
+the durable Topic-1 and Topic-2 authority without changing either. Topic 3 has
+not begun merely because Topic 2 is approved.
 
 ## Topics 3–6
 
-- Topic 3 — Enumeration and MAP production: **NOT STARTED**
+- Topic 3 — Enumeration and MAP production: **NOT STARTED — NEXT**
 - Topic 4 — Inspect, candidate access, and RECORD production: **NOT STARTED**
 - Topic 5 — Terminal completion and operational-event publication:
   **NOT STARTED**
@@ -134,7 +175,8 @@ Every topic follows the same discipline:
 
 **CORRECTIVE IMPLEMENTATION AUTHORIZED: NO**
 
-Corrective implementation must not begin merely because Topic 1 is approved.
+Corrective implementation must not begin merely because Topics 1 and 2 are
+approved.
 It remains unauthorized until:
 
 - Topics 1–6 are all designed;
@@ -178,15 +220,16 @@ beyond it.
 
 **NEXT ACTION:**
 
-**BEGIN OS1 TARGETED RE-SPECIFICATION TOPIC 2:**
-**CUSTODY AUTHORITY, LIFECYCLE, AND VALIDATOR REGISTRY**
+**AUTHOR OS1 TARGETED RE-SPECIFICATION TOPIC 3:**
+**ENUMERATION AND MAP PRODUCTION**
 
-Before authoring Topic 2:
+Before authoring Topic 3:
 
 1. verify repository synchronization and worktree preservation
 2. read the reconciliation and its independent review
-3. read the approved Topic-1 design and review
-4. treat Topic-1 serialized schemas, canonical-byte rules, digest domains,
-   privacy boundaries, and public error vocabulary as closed authority
-5. identify only the reconciliation gaps delegated to Topic 2
-6. author Topic 2 without beginning implementation
+3. read the approved Topic-1 design, amendment, and reviews
+4. read the approved Topic-2 design and review
+5. treat Topic-1 schemas/errors and Topic-2 custody/lifecycle/validator rules
+   as closed authority
+6. identify only the reconciliation gaps delegated to Topic 3
+7. author Topic 3 without beginning implementation
