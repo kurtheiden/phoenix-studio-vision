@@ -2,6 +2,11 @@
 
 Checkpoint date: 2026-09-03.
 
+Preservation update: 2026-09-09, after independent U3-001/U3-002 clarification
+approval. Pre-preservation HEAD, main, and origin/main were
+`0bd2cbc63ae481271f7c2e3c0d22060d49e03aeb`
+(`Define OS1 custody authority and lifecycle`), divergence `0/0`.
+
 This is a status and handoff document. It is not new design authority and does
 not supersede or alter any approved design authority.
 
@@ -142,18 +147,62 @@ Topic-2 gap state:
 
 ## Topic 3 — NEXT
 
-Status: **NOT STARTED**
+Status: **INCOMPLETE AND UNAPPROVED — AUTHORING MAY RESUME**
 
 Title: **Enumeration and MAP production**
 
-This is the exact next targeted re-specification topic. Its design must consume
-the durable Topic-1 and Topic-2 authority without changing either. Topic 3 has
-not begun merely because Topic 2 is approved.
+Topics 1 and 2 remain approved and durable. Topic-3 authoring exposed authority
+blockers U3-001 and U3-002, and a fresh independent blocker review confirmed
+both. The narrow clarification below has now received fresh independent
+approval with `BLOCKER 0`, `IMPORTANT 0`, and `MINOR 0`.
+
+Approved clarification:
+`docs/OS1_TOPIC3_AUTHORITY_CLARIFICATION_U3_001_U3_002_V1.md`
+
+- 512 lines
+- SHA-256:
+  `6763a37804c0f57cc8e637746990844d92546d564ae20dd52c35f530b7e8d09c`
+
+Approving review:
+`docs/OS1_TOPIC3_AUTHORITY_CLARIFICATION_U3_001_U3_002_V1_REVIEW.md`
+
+- 318 lines
+- SHA-256:
+  `2ebb33947885ceb87ecf3341acd2224c61c2a65fb8f60be5fb022b45324ad838`
+
+**U3-001 CLOSED: YES**
+
+**U3-002 CLOSED: YES**
+
+The approved pair is preserved with this checkpoint. Topic 3 may now resume
+authoring from the existing incomplete draft using Topics 1 and 2 and the
+approved clarification's narrow authority effect. Topic 3 still requires
+completion and fresh independent approval. Topic 4 remains prohibited;
+corrective implementation remains unauthorized.
+
+The working resume point is
+`docs/OS1_ENUMERATION_AND_MAP_PRODUCTION_V1.md`:
+
+- 776 lines
+- SHA-256:
+  `587564ea6d9659e6420c4adc207d9f68311eda36f9c44e02538cded67bbcb18b`
+
+The confirming blocker review is
+`docs/OS1_TOPIC3_BLOCKER_REVIEW_U3_001_U3_002.md`:
+
+- 314 lines
+- SHA-256:
+  `d7aeb9277550a20c30255e41fa62718d924706dad1e9d54152b62d40975f3639`
+
+These two files remain unapproved Topic-3 working artifacts, not approved
+Topic-3 authority. They are intentionally uncommitted and excluded from this
+preservation commit; preserve their working bytes and verify these identities
+before resuming. No Topic-3 authoring is performed by this preservation update.
 
 ## Topics 3–6
 
-- Topic 3 — Enumeration and MAP production: **NOT STARTED — NEXT**
-- Topic 4 — Inspect, candidate access, and RECORD production: **NOT STARTED**
+- Topic 3 — Enumeration and MAP production: **INCOMPLETE/UNAPPROVED — NEXT**
+- Topic 4 — Inspect, candidate access, and RECORD production: **NOT STARTED — PROHIBITED**
 - Topic 5 — Terminal completion and operational-event publication:
   **NOT STARTED**
 - Topic 6 — Deterministic conformance-test registries: **NOT STARTED**
@@ -191,6 +240,8 @@ Pre-existing metadata-helper implementation work exists under
 `tools/os1-metadata-helper/`. It is **NON-AUTHORITATIVE AND UNAPPROVED**. It
 must not be committed or treated as design authority until the complete
 targeted re-specification chain authorizes corrective implementation.
+The helper tree remains protected: do not read or modify it during preservation
+or Topic-3 resume work.
 
 ## Protected unrelated work
 
@@ -220,16 +271,19 @@ beyond it.
 
 **NEXT ACTION:**
 
-**AUTHOR OS1 TARGETED RE-SPECIFICATION TOPIC 3:**
+**RESUME AUTHORING OS1 TARGETED RE-SPECIFICATION TOPIC 3:**
 **ENUMERATION AND MAP PRODUCTION**
 
-Before authoring Topic 3:
+Before resuming Topic 3:
 
 1. verify repository synchronization and worktree preservation
 2. read the reconciliation and its independent review
 3. read the approved Topic-1 design, amendment, and reviews
 4. read the approved Topic-2 design and review
-5. treat Topic-1 schemas/errors and Topic-2 custody/lifecycle/validator rules
-   as closed authority
+5. read the approved U3 clarification and approving review at the identities
+   above; consume their narrow amendments with otherwise closed Topic-1
+   schemas/errors and Topic-2 custody/lifecycle/validator authority
 6. identify only the reconciliation gaps delegated to Topic 3
-7. author Topic 3 without beginning implementation
+7. verify the existing incomplete draft and blocker-review identities above;
+   resume that draft, then obtain fresh independent approval of completed
+   Topic 3; do not begin Topic 4 or corrective implementation
