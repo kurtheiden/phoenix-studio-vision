@@ -2,15 +2,17 @@
 
 Checkpoint date: 2026-09-03.
 
-Preservation update: 2026-09-09, after independent U3-001/U3-002 clarification
-approval. Pre-preservation HEAD, main, and origin/main were
-`0bd2cbc63ae481271f7c2e3c0d22060d49e03aeb`
-(`Define OS1 custody authority and lifecycle`), divergence `0/0`.
+Preservation update: 2026-09-10, after independent Topic-3 approval.
+Pre-preservation HEAD, main, and origin/main were
+`cb25005545bf5f8c464e2edc3930174efb40547c`
+(`Preserve Topic 3 authority clarification`), divergence `0/0`.
+This preservation commit, `Define OS1 enumeration and MAP production`, makes
+the approved Topic-3 design/review pair durable with this checkpoint.
 
 This is a status and handoff document. It is not new design authority and does
 not supersede or alter any approved design authority.
 
-## Durable baseline
+## Historical baseline at checkpoint creation
 
 Commit:
 `10cc691e2bb49969436ad8667d30e97d7271ee36`
@@ -141,20 +143,22 @@ Topic-2 gap state:
 - G-012: `CLOSED BY TOPIC 2`
 - G-013: `CLOSED BY TOPIC 2`
 - G-014: `PARTIALLY CLOSED`; Topic-2 placement/identity authority is closed,
-  while Topics 3–5 retain assigned producer enforcement.
+  Topic 3 now closes MAP enforcement as recorded below; Topics 4–5 retain
+  their assigned producer enforcement.
 - G-028: `PARTIALLY CLOSED`; Topic 2 closes the normative registry, ordering,
   and error mapping, while Topic 6 retains deterministic fixtures/assertions.
 
-## Topic 3 — NEXT
+## Topic 3 — COMPLETE AND DURABLE
 
-Status: **INCOMPLETE AND UNAPPROVED — AUTHORING MAY RESUME**
+Status: **INDEPENDENTLY APPROVED — PRESERVED BY THIS COMMIT**
 
 Title: **Enumeration and MAP production**
 
 Topics 1 and 2 remain approved and durable. Topic-3 authoring exposed authority
 blockers U3-001 and U3-002, and a fresh independent blocker review confirmed
-both. The narrow clarification below has now received fresh independent
-approval with `BLOCKER 0`, `IMPORTANT 0`, and `MINOR 0`.
+both. The narrow clarification below and its approving review are already
+approved, committed, and durable, with `BLOCKER 0`, `IMPORTANT 0`, and
+`MINOR 0`.
 
 Approved clarification:
 `docs/OS1_TOPIC3_AUTHORITY_CLARIFICATION_U3_001_U3_002_V1.md`
@@ -174,18 +178,44 @@ Approving review:
 
 **U3-002 CLOSED: YES**
 
-The approved pair is preserved with this checkpoint. Topic 3 may now resume
-authoring from the existing incomplete draft using Topics 1 and 2 and the
-approved clarification's narrow authority effect. Topic 3 still requires
-completion and fresh independent approval. Topic 4 remains prohibited;
-corrective implementation remains unauthorized.
+U3-001 and U3-002 remain closed and are fully integrated into the independently
+approved Topic-3 design. The exact approved design and approving review below
+are preserved unchanged by this commit; no further Topic-3 design work is
+performed here.
 
-The working resume point is
-`docs/OS1_ENUMERATION_AND_MAP_PRODUCTION_V1.md`:
+Approved design:
+`docs/OS1_ENUMERATION_AND_MAP_PRODUCTION_V1.md`
 
-- 776 lines
+- 1154 lines
 - SHA-256:
-  `587564ea6d9659e6420c4adc207d9f68311eda36f9c44e02538cded67bbcb18b`
+  `09aa74d6d0efbdc0e438bc1662f5b910b4b66dfbbeeb03aeb380add3d9a8a0b4`
+
+Final independent approving review:
+`docs/OS1_ENUMERATION_AND_MAP_PRODUCTION_V1_REVIEW.md`
+
+- 369 lines
+- SHA-256:
+  `32e1aebc71de5fa0d063951e9e8e426293539f41afb45b0e9d2d26be9bb21220`
+
+Approval result:
+
+- `TOPIC 3 REVIEW COMPLETE: YES`
+- `TOPIC 3 APPROVED: YES`
+- `U3-001 APPROVED: YES`
+- `U3-002 APPROVED: YES`
+- `0 BLOCKER / 0 IMPORTANT / 0 MINOR`
+- unresolved Topic-3 implementation-critical decisions: `0`
+- `CORRECTIVE IMPLEMENTATION AUTHORIZED: NO`
+
+Current Topic-3 gap dispositions:
+
+- G-006: `CLOSED` through the approved U3 clarification and Topic-3 integration.
+- G-007: `CLOSED` by approved Topic 3.
+- G-008: `CLOSED` by Topic 1 plus approved Topic 3, consuming Topic 2 and U3.
+- G-014: `PARTIALLY CLOSED` — MAP enforcement is closed; RECORD remains
+  Topic 4; completion/events remain Topic 5.
+- G-028: `PARTIALLY CLOSED` — Topics 4/5 retain operation-specific
+  integrations; Topic 6 retains fixtures/assertions/conformance definitions.
 
 The confirming blocker review is
 `docs/OS1_TOPIC3_BLOCKER_REVIEW_U3_001_U3_002.md`:
@@ -194,18 +224,23 @@ The confirming blocker review is
 - SHA-256:
   `d7aeb9277550a20c30255e41fa62718d924706dad1e9d54152b62d40975f3639`
 
-These two files remain unapproved Topic-3 working artifacts, not approved
-Topic-3 authority. They are intentionally uncommitted and excluded from this
-preservation commit; preserve their working bytes and verify these identities
-before resuming. No Topic-3 authoring is performed by this preservation update.
+The blocker review remains unchanged, uncommitted review evidence only and is
+excluded from this preservation commit. Approved Topic-3 authority does not
+depend on that working artifact, `/tmp`, or the current conversation.
 
-## Topics 3–6
+## Topics 4–6
 
-- Topic 3 — Enumeration and MAP production: **INCOMPLETE/UNAPPROVED — NEXT**
-- Topic 4 — Inspect, candidate access, and RECORD production: **NOT STARTED — PROHIBITED**
+Topic 4 is the NEXT targeted re-specification topic after this preservation
+commit is pushed and synchronization is verified. This preservation task does
+not begin it. The approving review's `TOPIC 4 MAY BEGIN: NO` records the scope
+of that review task, not an outstanding Topic-3 approval defect.
+
+- Topic 4 — Inspect, candidate access, and RECORD production:
+  **INCOMPLETE / NOT STARTED — NEXT**
 - Topic 5 — Terminal completion and operational-event publication:
-  **NOT STARTED**
-- Topic 6 — Deterministic conformance-test registries: **NOT STARTED**
+  **INCOMPLETE / NOT STARTED**
+- Topic 6 — Deterministic conformance-test registries:
+  **INCOMPLETE / NOT STARTED**
 
 Every topic follows the same discipline:
 
@@ -214,7 +249,7 @@ Every topic follows the same discipline:
 3. narrow correction if required
 4. fresh independent re-review
 5. approval
-6. copy the final approving review from `/tmp` into the repository
+6. preserve the exact final approving review in the repository
    byte-for-byte
 7. commit design and review together
 8. push and verify synchronization
@@ -224,8 +259,8 @@ Every topic follows the same discipline:
 
 **CORRECTIVE IMPLEMENTATION AUTHORIZED: NO**
 
-Corrective implementation must not begin merely because Topics 1 and 2 are
-approved.
+Corrective implementation must not begin merely because Topics 1, 2, and 3
+are approved and durable.
 It remains unauthorized until:
 
 - Topics 1–6 are all designed;
@@ -241,7 +276,7 @@ Pre-existing metadata-helper implementation work exists under
 must not be committed or treated as design authority until the complete
 targeted re-specification chain authorizes corrective implementation.
 The helper tree remains protected: do not read or modify it during preservation
-or Topic-3 resume work.
+or targeted re-specification work.
 
 ## Protected unrelated work
 
@@ -271,19 +306,22 @@ beyond it.
 
 **NEXT ACTION:**
 
-**RESUME AUTHORING OS1 TARGETED RE-SPECIFICATION TOPIC 3:**
-**ENUMERATION AND MAP PRODUCTION**
+**AUTHOR OS1 TARGETED RE-SPECIFICATION TOPIC 4:**
+**INSPECT, CANDIDATE ACCESS, AND RECORD PRODUCTION**
 
-Before resuming Topic 3:
+After this preservation commit is pushed and synchronization is verified,
+a separate Topic-4 task must:
 
 1. verify repository synchronization and worktree preservation
 2. read the reconciliation and its independent review
 3. read the approved Topic-1 design, amendment, and reviews
 4. read the approved Topic-2 design and review
-5. read the approved U3 clarification and approving review at the identities
-   above; consume their narrow amendments with otherwise closed Topic-1
-   schemas/errors and Topic-2 custody/lifecycle/validator authority
-6. identify only the reconciliation gaps delegated to Topic 3
-7. verify the existing incomplete draft and blocker-review identities above;
-   resume that draft, then obtain fresh independent approval of completed
-   Topic 3; do not begin Topic 4 or corrective implementation
+5. read the approved U3 clarification and approving review
+6. verify the exact committed Topic-3 design/review identities above and read
+   that approved pair as authority
+7. identify only the reconciliation gaps delegated to Topic 4, preserving
+   Topics 1–3 and the narrow U3 amendments as closed authority
+
+Topics 4–6 remain incomplete. No Topic-4 design decisions are made by this
+checkpoint. Corrective implementation and authentic/reference/candidate access
+remain unauthorized.
