@@ -9,6 +9,14 @@ Pre-preservation HEAD, main, and origin/main were
 This preservation commit, `Define OS1 enumeration and MAP production`, makes
 the approved Topic-3 design/review pair durable with this checkpoint.
 
+Preservation update: 2026-09-11, after independent U4-001 clarification approval.
+The preceding paragraph records the historical Topic-3 preservation. Before
+this U4-001 preservation, HEAD, main, and origin/main were synchronized at
+`f1cafd0b73136cf7138dd6dbdbde37507286b48c`, divergence `0/0`, with an empty index.
+The commit `Approve U4-001 candidate size representability clarification`
+preserves the unchanged approved clarification, its independent-review
+artifact, and this minimum checkpoint update. It does not resume Topic 4.
+
 This is a status and handoff document. It is not new design authority and does
 not supersede or alter any approved design authority.
 
@@ -74,8 +82,8 @@ Approved Topic-1 summary:
 
 - 14 top-level serialized schemas
 - one RECORD stream grammar
-- 59 `OS1_METADATA_HELPER_ERRORS_V2` members after the approved additive
-  Topic-1 amendment below
+- 60 `OS1_METADATA_HELPER_ERRORS_V2` members: original 55, four from the
+  approved Topic-2 amendment, and one from the approved U4-001 clarification
 - maximum schema-derived successful RECORD line: 1124 bytes including LF
 - maximum complete RECORD: 4,603,904 bytes
 - gap accounting: 3 fully closed, 15 partially closed, 2 outside Topic 1, and
@@ -102,6 +110,48 @@ The amendment and approving review are committed durable Topic-1 authority.
 They add four errors without changing Topic-1 schemas, canonical bytes, digest
 domains, privacy, pathname nonauthority, RECORD grammar, stderr, or exit
 grammar.
+
+### Approved U4-001 predecessor clarification — PRESERVED BY THIS COMMIT
+
+Approved clarification:
+`docs/OS1_TOPIC1_CANDIDATE_SIZE_REPRESENTABILITY_CLARIFICATION_U4_001_V1.md`
+
+- 463 lines
+- SHA-256:
+  `d656d2e25719457bdfc80c7128ef24d0c803f9b819cbb55e42ad2975361e75c3`
+
+Approved independent review, faithfully preserved from the session review:
+`docs/OS1_TOPIC1_CANDIDATE_SIZE_REPRESENTABILITY_CLARIFICATION_U4_001_V1_REVIEW.md`
+
+- 273 lines
+- SHA-256:
+  `9ca129bb9bed1992c2e1daf48302948fab7b02e8c43ea6ad8d0c0e3db4bc7e63`
+
+Approval result:
+
+- `U4-001 INDEPENDENT REVIEW: APPROVED`
+- `BLOCKERS: 0`
+- `IMPORTANT FINDINGS: 0`
+- `MINOR FINDINGS: 0`
+- `U4-001 AUTHORITY CLOSED: YES`
+- `CORRECTIVE IMPLEMENTATION AUTHORIZED: NO`
+
+U4-001 is closed by the approved Topic-1 supplement, not a Topic-4 local
+mapping choice. The effective error vocabulary is 60 members, retaining
+`OS1_METADATA_HELPER_ERRORS_V2`. The new T4-inspect-only member is
+`CANDIDATE_SIZE_UNREPRESENTABLE`: the clarification's exact successful,
+stable, non-alias regular-candidate size condition is fatal, exits 70, emits
+only the fixed stderr line, and produces no rejection line or published RECORD.
+Both out-of-domain range branches use that one member. Existing RECORD bounds,
+four rejection codes, enumeration, custody, and 42 V02 rows remain unchanged.
+
+Precedence is Topic 1, then its approved Topic-2 error amendment, then this
+narrow U4-001 supplement for its exact domain, local dependencies, and count
+qualifications. Its Amendment surface controls; no unrelated predecessor rule
+is reopened. Topic 4 must consume the exact approved clarification and review
+unchanged. The review-stage `TOPIC 4 MAY RESUME: NO` reflected pending durable
+preservation only. After this commit is pushed and synchronization verified,
+Topic 4 may resume in a separate task; it is not resumed by preservation.
 
 ## Topic 2 — COMPLETE AND DURABLE
 
@@ -231,12 +281,14 @@ depend on that working artifact, `/tmp`, or the current conversation.
 ## Topics 4–6
 
 Topic 4 is the NEXT targeted re-specification topic after this preservation
-commit is pushed and synchronization is verified. This preservation task does
-not begin it. The approving review's `TOPIC 4 MAY BEGIN: NO` records the scope
-of that review task, not an outstanding Topic-3 approval defect.
+commit is pushed and synchronization is verified. U4-001 is approved and
+preserved by this commit; Topic 4 may then resume while consuming that exact
+clarification unchanged. This preservation task does not resume it. The
+Topic-3 review's `TOPIC 4 MAY BEGIN: NO` records that review task's scope, not
+an outstanding Topic-3 approval defect.
 
 - Topic 4 — Inspect, candidate access, and RECORD production:
-  **INCOMPLETE / NOT STARTED — NEXT**
+  **INCOMPLETE — READY TO RESUME AFTER U4-001 PRESERVATION — NEXT**
 - Topic 5 — Terminal completion and operational-event publication:
   **INCOMPLETE / NOT STARTED**
 - Topic 6 — Deterministic conformance-test registries:
@@ -289,6 +341,11 @@ Experiment 032 material. Its expected SHA-256 is
 Its contents must not be read during OS1 checkpoint or re-specification work
 unless separately authorized.
 
+All pre-existing protected modified/untracked work remains preserved outside
+the U4-001 commit, including the unchanged U3 blocker review and every file
+under `tools/os1-metadata-helper/`. None is staged or incorporated into this
+authority package; helper implementation contents remain protected from reads.
+
 ## Evidence/provenance boundaries
 
 At this checkpoint:
@@ -306,8 +363,10 @@ beyond it.
 
 **NEXT ACTION:**
 
-**AUTHOR OS1 TARGETED RE-SPECIFICATION TOPIC 4:**
+**RESUME OS1 TARGETED RE-SPECIFICATION TOPIC 4:**
 **INSPECT, CANDIDATE ACCESS, AND RECORD PRODUCTION**
+
+Exact next design task: **TOPIC 4 — INSPECT, CANDIDATE ACCESS, AND RECORD PRODUCTION**.
 
 After this preservation commit is pushed and synchronization is verified,
 a separate Topic-4 task must:
@@ -315,13 +374,17 @@ a separate Topic-4 task must:
 1. verify repository synchronization and worktree preservation
 2. read the reconciliation and its independent review
 3. read the approved Topic-1 design, amendment, and reviews
-4. read the approved Topic-2 design and review
-5. read the approved U3 clarification and approving review
-6. verify the exact committed Topic-3 design/review identities above and read
+4. verify and read the exact approved U4-001 clarification/review identities
+   above; consume the clarification unchanged at its stated precedence
+5. read the approved Topic-2 design and review
+6. read the approved U3 clarification and approving review
+7. verify the exact committed Topic-3 design/review identities above and read
    that approved pair as authority
-7. identify only the reconciliation gaps delegated to Topic 4, preserving
-   Topics 1–3 and the narrow U3 amendments as closed authority
+8. identify only the reconciliation gaps delegated to Topic 4, preserving
+   Topics 1–3, the narrow U3 amendments, and U4-001 as closed authority
 
 Topics 4–6 remain incomplete. No Topic-4 design decisions are made by this
 checkpoint. Corrective implementation and authentic/reference/candidate access
-remain unauthorized.
+remain unauthorized. Any later access must be explicitly permitted by approved
+Topic-4 authority and satisfy every applicable existing custody/access gate;
+neither this checkpoint nor U4-001 preservation grants such access.
