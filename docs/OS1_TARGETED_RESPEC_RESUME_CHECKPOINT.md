@@ -17,6 +17,17 @@ The commit `Approve U4-001 candidate size representability clarification`
 preserves the unchanged approved clarification, its independent-review
 artifact, and this minimum checkpoint update. It does not resume Topic 4.
 
+Preservation update: 2026-09-11, after independent U4-002 clarification approval.
+Before preservation, HEAD, main, and origin/main were synchronized at
+`fd7c8edd6fb961442a5a35a707dd9e0a060db7bb`, divergence `0/0`, with an empty index.
+The commit `Approve U4-002 candidate timestamp representability clarification`
+preserves the unchanged approved clarification, its independent review, and
+this checkpoint update. U4-001 remains approved and durably preserved.
+Earlier references below to "this commit" describe their historical preservation
+updates unless explicitly identified as U4-002. The new project-management gate
+supersedes all earlier permission to resume Topic 4 after preservation alone.
+Topic 4 has not resumed.
+
 This is a status and handoff document. It is not new design authority and does
 not supersede or alter any approved design authority.
 
@@ -82,8 +93,8 @@ Approved Topic-1 summary:
 
 - 14 top-level serialized schemas
 - one RECORD stream grammar
-- 60 `OS1_METADATA_HELPER_ERRORS_V2` members: original 55, four from the
-  approved Topic-2 amendment, and one from the approved U4-001 clarification
+- 61 `OS1_METADATA_HELPER_ERRORS_V2` members: original 55, four from the
+  approved Topic-2 amendment, one from U4-001, and one from U4-002
 - maximum schema-derived successful RECORD line: 1124 bytes including LF
 - maximum complete RECORD: 4,603,904 bytes
 - gap accounting: 3 fully closed, 15 partially closed, 2 outside Topic 1, and
@@ -137,7 +148,7 @@ Approval result:
 - `CORRECTIVE IMPLEMENTATION AUTHORIZED: NO`
 
 U4-001 is closed by the approved Topic-1 supplement, not a Topic-4 local
-mapping choice. The effective error vocabulary is 60 members, retaining
+mapping choice. At U4-001 approval the effective vocabulary became 60, retaining
 `OS1_METADATA_HELPER_ERRORS_V2`. The new T4-inspect-only member is
 `CANDIDATE_SIZE_UNREPRESENTABLE`: the clarification's exact successful,
 stable, non-alias regular-candidate size condition is fatal, exits 70, emits
@@ -149,9 +160,65 @@ Precedence is Topic 1, then its approved Topic-2 error amendment, then this
 narrow U4-001 supplement for its exact domain, local dependencies, and count
 qualifications. Its Amendment surface controls; no unrelated predecessor rule
 is reopened. Topic 4 must consume the exact approved clarification and review
-unchanged. The review-stage `TOPIC 4 MAY RESUME: NO` reflected pending durable
-preservation only. After this commit is pushed and synchronization verified,
-Topic 4 may resume in a separate task; it is not resumed by preservation.
+unchanged. The U4-001 review-stage `TOPIC 4 MAY RESUME: NO` reflected pending
+durable preservation only. Historically, that checkpoint allowed a separate
+Topic-4 task after push and synchronization. The U4-002 project-management gate
+now requires the release-path rebaseline before any further authorization.
+
+### Approved U4-002 predecessor clarification — PRESERVED BY THIS COMMIT
+
+Approved clarification, intentionally unchanged including its editorial MINOR:
+`docs/OS1_TOPIC1_CANDIDATE_TIMESTAMP_REPRESENTABILITY_CLARIFICATION_U4_002_V1.md`
+
+- 524 lines
+- SHA-256:
+  `af7acbc6a04526f00be4a92a4251620e5a0f74adb6768502bdc5a4f1ea888abd`
+
+Approved independent review, faithfully preserved from the session review:
+`docs/OS1_TOPIC1_CANDIDATE_TIMESTAMP_REPRESENTABILITY_CLARIFICATION_U4_002_V1_REVIEW.md`
+
+- 303 lines
+- SHA-256:
+  `b6a0a2efb2f3714bf0f3588becdff054ac248b3da61715afdb408514181b88f9`
+
+Approval result:
+
+- `U4-002 INDEPENDENT CLARIFICATION REVIEW: APPROVED`
+- `BLOCKERS: 0`
+- `IMPORTANT FINDINGS: 0`
+- `MINOR FINDINGS: 1`
+- `U4-002 AUTHORITY CLOSED: YES`
+- `TOPIC 4 MAY RESUME: NO`
+- `CORRECTIVE IMPLEMENTATION AUTHORIZED: NO`
+
+The one MINOR is an editorial section-label mismatch at clarification line 380:
+S1R line 158 belongs to Vocabulary-count review, not Error/exit review.
+The line number and arithmetic are correct; it cannot affect implementation
+behavior and requires no correction for approval. The exact reviewed bytes
+remain unchanged.
+
+U4-002 is closed by the approved Topic-1 supplement. It adds exactly the
+T4-inspect-only fatal member `CANDIDATE_TIMESTAMP_UNREPRESENTABLE`, producing
+exit 70, zero stdout, and only its fixed error line plus LF on stderr.
+All four required candidate stat timestamps and all four outside-domain
+seconds/nanoseconds branches are covered. `timestamp_v1` remains unchanged;
+no normalization is authorized. No successful or rejection line represents
+this failure, and no complete RECORD or valid completion is published for it.
+RECORD totality and four rejection codes/pairings remain unchanged.
+
+The effective approved vocabulary is now 55 + 4 + 1 + 1 = 61 members,
+retaining `OS1_METADATA_HELPER_ERRORS_V2`. The validator registry remains
+exactly 42 rows, V02-001 through V02-042, with unchanged predicates and
+applicability. U4-001's entire size domain remains approved and preserved.
+Precedence is T1, A1, U4-001, then U4-002 only on its stated Amendment surface.
+The timestamp check follows U4-001 size representability and precedes later
+resource/data/hash work; FinderInfo/alias outcomes remain earlier controlling
+outcomes. This is an approved local dependency, not a full Topic-4 algorithm.
+
+Topic 3 remains unchanged. Topic-4 mechanics, Topic-5 completion/events, and
+Topic-6 conformance design remain delegated. No corrective implementation is
+authorized. Durable preservation does not resume Topic 4: the release-path
+rebaseline below is required before authorizing additional Topic-4 work.
 
 ## Topic 2 — COMPLETE AND DURABLE
 
@@ -280,15 +347,15 @@ depend on that working artifact, `/tmp`, or the current conversation.
 
 ## Topics 4–6
 
-Topic 4 is the NEXT targeted re-specification topic after this preservation
-commit is pushed and synchronization is verified. U4-001 is approved and
-preserved by this commit; Topic 4 may then resume while consuming that exact
-clarification unchanged. This preservation task does not resume it. The
-Topic-3 review's `TOPIC 4 MAY BEGIN: NO` records that review task's scope, not
-an outstanding Topic-3 approval defect.
+Historically, the U4-001 checkpoint designated Topic 4 as the next targeted
+re-specification topic after synchronized preservation. U4-001 and U4-002 are
+now approved and preserved, but the user has inserted a Phoenix 0.1 release-path
+rebaseline before authorizing further Topic-4 work. Topic 4 has not resumed.
+The Topic-3 review's `TOPIC 4 MAY BEGIN: NO` records that review task's scope,
+not an outstanding Topic-3 approval defect.
 
 - Topic 4 — Inspect, candidate access, and RECORD production:
-  **INCOMPLETE — READY TO RESUME AFTER U4-001 PRESERVATION — NEXT**
+  **INCOMPLETE — NOT RESUMED — RELEASE-PATH REBASELINE REQUIRED BEFORE FURTHER WORK**
 - Topic 5 — Terminal completion and operational-event publication:
   **INCOMPLETE / NOT STARTED**
 - Topic 6 — Deterministic conformance-test registries:
@@ -342,8 +409,8 @@ Its contents must not be read during OS1 checkpoint or re-specification work
 unless separately authorized.
 
 All pre-existing protected modified/untracked work remains preserved outside
-the U4-001 commit, including the unchanged U3 blocker review and every file
-under `tools/os1-metadata-helper/`. None is staged or incorporated into this
+the U4-001 and U4-002 preservation commits, including the unchanged U3 blocker
+review and every file under `tools/os1-metadata-helper/`. None is staged or incorporated into this
 authority package; helper implementation contents remain protected from reads.
 
 ## Evidence/provenance boundaries
@@ -359,32 +426,38 @@ At this checkpoint:
 These are status statements based on the current documented state, not claims
 beyond it.
 
-## Resume instruction
+## Current project-management gate
 
-**NEXT ACTION:**
+**NEXT REQUIRED ACTION:**
+**PHOENIX 0.1 RELEASE-PATH REBASELINE BEFORE FURTHER OS1 TOPIC-4 WORK**
 
-**RESUME OS1 TARGETED RE-SPECIFICATION TOPIC 4:**
-**INSPECT, CANDIDATE ACCESS, AND RECORD PRODUCTION**
+The rebaseline will classify remaining work as REQUIRED, VALUABLE, or OPTIONAL
+against the shortest credible path to a usable Phoenix 0.1 release.
+This preservation task does not perform that rebaseline. Synchronizing the
+preservation commit alone does not authorize more Topic-4 work.
 
-Exact next design task: **TOPIC 4 — INSPECT, CANDIDATE ACCESS, AND RECORD PRODUCTION**.
+## Conditional future Topic-4 resume instruction
 
-After this preservation commit is pushed and synchronization is verified,
-a separate Topic-4 task must:
+The historical next design task was Topic 4: Inspect, candidate access, and
+RECORD production. It remains incomplete and has not resumed. Only after the
+release-path rebaseline and separate authorization for further Topic-4 work,
+a future task must:
 
 1. verify repository synchronization and worktree preservation
 2. read the reconciliation and its independent review
 3. read the approved Topic-1 design, amendment, and reviews
 4. verify and read the exact approved U4-001 clarification/review identities
    above; consume the clarification unchanged at its stated precedence
+   and also verify/read the approved U4-002 clarification and review unchanged
 5. read the approved Topic-2 design and review
 6. read the approved U3 clarification and approving review
 7. verify the exact committed Topic-3 design/review identities above and read
    that approved pair as authority
 8. identify only the reconciliation gaps delegated to Topic 4, preserving
-   Topics 1–3, the narrow U3 amendments, and U4-001 as closed authority
+   Topics 1–3, the narrow U3 amendments, U4-001, and U4-002 as closed authority
 
 Topics 4–6 remain incomplete. No Topic-4 design decisions are made by this
 checkpoint. Corrective implementation and authentic/reference/candidate access
 remain unauthorized. Any later access must be explicitly permitted by approved
 Topic-4 authority and satisfy every applicable existing custody/access gate;
-neither this checkpoint nor U4-001 preservation grants such access.
+neither this checkpoint nor U4-001/U4-002 preservation grants such access.
