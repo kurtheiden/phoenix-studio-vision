@@ -31,6 +31,67 @@ Topic 4 has not resumed.
 This is a status and handoff document. It is not new design authority and does
 not supersede or alter any approved design authority.
 
+## Phoenix 0.1 release-scope rebaseline — 2026-09-12
+
+The release-path rebaseline and minimum OS1 scope decision are complete.
+Phoenix 0.1 no longer requires completion of the entire remaining OS1
+Topics 4–6 framework before blind validation. This project-management decision
+supersedes the blanket six-topic completion/review prerequisite and earlier
+next-action/resume prerequisites below **for the minimum 0.1 route only**.
+The full-framework requirements remain applicable to work claiming that full
+contract. Approved Topics 1–3 and U4-001/U4-002 remain valid, unchanged, and
+neither withdrawn nor rewritten.
+
+For 0.1, remaining OS1 work is limited to:
+
+- eligible, neutral independent-candidate selection;
+- candidate/source identity correlation;
+- source read-only preservation with before/after integrity evidence;
+- safe refusal of unintended or ambiguous objects;
+- metadata-intake privacy and blindness protection;
+- complete, interpretable Phoenix observation records;
+- distinction between complete and incomplete/failed observations;
+- durable freeze of Phoenix observations before reference reveal;
+- honest preservation of failures and post-freeze reference comparison; and
+- a synthetic rehearsal plus focused representative verification.
+
+The following are **not Phoenix 0.1 release prerequisites**:
+
+- complete RA01–RA19 or IP01–IP11 implementation;
+- full canonical MAP/RECORD/completion/event production for the minimum route;
+- mandatory implementation of every previously specified timestamp, fork,
+  xattr, and metadata field;
+- four-root custody continuity or generalized root-bound evidence validation;
+- alternate-basename, relocation, copy, replay, or historical-identity machinery;
+- executable A/B authorization artifact chains or automated binding/run/
+  reservation authority chains;
+- atomic one-use reservation/lifecycle automation or operational-event
+  publication;
+- exhaustive temporary-file, crash, or filesystem-race handling;
+- complete validator/conformance registry coverage or exhaustive exact-byte/
+  error-precedence matrices;
+- automatic clarification → independent review → preservation cycles for every
+  newly noticed edge case; or
+- completion of Topics 4–6 merely to satisfy the former blanket framework.
+
+New edge cases do not automatically create design-authority work. Ordinarily,
+use conservative failure behavior and focused implementation-level tests unless
+a concrete Phoenix 0.1 release risk requires more. Reduced/minimum-route
+artifacts must not claim conformance to fuller OS1 schemas or contracts they
+do not implement. This decision qualifies prior technical prerequisites only
+as stated above; it does not reopen predecessor technical authority.
+
+The blind-validation protocol's essential requirements remain binding:
+permission, eligibility, neutrality, concealment, source integrity,
+freeze-before-reveal, and honest comparison. Metadata-intake completion does
+not itself freeze the later Phoenix observations.
+
+**Candidate access, Topic 4 implementation, corrective implementation, and
+blind execution remain unauthorized and require separate explicit gates.**
+This record grants none of those permissions. The immediate purpose is to move
+Phoenix toward its first independent blind validation, rather than continue
+general OS1 framework completion.
+
 ## Historical baseline at checkpoint creation
 
 Commit:
