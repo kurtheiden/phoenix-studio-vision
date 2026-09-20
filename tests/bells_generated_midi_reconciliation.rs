@@ -10,6 +10,9 @@ const PROJECT: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled S
 const MIDI: &str = "/Users/kurtheiden/Documents/Phoenix Research/Studio Vision MIDI Exports/Project 001/newest STUFF - Bells for her - provenance multitrack";
 const PROJECT_SHA256: &str = "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132";
 const MIDI_SHA256: &str = "ffbdbb6be208a2d607c9b0c55a12b72226a18d43b9494c2b46b058d4568fc2c3";
+const SEQUENCE_K_MIDI: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 030 - Change initial Meter from 4-4 to 7-8/Sequence K 6-8";
+const SEQUENCE_K_MIDI_SHA256: &str =
+    "77cda3e7ceb707f034ead498592f148a3ed211708d5033533429e27b5a9a6db6";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Note {
@@ -90,7 +93,14 @@ fn authentic_bells_generated_midi_reconciles_with_reference() {
     let generated_bytes = fs::read(&generated_path).expect("generated MIDI");
     let generated = parse_smf(&generated_bytes).expect("generated SMF");
     let reference = parse_smf(&reference_bytes).expect("reference SMF");
-    let result = compare_smf(&generated, &reference);
+    let result = compare_smf(
+        &generated,
+        &reference,
+        &[
+            "Track 1", "Track 3", "Track 4", "Track 5", "Track 6", "Track 8", "Track 9",
+            "Track 11", "Track 12", "Track 14",
+        ],
+    );
     fs::remove_dir_all(destination).ok();
     if !result.mismatches.is_empty() {
         panic!("Bells normalized reconciliation failed: {:#?}", result);
@@ -122,6 +132,74 @@ fn authentic_bells_generated_midi_reconciles_with_reference() {
     assert_eq!(result.generated_meters, result.reference_meters);
     assert_eq!(result.tempo_matches, result.generated_tempos.len());
     assert_eq!(result.meter_matches, result.generated_meters.len());
+}
+
+#[test]
+fn authentic_sequence_k_generated_midi_reconciles_with_reference() {
+    let project_path = Path::new(PROJECT);
+    let midi_path = Path::new(SEQUENCE_K_MIDI);
+    if !project_path.is_file() || !midi_path.is_file() {
+        return;
+    }
+    assert_eq!(sha256_hex(&fs::read(project_path).unwrap()), PROJECT_SHA256);
+    let reference_bytes = fs::read(midi_path).expect("authenticated Sequence K MIDI");
+    assert_eq!(sha256_hex(&reference_bytes), SEQUENCE_K_MIDI_SHA256);
+    let mut service = AppService::new();
+    let inspected = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: PROJECT.into(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("authentic project inspection");
+    let sequence = inspected
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Sequence K")
+        .expect("Sequence K");
+    assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+    assert_eq!(
+        sequence
+            .export_capability
+            .as_ref()
+            .map(|c| c.profile_id.as_str()),
+        Some("studio_vision_sequence_k_v1")
+    );
+    let destination = std::env::temp_dir().join(format!(
+        "phoenix-sequence-k-reconcile-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&destination).expect("temporary destination");
+    let export = service
+        .export_sequence(ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: inspected.session_id,
+            sequence_id: sequence.sequence_id.clone(),
+            destination_folder: destination.to_string_lossy().into_owned(),
+            filename_stem: "Sequence K reconciliation".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .expect("Sequence K export");
+    assert_eq!(export.musical_track_count, 1);
+    assert_eq!(export.total_smf_track_count, 2);
+    assert_eq!(export.counts.notes, 28);
+    assert_eq!(export.counts.programs, 1);
+    let generated_bytes =
+        fs::read(destination.join("Sequence K reconciliation.mid")).expect("generated MIDI");
+    let generated = parse_smf(&generated_bytes).expect("generated SMF");
+    let reference = parse_smf(&reference_bytes).expect("reference SMF");
+    let result = compare_smf(&generated, &reference, &["Track 1"]);
+    fs::remove_dir_all(destination).ok();
+    assert!(
+        result.mismatches.is_empty(),
+        "Sequence K reconciliation: {result:#?}"
+    );
+    assert_eq!((result.notes, result.reference_notes), (28, 28));
+    assert_eq!(result.exact_releases, 28);
+    assert_eq!((result.programs, result.program_matches), (1, 1));
+    assert_eq!(result.tempo_matches, 1);
+    assert_eq!(result.meter_matches, 1);
 }
 
 #[derive(Debug)]
@@ -163,7 +241,7 @@ struct Comparison {
     mismatches: Vec<String>,
 }
 
-fn compare_smf(generated: &Smf, reference: &Smf) -> Comparison {
+fn compare_smf(generated: &Smf, reference: &Smf, names: &[&str]) -> Comparison {
     let mut out = Comparison {
         generated_musical_tracks: generated.tracks.len().saturating_sub(1),
         reference_musical_tracks: reference.tracks.len().saturating_sub(1),
@@ -221,11 +299,7 @@ fn compare_smf(generated: &Smf, reference: &Smf) -> Comparison {
     } else {
         mismatch(&mut out, "meter mismatch".into());
     }
-    let names = [
-        "Track 1", "Track 3", "Track 4", "Track 5", "Track 6", "Track 8", "Track 9", "Track 11",
-        "Track 12", "Track 14",
-    ];
-    if generated.tracks.len() != 11 || reference.tracks.len() != 11 {
+    if generated.tracks.len() != names.len() + 1 || reference.tracks.len() != names.len() + 1 {
         mismatch(&mut out, "track count mismatch".into());
     }
     for (index, expected_name) in names.iter().enumerate() {

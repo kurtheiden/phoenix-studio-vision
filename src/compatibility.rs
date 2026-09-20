@@ -427,7 +427,15 @@ impl CompatibilityRegistry {
         for profile in &self.profiles {
             match assess_profile(profile, evidence, selected_sequence_ordinal) {
                 ProfileMatch::Matched { .. } => matches.push(profile),
-                ProfileMatch::Rejected { reason, .. } => rejection = Some((profile, reason)),
+                ProfileMatch::Rejected { reason, .. } => {
+                    let targets_selected_sequence = profile
+                        .sequences
+                        .iter()
+                        .any(|sequence| sequence.structural_ordinal == selected_sequence_ordinal);
+                    if targets_selected_sequence || rejection.is_none() {
+                        rejection = Some((profile, reason));
+                    }
+                }
                 ProfileMatch::NoMatch => {}
             }
         }

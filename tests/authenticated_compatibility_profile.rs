@@ -4,9 +4,10 @@ use phoenix::app_contract::{
 };
 use phoenix::app_service::AppService;
 use phoenix::compatibility::{
-    PatchTranslationPolicy, ProfileMatch, ProfileMismatchReason, ResolvedTrackOutputDisposition,
+    ByteRange, CompatibilityRegistry, EvidenceEventFamily, PatchTranslationPolicy, ProfileMatch,
+    ProfileMismatchReason, ResolvedTrackOutputDisposition,
 };
-use phoenix::compatibility_profiles::built_in_compatibility_registry;
+use phoenix::compatibility_profiles::{built_in_compatibility_registry, sequence_k_profile};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -48,6 +49,114 @@ fn assess_named(path: &Path, sequence_name: &str) -> ProfileMatch {
         .expect("built-in profile validates")
         .assess(&evidence, ordinal)
         .expect("assessment should not be ambiguous")
+}
+
+#[test]
+fn authentic_sequence_k_profile_requires_exact_identity_and_complete_policy() {
+    let path = Path::new(SOURCE);
+    if !path.is_file() {
+        return;
+    }
+    let (service, response) = inspect(path);
+    let sequence = response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Sequence K")
+        .expect("Sequence K");
+    let ordinal = service
+        .sequence_ordinal_for_id(&response.session_id, &sequence.sequence_id)
+        .unwrap();
+    assert_eq!(ordinal, 10);
+    let evidence = service.profile_evidence(&response.session_id).unwrap();
+    let registry = CompatibilityRegistry::new(vec![sequence_k_profile().unwrap()]).unwrap();
+    let ProfileMatch::Matched {
+        capability,
+        resolved_policy,
+    } = registry.assess(&evidence, ordinal).unwrap()
+    else {
+        panic!("authenticated Sequence K must match");
+    };
+    assert_eq!(capability.profile_id, "studio_vision_sequence_k_v1");
+    assert_eq!(resolved_policy.track_manifest.len(), 2);
+    assert!(matches!(
+        &resolved_policy.track_manifest[0].output,
+        ResolvedTrackOutputDisposition::Included {
+            midi_channel: 15,
+            patches,
+        } if patches == &vec![PatchTranslationPolicy::ProgramOnly { program: 19 }]
+    ));
+    assert!(matches!(
+        resolved_policy.track_manifest[1].output,
+        ResolvedTrackOutputDisposition::OmittedStructuralEmpty
+    ));
+    assert_eq!(evidence.sequences[10].tracks[0].decoded_event_count, 29);
+    assert_eq!(
+        evidence.sequences[10].tracks[0].decoded_event_families,
+        vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note]
+    );
+    assert_eq!(evidence.sequences[10].tracks[1].decoded_event_count, 0);
+    assert!(evidence.sequences[10].tracks[1]
+        .decoded_event_families
+        .is_empty());
+
+    let mut changed = evidence.clone();
+    changed.source_sha256 = "0".repeat(64);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::NoMatch
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[10].name_bytes = b"Different".to_vec();
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::SequenceIdentityMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[10].tracks[0].exact_event_range = Some(ByteRange::new(1, 2).unwrap());
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[10].tracks[0].observed_channel = Some(14);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::ChannelPolicyMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[10].tracks[0].patch_evidence[0].decoded_program = 20;
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::PatchPolicyMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[10].tracks[1].decoded_event_count = 1;
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    assert!(matches!(
+        registry.assess(&evidence, 14).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::SequenceIdentityMismatch,
+            ..
+        }
+    ));
 }
 
 #[test]

@@ -20,6 +20,8 @@ const BELLS_PROFILE_ID: &str = "studio_vision_bells_for_her_v1";
 const BELLS_DISPLAY_LABEL: &str = "Validated research profile — Bells for her";
 const BELLS_SOURCE_SHA256: &str = ODE_SOURCE_SHA256;
 const BELLS_SOURCE_SIZE: u64 = ODE_SOURCE_SIZE;
+const SEQUENCE_K_PROFILE_ID: &str = "studio_vision_sequence_k_v1";
+const SEQUENCE_K_DISPLAY_LABEL: &str = "Validated research profile — Sequence K";
 
 fn range(start: u64, end: u64) -> ByteRange {
     ByteRange::new(start, end).expect("built-in profile range is valid")
@@ -500,7 +502,60 @@ pub fn bells_for_her_profile() -> Result<CompatibilityProfile, ProfileDefinition
     })
 }
 
+/// The exact Experiment 007 Sequence K proof: one channel-15 performance
+/// track and one structurally empty track absent from the Studio Vision export.
+pub fn sequence_k_profile() -> Result<CompatibilityProfile, ProfileDefinitionError> {
+    let tracks = vec![
+        track(
+            2,
+            (0x025784, 0x02582a),
+            0,
+            (0x02597b, 0x025a6c),
+            (0x02598e, 0x025a65),
+            b"Track 1",
+            15,
+            vec![patch(
+                (0x02598e, 0x0259b1),
+                19,
+                PatchTranslationPolicy::ProgramOnly { program: 19 },
+            )],
+        )?,
+        omitted_empty_track(
+            3,
+            (0x02582a, 0x0258d0),
+            1,
+            (0x025b36, 0x025b50),
+            (0x025b49, 0x025b49),
+            b"Track 2",
+        ),
+    ];
+    Ok(CompatibilityProfile {
+        id: ProfileId::new(SEQUENCE_K_PROFILE_ID),
+        version: ProfileVersion::new(1),
+        display_label: SEQUENCE_K_DISPLAY_LABEL.into(),
+        project: ProjectExpectation::new(
+            ODE_SOURCE_SHA256,
+            ODE_SOURCE_SIZE,
+            ParserProfileId::new("descriptor166"),
+            18,
+        )?,
+        sequences: vec![SequenceExpectation {
+            structural_ordinal: 10,
+            sequence_range: range(0x025568, 0x025b81),
+            expected_name_bytes: b"Sequence K".to_vec(),
+            name_range: range(0x0258c2, 0x0258cc),
+            descriptor_count: 4,
+            pair_count: 2,
+            track_expectations: tracks,
+        }],
+    })
+}
+
 /// Constructs the immutable registry of compiled-in research profiles.
 pub fn built_in_compatibility_registry() -> Result<CompatibilityRegistry, ProfileDefinitionError> {
-    CompatibilityRegistry::new(vec![ode_to_clarke_profile()?, bells_for_her_profile()?])
+    CompatibilityRegistry::new(vec![
+        ode_to_clarke_profile()?,
+        bells_for_her_profile()?,
+        sequence_k_profile()?,
+    ])
 }

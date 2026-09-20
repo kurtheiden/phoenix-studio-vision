@@ -271,7 +271,7 @@ fn optional_authentic_fixture_projects_readiness_per_sequence() {
         assert_eq!(status.capability.is_some(), status.has_resolved_policy);
         if matches!(
             sequence.display_name.as_str(),
-            "Ode to Clarke" | "Bells for her"
+            "Ode to Clarke" | "Bells for her" | "Sequence K"
         ) {
             assert_eq!(status.match_kind, SequenceAssessmentKind::Matched);
             assert!(status.has_resolved_policy);
@@ -289,7 +289,7 @@ fn optional_authentic_fixture_projects_readiness_per_sequence() {
             assert!(sequence.export_capability.is_none());
         }
     }
-    assert_eq!(matched, 2);
+    assert_eq!(matched, 3);
     assert_eq!(
         response.project.overall_readiness,
         Readiness::PartiallySupported
