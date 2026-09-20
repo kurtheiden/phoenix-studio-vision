@@ -14,6 +14,19 @@ does not alter that checkpoint. The adopted
 requirements retained in the
 [resume checkpoint](OS1_TARGETED_RESPEC_RESUME_CHECKPOINT.md) remain applicable.
 
+## Contributor identity clarification — 2026-09-21
+
+The owner now clarifies: “The only Studio Vision files I've received are the
+ones from Steve. I may have referred to Steve as a colleague before identifying
+him by name, but there is no third source for files I'm aware of.” Thus an
+earlier unnamed “colleague” denotes Steve Horowitz, not a separate contributor.
+This distinguishes the owner's own projects from Steve-supplied material; it
+does not identify any particular previously unnamed file as `Prologue Master`
+or establish relationships among Steve's files. Exact file identity,
+project-family independence, reference availability, permission, and OS1
+eligibility still require their own evidence. Historical observations below
+retain their original attribution and date. Authentic intake remains BLOCKED.
+
 ## Steve's verbatim statement
 
 > Okay here's the deal. The folder with the files that can't be read are the
