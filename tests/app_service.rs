@@ -42,10 +42,123 @@ fn service_starts_empty_and_generates_distinct_opaque_sessions() {
         .expect("readable file should produce an assessment");
     assert_ne!(first.session_id, second.session_id);
     assert_eq!(first.project.overall_readiness, Readiness::Unknown);
+    assert!(first.research_observation.is_none());
     assert!(first.session_id.as_str().starts_with("session-"));
     assert_eq!(service.session_count(), 2);
     fs::remove_file(first_path).ok();
     fs::remove_file(second_path).ok();
+}
+
+#[test]
+#[ignore = "requires a private source and owner-only authorization manifest outside the repository"]
+fn private_research_inspection_remains_export_ineligible() {
+    let source = std::env::var("PHOENIX_PROLOGUE_VERIFY_SOURCE").expect("private source path");
+    let auth_path =
+        std::env::var("PHOENIX_PROLOGUE_RESEARCH_AUTH_FILE").expect("private authorization path");
+    let mut service = AppService::new();
+    std::env::remove_var("PHOENIX_PROLOGUE_RESEARCH_AUTH_FILE");
+    let without_auth = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: source.clone(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("inspection without authorization");
+    assert!(without_auth.research_observation.is_none());
+    assert!(without_auth.sequences.is_empty());
+    assert_ne!(without_auth.project.overall_readiness, Readiness::Ready);
+
+    std::env::set_var(
+        "PHOENIX_PROLOGUE_RESEARCH_AUTH_FILE",
+        "/private/tmp/phoenix-auth-absent-test",
+    );
+    let invalid = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: source.clone(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("inspection with absent authorization file");
+    assert!(invalid.research_observation.is_none());
+    assert_eq!(invalid.project, without_auth.project);
+    assert_eq!(invalid.sequences, without_auth.sequences);
+
+    let mut mismatched: serde_json::Value =
+        serde_json::from_slice(&fs::read(&auth_path).expect("read private authorization"))
+            .expect("valid authorization JSON");
+    mismatched["source_sha256"] = serde_json::Value::String("0".repeat(64));
+    let mismatch_path = std::env::temp_dir().join(format!(
+        "phoenix-research-auth-mismatch-{}",
+        std::process::id()
+    ));
+    fs::write(&mismatch_path, serde_json::to_vec(&mismatched).unwrap()).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&mismatch_path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    std::env::set_var("PHOENIX_PROLOGUE_RESEARCH_AUTH_FILE", &mismatch_path);
+    let mismatch = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: source.clone(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("inspection with mismatched authorization");
+    assert!(mismatch.research_observation.is_none());
+    assert_eq!(mismatch.project, without_auth.project);
+    assert_eq!(mismatch.sequences, without_auth.sequences);
+    fs::remove_file(mismatch_path).unwrap();
+    std::env::set_var("PHOENIX_PROLOGUE_RESEARCH_AUTH_FILE", auth_path);
+
+    let result = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: source.clone(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("private inspection");
+    let observation = result
+        .research_observation
+        .expect("authenticated observation");
+    assert_eq!(observation.groups.len(), 2);
+    assert_eq!(observation.tracks.len(), 3);
+    assert!(result.sequences.is_empty());
+    assert_eq!(result.project.sequence_count, 0);
+    assert_ne!(result.project.overall_readiness, Readiness::Ready);
+    assert!(service.profile_evidence(&result.session_id).is_err());
+    assert_eq!(result.project, without_auth.project);
+    assert_eq!(result.sequences, without_auth.sequences);
+
+    let request = serde_json::json!({
+        "operation": "inspect_project",
+        "contract_version": CONTRACT_VERSION,
+        "payload": { "source_path": source, "diagnostics_level": "full" }
+    });
+    let transported = phoenix::json_transport::dispatch_json(
+        &mut service,
+        serde_json::to_vec(&request).unwrap().as_slice(),
+    );
+    let transported: serde_json::Value = serde_json::from_slice(&transported).unwrap();
+    assert_eq!(transported["ok"], true);
+    assert!(transported["result"]["research_observation"].is_object());
+    assert_eq!(
+        transported["result"]["sequences"].as_array().unwrap().len(),
+        0
+    );
+    let refusal = service
+        .export_sequence(phoenix::app_contract::ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: result.session_id,
+            sequence_id: phoenix::app_contract::SequenceId::new("research-is-not-a-sequence"),
+            destination_folder: std::env::temp_dir().to_string_lossy().into_owned(),
+            filename_stem: "unused".into(),
+            collision_policy: phoenix::app_contract::CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .unwrap_err();
+    assert_eq!(refusal.category, AppErrorCategory::InternalError);
+    assert_eq!(refusal.diagnostic_code, "unknown_sequence");
 }
 
 #[test]

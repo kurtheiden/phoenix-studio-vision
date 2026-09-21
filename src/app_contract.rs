@@ -369,6 +369,57 @@ pub struct InspectProjectResponse {
     pub sequences: Vec<SequenceSummary>,
     pub warnings: Vec<Warning>,
     pub diagnostics_available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub research_observation: Option<ResearchObservation>,
+}
+
+/// Authenticated byte observations only. This is not a recovered Sequence.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ResearchObservation {
+    pub label: String,
+    pub representation: String,
+    pub groups: Vec<ResearchGroup>,
+    pub tracks: Vec<ResearchTrack>,
+    pub correlated_fields: Vec<ResearchField>,
+    pub unresolved: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ResearchGroup {
+    pub name: String,
+    pub record_start: u64,
+    pub record_end: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ResearchTrack {
+    pub label: String,
+    pub descriptor_label_start: u64,
+    pub descriptor_label_end: u64,
+    pub primary_start: Option<u64>,
+    pub primary_end: Option<u64>,
+    pub tuple_start: Option<u64>,
+    pub tuple_end: Option<u64>,
+    pub notes: Vec<ResearchNote>,
+    pub limitation: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ResearchNote {
+    pub source_start: u64,
+    pub onset_tick: u32,
+    pub pitch: u8,
+    pub attack_velocity: u8,
+    pub release_velocity: u8,
+    pub duration_ticks: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ResearchField {
+    pub start: u64,
+    pub end: u64,
+    pub value: u32,
+    pub interpretation: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

@@ -26,6 +26,7 @@ use crate::mixed_event::{
     MixedEventTimingBasis,
 };
 use crate::multitrack_export::{assemble_multitrack_sequence, MultitrackExportResult};
+use crate::prologue_inspection::inspect_if_authorized;
 use crate::sequence_container::{parse_project_166, TrackAssociations};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -335,6 +336,8 @@ impl AppService {
         })?;
 
         let finder = identify(read_finder_metadata(&inspection.full_path));
+        // Authenticate the bytes actually parsed; `inspect` made an earlier read.
+        let research_observation = inspect_if_authorized(&bytes, &sha256_hex(&bytes));
         let finder_recognized = !finder.confidence.to_string().eq("Unknown");
         let session_id = self.allocate_session_id();
         let (project, sequences, warnings, diagnostics, structure) = match parse_project_166(&bytes)
@@ -370,6 +373,7 @@ impl AppService {
             sequences,
             warnings,
             diagnostics_available: true,
+            research_observation,
         };
         let sequence_ordinals = response
             .sequences

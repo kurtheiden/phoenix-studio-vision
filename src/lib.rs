@@ -22,6 +22,7 @@ pub mod multitrack_export;
 pub mod opening;
 pub mod patch;
 pub mod pitch_bend;
+mod prologue_inspection;
 pub mod sequence_container;
 pub mod smf;
 pub mod tempo;
