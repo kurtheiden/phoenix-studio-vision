@@ -43,7 +43,7 @@
 		A00000500000000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 /* Begin PBXShellScriptBuildPhase section */
-		A00000500000000000000001 /* Cargo build */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); name = "Build Phoenix Rust library"; outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "cd \"$SRCROOT/../..\"\ncargo build --release --locked\n"; };
+		A00000500000000000000001 /* Cargo build */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); name = "Build Phoenix Rust library"; outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -e\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\ncd \"$SRCROOT/../..\"\ncargo build --release --locked\n"; };
 /* End PBXShellScriptBuildPhase section */
 /* Begin PBXSourcesBuildPhase section */
 		A00000500000000000000002 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000010000000000000001 /* PhoenixAppApp.swift in Sources */, A00000010000000000000002 /* AppModel.swift in Sources */, A00000010000000000000003 /* PhoenixCore.swift in Sources */, A00000010000000000000004 /* ContentView.swift in Sources */, A00000010000000000000006 /* ProjectOpenPanel.swift in Sources */, A00000010000000000000007 /* ProjectInspectionModels.swift in Sources */, A00000010000000000000008 /* ExportDestinationPanel.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
