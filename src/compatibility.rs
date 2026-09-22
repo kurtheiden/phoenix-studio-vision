@@ -240,6 +240,8 @@ pub struct OmittedPatchExpectation {
 pub struct IncludedTrackOutputExpectation {
     pub channel_policy: TrackChannelPolicy,
     pub patch_expectations: Vec<PatchExpectation>,
+    pub decoded_event_count: Option<u64>,
+    pub decoded_event_families: Option<Vec<EvidenceEventFamily>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -663,6 +665,16 @@ fn assess_profile(
         }
         let output = match &expectation.output {
             TrackOutputDispositionExpectation::Included(included) => {
+                if included
+                    .decoded_event_count
+                    .is_some_and(|count| observed_track.decoded_event_count != count)
+                    || included
+                        .decoded_event_families
+                        .as_ref()
+                        .is_some_and(|families| observed_track.decoded_event_families != *families)
+                {
+                    return rejected(profile, ProfileMismatchReason::TrackManifestMismatch);
+                }
                 if observed_track
                     .observed_channel
                     .is_some_and(|channel| channel != included.channel_policy.midi_channel)

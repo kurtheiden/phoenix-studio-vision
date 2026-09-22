@@ -7,14 +7,35 @@ use phoenix::compatibility::{
     ByteRange, CompatibilityRegistry, EvidenceEventFamily, PatchTranslationPolicy, ProfileMatch,
     ProfileMismatchReason, ResolvedTrackOutputDisposition,
 };
-use phoenix::compatibility_profiles::{built_in_compatibility_registry, sequence_k_profile};
+use phoenix::compatibility_profiles::{
+    built_in_compatibility_registry, sequence_k_profile, sequence_q_profile,
+};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const SOURCE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline";
+const REQUIRE_SEQUENCE_Q_AUTHENTIC: &str = "PHOENIX_REQUIRE_AUTHENTIC_SEQUENCE_Q";
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
+
+fn authentic_sequence_q_source_available(path: &Path, required: bool) -> bool {
+    if path.is_file() {
+        eprintln!("running authentic Sequence Q profile validation");
+        return true;
+    }
+    if required {
+        panic!(
+            "required authentic Sequence Q source is unavailable: {}",
+            path.display()
+        );
+    }
+    eprintln!(
+        "skipping authentic Sequence Q profile validation: source is unavailable: {}",
+        path.display()
+    );
+    false
+}
 
 fn inspect(path: &Path) -> (AppService, phoenix::app_contract::InspectProjectResponse) {
     let mut service = AppService::new();
@@ -157,6 +178,144 @@ fn authentic_sequence_k_profile_requires_exact_identity_and_complete_policy() {
             ..
         }
     ));
+}
+
+#[test]
+fn authentic_sequence_q_profile_requires_exact_identity_event_evidence_and_channel_policy() {
+    let path = Path::new(SOURCE);
+    if !authentic_sequence_q_source_available(
+        path,
+        std::env::var_os(REQUIRE_SEQUENCE_Q_AUTHENTIC).is_some(),
+    ) {
+        return;
+    }
+    let (service, response) = inspect(path);
+    let sequence = response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Sequence Q")
+        .expect("Sequence Q");
+    let ordinal = service
+        .sequence_ordinal_for_id(&response.session_id, &sequence.sequence_id)
+        .unwrap();
+    assert_eq!(ordinal, 16);
+    let evidence = service.profile_evidence(&response.session_id).unwrap();
+    let registry = CompatibilityRegistry::new(vec![sequence_q_profile().unwrap()]).unwrap();
+    let ProfileMatch::Matched {
+        capability,
+        resolved_policy,
+    } = registry.assess(&evidence, ordinal).unwrap()
+    else {
+        panic!("authenticated Sequence Q must match");
+    };
+    assert_eq!(capability.profile_id, "studio_vision_sequence_q_v1");
+    assert_eq!(resolved_policy.track_manifest.len(), 1);
+    assert!(matches!(
+        &resolved_policy.track_manifest[0].output,
+        ResolvedTrackOutputDisposition::Included {
+            midi_channel: 2,
+            patches,
+        } if patches.is_empty()
+    ));
+    let observed = &evidence.sequences[16].tracks[0];
+    assert_eq!(observed.decoded_event_count, 185);
+    assert_eq!(
+        observed.decoded_event_families,
+        vec![EvidenceEventFamily::Note]
+    );
+    assert!(observed.patch_evidence.is_empty());
+
+    let mut changed = evidence.clone();
+    changed.source_sha256 = "0".repeat(64);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::NoMatch
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].sequence_range = ByteRange::new(1, 2).unwrap();
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::SequenceIdentityMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].tracks[0].descriptor_range = ByteRange::new(1, 2).unwrap();
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].tracks[0].primary_range = ByteRange::new(1, 2).unwrap();
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].tracks[0].exact_event_range = Some(ByteRange::new(1, 2).unwrap());
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].tracks[0].label_bytes = b"Different".to_vec();
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].tracks[0].decoded_event_count = 184;
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].tracks[0].decoded_event_families =
+        vec![EvidenceEventFamily::Note, EvidenceEventFamily::Controller];
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::TrackManifestMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[16].tracks[0].observed_channel = Some(3);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::ChannelPolicyMismatch,
+            ..
+        }
+    ));
+}
+
+#[test]
+#[should_panic(expected = "required authentic Sequence Q source is unavailable")]
+fn required_authentic_sequence_q_profile_mode_rejects_missing_source() {
+    let missing = std::env::temp_dir().join(format!(
+        "phoenix-missing-sequence-q-source-{}-{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    assert!(!missing.exists());
+    authentic_sequence_q_source_available(&missing, true);
 }
 
 #[test]

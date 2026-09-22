@@ -2184,6 +2184,8 @@ pub(crate) mod tests {
                                                 },
                                         })
                                         .collect(),
+                                    decoded_event_count: None,
+                                    decoded_event_families: None,
                                 },
                             ),
                         }

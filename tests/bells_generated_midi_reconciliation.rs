@@ -13,6 +13,37 @@ const MIDI_SHA256: &str = "ffbdbb6be208a2d607c9b0c55a12b72226a18d43b9494c2b46b05
 const SEQUENCE_K_MIDI: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 030 - Change initial Meter from 4-4 to 7-8/Sequence K 6-8";
 const SEQUENCE_K_MIDI_SHA256: &str =
     "77cda3e7ceb707f034ead498592f148a3ed211708d5033533429e27b5a9a6db6";
+const SEQUENCE_Q_MIDI: &str = "/Users/kurtheiden/Documents/Phoenix Research/Studio Vision MIDI Exports/Project 001/Sequence Q - provenance multi";
+const SEQUENCE_Q_MIDI_SHA256: &str =
+    "e4416ce11296f99077c4b9a21ca9a7aa9a910cffff7be5745267d7a14f728040";
+const REQUIRE_SEQUENCE_Q_AUTHENTIC: &str = "PHOENIX_REQUIRE_AUTHENTIC_SEQUENCE_Q";
+
+fn authentic_sequence_q_artifacts_available(
+    project_path: &Path,
+    midi_path: &Path,
+    required: bool,
+) -> bool {
+    let missing: Vec<_> = [project_path, midi_path]
+        .into_iter()
+        .filter(|path| !path.is_file())
+        .collect();
+    if missing.is_empty() {
+        eprintln!("running authentic Sequence Q generated/reference reconciliation");
+        return true;
+    }
+    let paths = missing
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    if required {
+        panic!("required authentic Sequence Q artifacts are unavailable: {paths}");
+    }
+    eprintln!(
+        "skipping authentic Sequence Q generated/reference reconciliation: artifacts are unavailable: {paths}"
+    );
+    false
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Note {
@@ -200,6 +231,106 @@ fn authentic_sequence_k_generated_midi_reconciles_with_reference() {
     assert_eq!((result.programs, result.program_matches), (1, 1));
     assert_eq!(result.tempo_matches, 1);
     assert_eq!(result.meter_matches, 1);
+}
+
+#[test]
+fn authentic_sequence_q_generated_midi_reconciles_with_reference() {
+    let project_path = Path::new(PROJECT);
+    let midi_path = Path::new(SEQUENCE_Q_MIDI);
+    if !authentic_sequence_q_artifacts_available(
+        project_path,
+        midi_path,
+        std::env::var_os(REQUIRE_SEQUENCE_Q_AUTHENTIC).is_some(),
+    ) {
+        return;
+    }
+    assert_eq!(sha256_hex(&fs::read(project_path).unwrap()), PROJECT_SHA256);
+    let reference_bytes = fs::read(midi_path).expect("authenticated Sequence Q MIDI");
+    assert_eq!(sha256_hex(&reference_bytes), SEQUENCE_Q_MIDI_SHA256);
+    let mut service = AppService::new();
+    let inspected = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: PROJECT.into(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("authentic project inspection");
+    let sequence = inspected
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Sequence Q")
+        .expect("Sequence Q");
+    assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+    assert_eq!(
+        sequence
+            .export_capability
+            .as_ref()
+            .map(|capability| capability.profile_id.as_str()),
+        Some("studio_vision_sequence_q_v1")
+    );
+    let destination = std::env::temp_dir().join(format!(
+        "phoenix-sequence-q-reconcile-{}",
+        std::process::id()
+    ));
+    fs::create_dir_all(&destination).expect("temporary destination");
+    let export = service
+        .export_sequence(ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: inspected.session_id,
+            sequence_id: sequence.sequence_id.clone(),
+            destination_folder: destination.to_string_lossy().into_owned(),
+            filename_stem: "Sequence Q reconciliation".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .expect("Sequence Q export");
+    assert_eq!(export.musical_track_count, 1);
+    assert_eq!(export.total_smf_track_count, 2);
+    assert_eq!(export.counts.notes, 185);
+    assert_eq!(export.counts.generated_note_offs, 185);
+    assert_eq!(export.counts.controllers, 0);
+    assert_eq!(export.counts.programs, 0);
+    assert_eq!(export.counts.pressure, 0);
+    assert_eq!(export.counts.pitch_bend, 0);
+    let generated_bytes =
+        fs::read(destination.join("Sequence Q reconciliation.mid")).expect("generated MIDI");
+    let generated = parse_smf(&generated_bytes).expect("generated SMF");
+    let reference = parse_smf(&reference_bytes).expect("reference SMF");
+    let result = compare_smf(&generated, &reference, &["Track 1"]);
+    fs::remove_dir_all(destination).ok();
+    assert!(
+        result.mismatches.is_empty(),
+        "Sequence Q reconciliation: {result:#?}"
+    );
+    assert_eq!((generated.format, generated.division), (1, 480));
+    assert_eq!((result.notes, result.reference_notes), (185, 185));
+    assert_eq!(result.note_start_matches, 185);
+    assert_eq!(result.note_end_matches, 185);
+    assert_eq!(result.attack_matches, 185);
+    assert_eq!(result.exact_releases, 181);
+    assert_eq!(result.zero_velocity_substitutions, 4);
+    assert_eq!(result.unexplained_release_mismatches, 0);
+    assert_eq!(result.controllers + result.reference_controllers, 0);
+    assert_eq!(result.pressure + result.reference_pressure, 0);
+    assert_eq!(result.bends + result.reference_bends, 0);
+    assert_eq!(result.programs + result.reference_programs, 0);
+    assert_eq!(result.cc0 + result.reference_cc0, 0);
+    assert_eq!(result.cc32 + result.reference_cc32, 0);
+    assert_eq!(result.generated_tempos, result.reference_tempos);
+    assert_eq!(result.generated_meters, result.reference_meters);
+    assert_eq!(result.tempo_matches, 1);
+    assert_eq!(result.meter_matches, 1);
+}
+
+#[test]
+#[should_panic(expected = "required authentic Sequence Q artifacts are unavailable")]
+fn required_authentic_sequence_q_reconciliation_mode_rejects_missing_artifact() {
+    let missing = std::env::temp_dir().join(format!(
+        "phoenix-missing-sequence-q-reference-{}",
+        std::process::id()
+    ));
+    assert!(!missing.exists());
+    authentic_sequence_q_artifacts_available(Path::new(PROJECT), &missing, true);
 }
 
 #[derive(Debug)]
@@ -529,6 +660,9 @@ fn parse_track(payload: &[u8]) -> Result<Track, String> {
         };
         let kind = status >> 4;
         let channel = status & 0x0f;
+        if !(0x8..=0xe).contains(&kind) {
+            return Err(format!("unhandled MIDI status 0x{status:02x}"));
+        }
         let n = if kind == 0xc || kind == 0xd { 1 } else { 2 };
         let data = payload
             .get(data_start..data_start + n)
@@ -554,6 +688,7 @@ fn parse_track(payload: &[u8]) -> Result<Track, String> {
                     }
                 }
             }
+            0xa => return Err("unhandled polyphonic key-pressure event".into()),
             0xc => track.events.push(ChannelEvent {
                 tick,
                 channel: channel + 1,
@@ -575,11 +710,23 @@ fn parse_track(payload: &[u8]) -> Result<Track, String> {
                 a: data[0],
                 b: None,
             }),
-            _ => {}
+            _ => unreachable!("validated channel-event status"),
         }
     }
     track.notes.sort_by_key(|n| (n.start, n.channel, n.pitch));
     Ok(track)
+}
+
+#[test]
+fn reconciliation_parser_rejects_polyphonic_key_pressure() {
+    let payload = [
+        0x00, 0xa0, 60, 64, // polyphonic key pressure
+        0x00, 0xff, 0x2f, 0x00, // end of track
+    ];
+    assert_eq!(
+        parse_track(&payload).unwrap_err(),
+        "unhandled polyphonic key-pressure event"
+    );
 }
 
 fn vlq(bytes: &[u8], offset: usize) -> Result<(u32, usize), String> {

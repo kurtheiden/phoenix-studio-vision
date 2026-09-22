@@ -22,6 +22,8 @@ const BELLS_SOURCE_SHA256: &str = ODE_SOURCE_SHA256;
 const BELLS_SOURCE_SIZE: u64 = ODE_SOURCE_SIZE;
 const SEQUENCE_K_PROFILE_ID: &str = "studio_vision_sequence_k_v1";
 const SEQUENCE_K_DISPLAY_LABEL: &str = "Validated research profile — Sequence K";
+const SEQUENCE_Q_PROFILE_ID: &str = "studio_vision_sequence_q_v1";
+const SEQUENCE_Q_DISPLAY_LABEL: &str = "Validated research profile — Sequence Q";
 
 fn range(start: u64, end: u64) -> ByteRange {
     ByteRange::new(start, end).expect("built-in profile range is valid")
@@ -86,8 +88,40 @@ fn track(
         output: TrackOutputDispositionExpectation::Included(IncludedTrackOutputExpectation {
             channel_policy: TrackChannelPolicy::new(key, channel)?,
             patch_expectations: patches,
+            decoded_event_count: None,
+            decoded_event_families: None,
         }),
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn track_with_event_evidence(
+    descriptor_ordinal: u32,
+    descriptor_range: (u64, u64),
+    pair_ordinal: u32,
+    primary_range: (u64, u64),
+    event_range: (u64, u64),
+    label: &'static [u8],
+    channel: u8,
+    decoded_event_count: u64,
+    decoded_event_families: Vec<crate::compatibility::EvidenceEventFamily>,
+) -> Result<TrackExpectation, ProfileDefinitionError> {
+    let mut expectation = track(
+        descriptor_ordinal,
+        descriptor_range,
+        pair_ordinal,
+        primary_range,
+        event_range,
+        label,
+        channel,
+        vec![],
+    )?;
+    let TrackOutputDispositionExpectation::Included(output) = &mut expectation.output else {
+        unreachable!("track helper always constructs included output")
+    };
+    output.decoded_event_count = Some(decoded_event_count);
+    output.decoded_event_families = Some(decoded_event_families);
+    Ok(expectation)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -551,11 +585,48 @@ pub fn sequence_k_profile() -> Result<CompatibilityProfile, ProfileDefinitionErr
     })
 }
 
+/// The exact Experiment 007 Sequence Q proof: one Note-only performance track
+/// exported on authenticated MIDI channel 2.
+pub fn sequence_q_profile() -> Result<CompatibilityProfile, ProfileDefinitionError> {
+    let tracks = vec![track_with_event_evidence(
+        2,
+        (0x032cb9, 0x032d5f),
+        0,
+        (0x032e0a, 0x03323f),
+        (0x032e1d, 0x033238),
+        b"Track 1",
+        2,
+        185,
+        vec![crate::compatibility::EvidenceEventFamily::Note],
+    )?];
+    Ok(CompatibilityProfile {
+        id: ProfileId::new(SEQUENCE_Q_PROFILE_ID),
+        version: ProfileVersion::new(1),
+        display_label: SEQUENCE_Q_DISPLAY_LABEL.into(),
+        project: ProjectExpectation::new(
+            ODE_SOURCE_SHA256,
+            ODE_SOURCE_SIZE,
+            ParserProfileId::new("descriptor166"),
+            18,
+        )?,
+        sequences: vec![SequenceExpectation {
+            structural_ordinal: 16,
+            sequence_range: range(0x032a9d, 0x03329a),
+            expected_name_bytes: b"Sequence Q".to_vec(),
+            name_range: range(0x032d51, 0x032d5b),
+            descriptor_count: 3,
+            pair_count: 1,
+            track_expectations: tracks,
+        }],
+    })
+}
+
 /// Constructs the immutable registry of compiled-in research profiles.
 pub fn built_in_compatibility_registry() -> Result<CompatibilityRegistry, ProfileDefinitionError> {
     CompatibilityRegistry::new(vec![
         ode_to_clarke_profile()?,
         bells_for_her_profile()?,
         sequence_k_profile()?,
+        sequence_q_profile()?,
     ])
 }

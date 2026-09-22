@@ -88,6 +88,8 @@ fn expectation(patches: Vec<PatchExpectation>) -> TrackExpectation {
         output: TrackOutputDispositionExpectation::Included(IncludedTrackOutputExpectation {
             channel_policy: TrackChannelPolicy::new(key, 1).expect("valid channel"),
             patch_expectations: patches,
+            decoded_event_count: None,
+            decoded_event_families: None,
         }),
     }
 }
