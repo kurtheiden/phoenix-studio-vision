@@ -40,6 +40,7 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var diagnosticsState: DiagnosticsState = .notLoaded
     @Published private(set) var exportState: ExportState = .idle
+    @Published private(set) var retainedExportDestination: URL?
     private let core = PhoenixCore()
     private var started = false
     private var currentExportAttemptID: UUID?
@@ -71,6 +72,7 @@ final class AppModel: ObservableObject {
     func openProject() {
         guard canOpenProject, let url = ProjectOpenPanel.chooseProject() else { return }
         selectedSequenceID = nil
+        retainedExportDestination = nil
         projectState = .inspecting
         let path = url.path
         Task {
@@ -110,15 +112,29 @@ final class AppModel: ObservableObject {
 
     func exportSelectedSequence() {
         guard exportState != .exporting else { return }
-        beginExportIfPossible()
+        beginExportIfPossible(destination: nil)
     }
 
-    private func beginExportIfPossible() {
+    func exportSelectedSequenceToRetainedDestination() {
+        guard exportState != .exporting,
+              let destination = retainedExportDestination else { return }
+        beginExportIfPossible(destination: destination)
+    }
+
+    private func beginExportIfPossible(destination retainedDestination: URL?) {
         guard case .inspected(let inspection) = projectState,
               let sequenceID = selectedSequenceID,
               let sequence = inspection.sequences.first(where: { $0.sequenceID == sequenceID }),
-              sequence.isExportEligible,
-              let destination = ExportDestinationPanel.chooseFolder() else { return }
+              sequence.isExportEligible else { return }
+
+        let destination: URL
+        if let retainedDestination {
+            destination = retainedDestination
+        } else if let chosenDestination = ExportDestinationPanel.chooseFolder() {
+            destination = chosenDestination
+        } else {
+            return
+        }
 
         let sessionID = inspection.sessionID
         let attemptID = UUID()
@@ -136,6 +152,7 @@ final class AppModel: ObservableObject {
                       current.sessionID == sessionID,
                       selectedSequenceID == sequenceID,
                       currentExportAttemptID == attemptID else { return }
+                retainedExportDestination = destination
                 exportState = .succeeded(result)
             } catch {
                 guard case .inspected(let current) = projectState,

@@ -114,11 +114,26 @@ private struct ProjectInspectionView: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    Button("Export MIDI") { model.exportSelectedSequence() }
-                        .disabled(!sequence.isExportEligible || model.exportState == .exporting)
-                        .accessibilityHint(sequence.isExportEligible
-                            ? "Choose a destination folder and export this sequence"
-                            : "This sequence is not currently eligible for export")
+                    HStack(spacing: 10) {
+                        Button(model.retainedExportDestination == nil
+                            ? "Export MIDI…"
+                            : "Choose Different Folder…") { model.exportSelectedSequence() }
+                            .disabled(!sequence.isExportEligible || model.exportState == .exporting)
+                            .accessibilityHint(sequence.isExportEligible
+                                ? "Choose a destination folder and export this sequence"
+                                : "This sequence is not currently eligible for export")
+                        if let destination = model.retainedExportDestination {
+                            Button("Export to Last Folder") {
+                                model.exportSelectedSequenceToRetainedDestination()
+                            }
+                            .disabled(!sequence.isExportEligible || model.exportState == .exporting)
+                            .accessibilityHint("Export this sequence to the previously successful destination")
+                            Text(destination.lastPathComponent)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .help(destination.path)
+                        }
+                    }
                     exportContent
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
