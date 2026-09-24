@@ -26,6 +26,8 @@ const SEQUENCE_Q_PROFILE_ID: &str = "studio_vision_sequence_q_v1";
 const SEQUENCE_Q_DISPLAY_LABEL: &str = "Validated research profile — Sequence Q";
 const GIRL_U_WANT_PROFILE_ID: &str = "studio_vision_girl_u_want_v1";
 const GIRL_U_WANT_DISPLAY_LABEL: &str = "Validated research profile — Girl-U-Want";
+const OVER_THE_TOP_PROFILE_ID: &str = "studio_vision_over_the_top_v1";
+const OVER_THE_TOP_DISPLAY_LABEL: &str = "Validated research profile — Over the Top";
 
 fn range(start: u64, end: u64) -> ByteRange {
     ByteRange::new(start, end).expect("built-in profile range is valid")
@@ -117,6 +119,37 @@ fn track_with_event_evidence(
         label,
         channel,
         vec![],
+    )?;
+    let TrackOutputDispositionExpectation::Included(output) = &mut expectation.output else {
+        unreachable!("track helper always constructs included output")
+    };
+    output.decoded_event_count = Some(decoded_event_count);
+    output.decoded_event_families = Some(decoded_event_families);
+    Ok(expectation)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn track_with_event_evidence_and_patches(
+    descriptor_ordinal: u32,
+    descriptor_range: (u64, u64),
+    pair_ordinal: u32,
+    primary_range: (u64, u64),
+    event_range: (u64, u64),
+    label: &'static [u8],
+    channel: u8,
+    decoded_event_count: u64,
+    decoded_event_families: Vec<crate::compatibility::EvidenceEventFamily>,
+    patches: Vec<PatchExpectation>,
+) -> Result<TrackExpectation, ProfileDefinitionError> {
+    let mut expectation = track(
+        descriptor_ordinal,
+        descriptor_range,
+        pair_ordinal,
+        primary_range,
+        event_range,
+        label,
+        channel,
+        patches,
     )?;
     let TrackOutputDispositionExpectation::Included(output) = &mut expectation.output else {
         unreachable!("track helper always constructs included output")
@@ -686,6 +719,87 @@ pub fn girl_u_want_profile() -> Result<CompatibilityProfile, ProfileDefinitionEr
     })
 }
 
+/// The authenticated Experiment 007 Over the Top proof: three included
+/// performance tracks with explicit channels and two banked Patch outputs.
+pub fn over_the_top_profile() -> Result<CompatibilityProfile, ProfileDefinitionError> {
+    use crate::compatibility::EvidenceEventFamily::{Note, Patch};
+
+    let tracks = vec![
+        track_with_event_evidence_and_patches(
+            2,
+            (0x032248, 0x0322ee),
+            0,
+            (0x0324e7, 0x0327df),
+            (0x0324fa, 0x0327d8),
+            b"Track 1",
+            1,
+            129,
+            vec![Patch, Note],
+            vec![patch(
+                (0x0324fa, 0x03251b),
+                25,
+                PatchTranslationPolicy::BankSelectAndProgram {
+                    msb: 81,
+                    lsb: 1,
+                    program: 25,
+                },
+            )],
+        )?,
+        track_with_event_evidence_and_patches(
+            3,
+            (0x0322ee, 0x032394),
+            1,
+            (0x03282b, 0x032909),
+            (0x03283e, 0x032902),
+            b"Track 2",
+            2,
+            26,
+            vec![Patch, Note],
+            vec![patch(
+                (0x03283e, 0x03285e),
+                62,
+                PatchTranslationPolicy::BankSelectAndProgram {
+                    msb: 81,
+                    lsb: 1,
+                    program: 62,
+                },
+            )],
+        )?,
+        track_with_event_evidence(
+            4,
+            (0x032394, 0x03243a),
+            2,
+            (0x03293e, 0x032a54),
+            (0x032951, 0x032a4d),
+            b"Track 3",
+            3,
+            42,
+            vec![Note],
+        )?,
+    ];
+
+    Ok(CompatibilityProfile {
+        id: ProfileId::new(OVER_THE_TOP_PROFILE_ID),
+        version: ProfileVersion::new(1),
+        display_label: OVER_THE_TOP_DISPLAY_LABEL.into(),
+        project: ProjectExpectation::new(
+            ODE_SOURCE_SHA256,
+            ODE_SOURCE_SIZE,
+            ParserProfileId::new("descriptor166"),
+            18,
+        )?,
+        sequences: vec![SequenceExpectation {
+            structural_ordinal: 15,
+            sequence_range: range(0x03202c, 0x032a9d),
+            expected_name_bytes: b"Over the Top".to_vec(),
+            name_range: range(0x03242c, 0x032438),
+            descriptor_count: 5,
+            pair_count: 3,
+            track_expectations: tracks,
+        }],
+    })
+}
+
 /// Constructs the immutable registry of compiled-in research profiles.
 pub fn built_in_compatibility_registry() -> Result<CompatibilityRegistry, ProfileDefinitionError> {
     CompatibilityRegistry::new(vec![
@@ -694,5 +808,6 @@ pub fn built_in_compatibility_registry() -> Result<CompatibilityRegistry, Profil
         sequence_k_profile()?,
         sequence_q_profile()?,
         girl_u_want_profile()?,
+        over_the_top_profile()?,
     ])
 }

@@ -8,7 +8,8 @@ use phoenix::compatibility::{
     ProfileMismatchReason, ResolvedTrackOutputDisposition,
 };
 use phoenix::compatibility_profiles::{
-    built_in_compatibility_registry, girl_u_want_profile, sequence_k_profile, sequence_q_profile,
+    built_in_compatibility_registry, girl_u_want_profile, over_the_top_profile, sequence_k_profile,
+    sequence_q_profile,
 };
 use phoenix::mixed_event::{
     walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
@@ -21,6 +22,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const SOURCE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline";
 const GIRL_REFERENCE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Studio Vision MIDI Exports/Project 001/Girl-U-Want - SVP ref";
+const OVER_THE_TOP_REFERENCE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Studio Vision MIDI Exports/Project 001/Over the Top - SVP ref";
 const REQUIRE_SEQUENCE_Q_AUTHENTIC: &str = "PHOENIX_REQUIRE_AUTHENTIC_SEQUENCE_Q";
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
@@ -150,7 +152,7 @@ fn parse_midi(bytes: &[u8]) -> (u16, u16, Vec<MidiTrackFacts>) {
                 let payload = data[position..position + length].to_vec();
                 position += length;
                 match meta_type {
-                    0x02 => facts.tempo.push((tick, payload)),
+                    0x51 => facts.tempo.push((tick, payload)),
                     0x03 => facts.name = Some(payload),
                     0x04 => facts.instrument_name = Some(payload),
                     0x58 => facts.meter.push((tick, payload)),
@@ -257,6 +259,51 @@ fn girl_source_note_keys() -> Vec<Vec<GirlNoteKey>> {
         .collect()
 }
 
+fn over_the_top_source_note_keys() -> Vec<Vec<GirlNoteKey>> {
+    let bytes = fs::read(SOURCE).expect("Over the Top source");
+    let project = parse_project_166(&bytes).expect("Descriptor166 source");
+    let sequence = &project.sequences[15];
+    sequence
+        .track_pairs
+        .iter()
+        .enumerate()
+        .map(|(pair_ordinal, _)| {
+            let bounds = sequence
+                .validated_track_event_bounds(pair_ordinal)
+                .expect("Over the Top event bounds");
+            let walk = walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds {
+                    event_range: bounds.event_range,
+                },
+                MixedEventTimingBasis::default(),
+            )
+            .expect("Over the Top Note walk");
+            walk.items
+                .into_iter()
+                .flat_map(|item| match item {
+                    MixedEventItem::Event(event) => match event.event {
+                        MixedEventKind::Note(note) => vec![GirlNoteKey {
+                            start: event.position,
+                            end: event.position + note.duration.value,
+                            pitch: note.pitch.value,
+                            attack: note.attack_velocity.value,
+                        }],
+                        other => panic!("unexpected Over the Top event: {other:?}"),
+                    },
+                    MixedEventItem::PatchToNote(transition) => vec![GirlNoteKey {
+                        start: transition.first_note_position,
+                        end: transition.first_note_position + transition.first_note.duration.value,
+                        pitch: transition.first_note.pitch.value,
+                        attack: transition.first_note.attack_velocity.value,
+                    }],
+                    other => panic!("unexpected Over the Top item: {other:?}"),
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn midi_note_keys(track: &MidiTrackFacts, expected: &[GirlNoteKey]) -> Vec<GirlNoteKey> {
     let mut remaining_ons = track.note_ons.clone();
     let mut remaining_ends = track.note_ends.clone();
@@ -278,6 +325,253 @@ fn midi_note_keys(track: &MidiTrackFacts, expected: &[GirlNoteKey]) -> Vec<GirlN
     assert!(remaining_ons.is_empty());
     assert!(remaining_ends.is_empty());
     keys
+}
+
+#[test]
+fn authentic_over_the_top_profile_matches_exact_manifest_and_fails_closed() {
+    let path = Path::new(SOURCE);
+    if !path.is_file() {
+        return;
+    }
+    let (service, response) = inspect(path);
+    let sequence = response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Over the Top")
+        .expect("Over the Top");
+    let ordinal = service
+        .sequence_ordinal_for_id(&response.session_id, &sequence.sequence_id)
+        .unwrap();
+    assert_eq!(ordinal, 15);
+    assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+
+    let evidence = service.profile_evidence(&response.session_id).unwrap();
+    let registry = CompatibilityRegistry::new(vec![over_the_top_profile().unwrap()]).unwrap();
+    let ProfileMatch::Matched {
+        capability,
+        resolved_policy,
+    } = registry.assess(&evidence, ordinal).unwrap()
+    else {
+        panic!("authenticated Over the Top source must match");
+    };
+    assert_eq!(capability.profile_id, "studio_vision_over_the_top_v1");
+    assert_eq!(resolved_policy.track_manifest.len(), 3);
+    assert_eq!(
+        resolved_policy
+            .track_manifest
+            .iter()
+            .map(|track| match track.output {
+                ResolvedTrackOutputDisposition::Included { midi_channel, .. } => midi_channel,
+                _ => panic!("Over the Top tracks must remain included"),
+            })
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    assert_eq!(
+        resolved_policy
+            .track_manifest
+            .iter()
+            .map(|track| match &track.output {
+                ResolvedTrackOutputDisposition::Included { patches, .. } => patches.len(),
+                _ => panic!("Over the Top tracks must remain included"),
+            })
+            .collect::<Vec<_>>(),
+        vec![1, 1, 0]
+    );
+    for (track, (count, families)) in evidence.sequences[15].tracks.iter().zip([
+        (
+            129,
+            vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note],
+        ),
+        (
+            26,
+            vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note],
+        ),
+        (42, vec![EvidenceEventFamily::Note]),
+    ]) {
+        assert_eq!(track.decoded_event_count, count);
+        assert_eq!(track.decoded_event_families, families);
+    }
+
+    let mut changed = evidence.clone();
+    changed.source_sha256 = "0".repeat(64);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::NoMatch
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[15].sequence_range = ByteRange::new(1, 2).unwrap();
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::SequenceIdentityMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[15].tracks[1].observed_channel = Some(9);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::ChannelPolicyMismatch,
+            ..
+        }
+    ));
+    assert!(matches!(
+        registry.assess(&evidence, 14).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::SequenceIdentityMismatch,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn over_the_top_reference_matches_notes_patch_timing_and_known_endings() {
+    let source = Path::new(SOURCE);
+    let reference = Path::new(OVER_THE_TOP_REFERENCE);
+    if !source.is_file() || !reference.is_file() {
+        return;
+    }
+    let expected = over_the_top_source_note_keys();
+    assert_eq!(expected.iter().map(Vec::len).sum::<usize>(), 195);
+    let (format, division, tracks) = parse_midi(&fs::read(reference).unwrap());
+    assert_eq!(format, 1);
+    assert_eq!(division, 480);
+    assert_eq!(tracks.len(), 4);
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.channels.as_slice())
+            .collect::<Vec<_>>(),
+        vec![&[1][..], &[2][..], &[3][..]]
+    );
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.note_ons.len())
+            .collect::<Vec<_>>(),
+        vec![128, 25, 42]
+    );
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.note_ends.len())
+            .collect::<Vec<_>>(),
+        vec![128, 25, 42]
+    );
+    assert_eq!(tracks[1].programs, vec![(50, 1, 25)]);
+    assert_eq!(tracks[2].programs, vec![(480, 2, 62)]);
+    assert!(tracks[3].programs.is_empty());
+    assert_eq!(tracks[1].controllers, vec![(50, 1, 0, 81), (50, 1, 32, 1)]);
+    assert_eq!(
+        tracks[2].controllers,
+        vec![(480, 2, 0, 81), (480, 2, 32, 1)]
+    );
+    assert!(tracks[3].controllers.is_empty());
+    assert_eq!(tracks[0].tempo, vec![(0, vec![0x07, 0x53, 0x00])]);
+    assert_eq!(tracks[0].meter, vec![(0, vec![4, 2, 0x18, 8])]);
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.pitch_bends + track.pressures + track.sysex)
+            .sum::<usize>(),
+        0
+    );
+    for (track, notes) in tracks.iter().skip(1).zip(expected.iter()) {
+        assert_eq!(midi_note_keys(track, notes).as_slice(), notes.as_slice());
+    }
+    let zero_velocity_endings = tracks
+        .iter()
+        .skip(1)
+        .flat_map(|track| track.note_ends.iter())
+        .filter(|ending| ending.2 == 0)
+        .count();
+    assert_eq!(zero_velocity_endings, 6);
+}
+
+#[test]
+fn over_the_top_export_is_ready_without_promoting_other_partial_sequences() {
+    let path = Path::new(SOURCE);
+    if !path.is_file() {
+        return;
+    }
+    let mut service = AppService::new();
+    let response = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: path.to_string_lossy().into_owned(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("authentic source should inspect");
+    let target = response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Over the Top")
+        .expect("Over the Top sequence");
+    assert_eq!(target.readiness, phoenix::app_contract::Readiness::Ready);
+
+    let destination = std::env::temp_dir().join(format!(
+        "phoenix-over-the-top-profile-{}-{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&destination).expect("temporary destination");
+    let exported = service
+        .export_sequence(ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: response.session_id.clone(),
+            sequence_id: target.sequence_id.clone(),
+            destination_folder: destination.to_string_lossy().into_owned(),
+            filename_stem: "Over the Top".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .expect("Over the Top export should be conversion-ready");
+    assert_eq!(exported.musical_track_count, 3);
+    assert_eq!(exported.total_smf_track_count, 4);
+    assert_eq!(exported.counts.notes, 195);
+    assert_eq!(exported.counts.programs, 2);
+    assert_eq!(exported.counts.controllers, 0);
+    assert_eq!(exported.counts.bank_select_msb, 2);
+    assert_eq!(exported.counts.bank_select_lsb, 2);
+    let generated = fs::read(destination.join("Over the Top.mid")).expect("generated SMF");
+    let (format, division, tracks) = parse_midi(&generated);
+    assert_eq!(format, 1);
+    assert_eq!(division, 480);
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.channels.as_slice())
+            .collect::<Vec<_>>(),
+        vec![&[1][..], &[2][..], &[3][..]]
+    );
+    let expected = over_the_top_source_note_keys();
+    for (track, notes) in tracks.iter().skip(1).zip(expected.iter()) {
+        assert_eq!(midi_note_keys(track, notes).as_slice(), notes.as_slice());
+    }
+    fs::remove_dir_all(destination).ok();
+
+    for sequence in &response.sequences {
+        if matches!(
+            sequence.display_name.as_str(),
+            "Ode to Clarke"
+                | "Bells for her"
+                | "Sequence K"
+                | "Sequence Q"
+                | "Girl-U-Want"
+                | "Over the Top"
+        ) {
+            assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+        } else {
+            assert_ne!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+        }
+    }
 }
 
 #[test]
@@ -758,7 +1052,12 @@ fn girl_u_want_export_is_ready_without_promoting_other_partial_sequences() {
     for sequence in &response.sequences {
         if matches!(
             sequence.display_name.as_str(),
-            "Ode to Clarke" | "Bells for her" | "Sequence K" | "Sequence Q" | "Girl-U-Want"
+            "Ode to Clarke"
+                | "Bells for her"
+                | "Sequence K"
+                | "Sequence Q"
+                | "Girl-U-Want"
+                | "Over the Top"
         ) {
             assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
         } else {

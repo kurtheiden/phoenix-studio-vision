@@ -411,14 +411,14 @@ fn app_service_exposes_evidence_without_changing_readiness_or_channels() {
             .iter()
             .filter(|sequence| sequence.readiness == Readiness::Ready)
             .count(),
-        5
+        6
     );
     assert_eq!(
         before
             .iter()
             .filter(|sequence| sequence.readiness != Readiness::Ready)
             .count(),
-        13
+        12
     );
     let profile_evidence = service
         .profile_evidence(&response.session_id)
