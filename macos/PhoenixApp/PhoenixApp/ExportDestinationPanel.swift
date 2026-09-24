@@ -6,6 +6,7 @@ enum ExportDestinationPanel {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         return panel.runModal() == .OK ? panel.url : nil
     }
