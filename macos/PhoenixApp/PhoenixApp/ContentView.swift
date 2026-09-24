@@ -47,7 +47,7 @@ private struct ProjectInspectionView: View {
     @ObservedObject var model: AppModel
     let inspection: ProjectInspection
 
-    @State private var warningsExpanded = true
+    @State private var warningsExpanded = false
     @State private var detailsExpanded = false
 
     var body: some View {
