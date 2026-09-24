@@ -9,6 +9,9 @@ The described user actions are experimental context. File sizes, digests,
 metadata, byte values, offsets, and printable strings are direct observations.
 No observation below assigns an undocumented binary meaning to any byte.
 
+Routing-specific reconciliation for Experiments 003, 032, 033, and 034 is in
+[Routing Experiment Reconciliation](ROUTING_EXPERIMENT_RECONCILIATION.md).
+
 ## Method
 
 The data forks were compared byte-for-byte at the same numeric offsets. Because
