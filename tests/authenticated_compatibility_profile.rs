@@ -8,13 +8,19 @@ use phoenix::compatibility::{
     ProfileMismatchReason, ResolvedTrackOutputDisposition,
 };
 use phoenix::compatibility_profiles::{
-    built_in_compatibility_registry, sequence_k_profile, sequence_q_profile,
+    built_in_compatibility_registry, girl_u_want_profile, sequence_k_profile, sequence_q_profile,
 };
+use phoenix::mixed_event::{
+    walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+    MixedEventTimingBasis,
+};
+use phoenix::sequence_container::parse_project_166;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const SOURCE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments/Experiment 007 - Untouched Baseline/newest STUFF baseline";
+const GIRL_REFERENCE: &str = "/Users/kurtheiden/Documents/Phoenix Research/Studio Vision MIDI Exports/Project 001/Girl-U-Want - SVP ref";
 const REQUIRE_SEQUENCE_Q_AUTHENTIC: &str = "PHOENIX_REQUIRE_AUTHENTIC_SEQUENCE_Q";
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
@@ -70,6 +76,208 @@ fn assess_named(path: &Path, sequence_name: &str) -> ProfileMatch {
         .expect("built-in profile validates")
         .assess(&evidence, ordinal)
         .expect("assessment should not be ambiguous")
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct GirlNoteKey {
+    start: u32,
+    end: u32,
+    pitch: u8,
+    attack: u8,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct MidiTrackFacts {
+    name: Option<Vec<u8>>,
+    instrument_name: Option<Vec<u8>>,
+    channels: Vec<u8>,
+    note_ons: Vec<(u32, u8, u8)>,
+    note_ends: Vec<(u32, u8, u8)>,
+    programs: Vec<(u32, u8, u8)>,
+    controllers: Vec<(u32, u8, u8, u8)>,
+    pitch_bends: usize,
+    pressures: usize,
+    sysex: usize,
+    tempo: Vec<(u32, Vec<u8>)>,
+    meter: Vec<(u32, Vec<u8>)>,
+}
+
+fn read_midi_vlq(bytes: &[u8], cursor: &mut usize) -> u32 {
+    let mut value = 0;
+    loop {
+        let byte = bytes[*cursor];
+        *cursor += 1;
+        value = (value << 7) | u32::from(byte & 0x7f);
+        if byte & 0x80 == 0 {
+            return value;
+        }
+    }
+}
+
+fn parse_midi(bytes: &[u8]) -> (u16, u16, Vec<MidiTrackFacts>) {
+    assert_eq!(&bytes[..4], b"MThd");
+    let header_length = u32::from_be_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let format = u16::from_be_bytes(bytes[8..10].try_into().unwrap());
+    let track_count = u16::from_be_bytes(bytes[10..12].try_into().unwrap());
+    let division = u16::from_be_bytes(bytes[12..14].try_into().unwrap());
+    let mut cursor = 8 + header_length;
+    let mut tracks = Vec::new();
+    for _ in 0..track_count {
+        assert_eq!(&bytes[cursor..cursor + 4], b"MTrk");
+        let length = u32::from_be_bytes(bytes[cursor + 4..cursor + 8].try_into().unwrap()) as usize;
+        let end = cursor + 8 + length;
+        let data = &bytes[cursor + 8..end];
+        cursor = end;
+
+        let mut facts = MidiTrackFacts::default();
+        let mut position = 0;
+        let mut tick = 0;
+        let mut running_status = None;
+        while position < data.len() {
+            tick += read_midi_vlq(data, &mut position);
+            let byte = data[position];
+            let status = if byte & 0x80 != 0 {
+                position += 1;
+                running_status = Some(byte);
+                byte
+            } else {
+                running_status.expect("running MIDI status")
+            };
+            if status == 0xff {
+                let meta_type = data[position];
+                position += 1;
+                let length = read_midi_vlq(data, &mut position) as usize;
+                let payload = data[position..position + length].to_vec();
+                position += length;
+                match meta_type {
+                    0x02 => facts.tempo.push((tick, payload)),
+                    0x03 => facts.name = Some(payload),
+                    0x04 => facts.instrument_name = Some(payload),
+                    0x58 => facts.meter.push((tick, payload)),
+                    0x2f => break,
+                    _ => {}
+                }
+                continue;
+            }
+            if status == 0xf0 || status == 0xf7 {
+                let length = read_midi_vlq(data, &mut position) as usize;
+                position += length;
+                facts.sysex += 1;
+                continue;
+            }
+
+            let channel = (status & 0x0f) + 1;
+            if !facts.channels.contains(&channel) {
+                facts.channels.push(channel);
+            }
+            match status & 0xf0 {
+                0x80 => {
+                    let pitch = data[position];
+                    let velocity = data[position + 1];
+                    position += 2;
+                    facts.note_ends.push((tick, pitch, velocity));
+                }
+                0x90 => {
+                    let pitch = data[position];
+                    let velocity = data[position + 1];
+                    position += 2;
+                    if velocity == 0 {
+                        facts.note_ends.push((tick, pitch, velocity));
+                    } else {
+                        facts.note_ons.push((tick, pitch, velocity));
+                    }
+                }
+                0xb0 => {
+                    let controller = data[position];
+                    let value = data[position + 1];
+                    position += 2;
+                    facts.controllers.push((tick, channel, controller, value));
+                }
+                0xc0 => {
+                    facts.programs.push((tick, channel, data[position]));
+                    position += 1;
+                }
+                0xd0 => {
+                    position += 1;
+                    facts.pressures += 1;
+                }
+                0xe0 => {
+                    position += 2;
+                    facts.pitch_bends += 1;
+                }
+                _ => position += 2,
+            }
+        }
+        tracks.push(facts);
+    }
+    (format, division, tracks)
+}
+
+fn read_girl_reference() -> (u16, u16, Vec<MidiTrackFacts>) {
+    let bytes = fs::read(GIRL_REFERENCE).expect("Girl-U-Want reference MIDI");
+    parse_midi(&bytes)
+}
+
+fn girl_source_note_keys() -> Vec<Vec<GirlNoteKey>> {
+    let bytes = fs::read(SOURCE).expect("Girl-U-Want source");
+    let project = parse_project_166(&bytes).expect("Descriptor166 source");
+    let sequence = &project.sequences[5];
+    sequence
+        .track_pairs
+        .iter()
+        .enumerate()
+        .map(|(pair_ordinal, _)| {
+            let bounds = sequence
+                .validated_track_event_bounds(pair_ordinal)
+                .expect("Girl-U-Want event bounds");
+            let walk = walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds {
+                    event_range: bounds.event_range,
+                },
+                MixedEventTimingBasis::default(),
+            )
+            .expect("Girl-U-Want Note walk");
+            walk.items
+                .into_iter()
+                .map(|item| match item {
+                    MixedEventItem::Event(event) => match event.event {
+                        MixedEventKind::Note(note) => GirlNoteKey {
+                            start: event.position,
+                            end: event.position + note.duration.value,
+                            pitch: note.pitch.value,
+                            attack: note.attack_velocity.value,
+                        },
+                        other => panic!("unexpected Girl-U-Want event: {other:?}"),
+                    },
+                    other => panic!("unexpected Girl-U-Want item: {other:?}"),
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn midi_note_keys(track: &MidiTrackFacts, expected: &[GirlNoteKey]) -> Vec<GirlNoteKey> {
+    let mut remaining_ons = track.note_ons.clone();
+    let mut remaining_ends = track.note_ends.clone();
+    let mut keys = Vec::new();
+    for note in expected {
+        let on = (note.start, note.pitch, note.attack);
+        let on_index = remaining_ons
+            .iter()
+            .position(|candidate| *candidate == on)
+            .expect("reference Note On");
+        remaining_ons.remove(on_index);
+        let end_index = remaining_ends
+            .iter()
+            .position(|candidate| candidate.0 == note.end && candidate.1 == note.pitch)
+            .expect("reference note ending");
+        remaining_ends.remove(end_index);
+        keys.push(note.clone());
+    }
+    assert!(remaining_ons.is_empty());
+    assert!(remaining_ends.is_empty());
+    keys
 }
 
 #[test]
@@ -304,6 +512,259 @@ fn authentic_sequence_q_profile_requires_exact_identity_event_evidence_and_chann
             ..
         }
     ));
+}
+
+#[test]
+fn authentic_girl_u_want_profile_matches_exact_manifest_and_fails_closed() {
+    let path = Path::new(SOURCE);
+    if !path.is_file() || !Path::new(GIRL_REFERENCE).is_file() {
+        return;
+    }
+    let (service, response) = inspect(path);
+    let sequence = response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Girl-U-Want")
+        .expect("Girl-U-Want");
+    let ordinal = service
+        .sequence_ordinal_for_id(&response.session_id, &sequence.sequence_id)
+        .unwrap();
+    assert_eq!(ordinal, 5);
+    assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+    assert_eq!(
+        sequence
+            .export_capability
+            .as_ref()
+            .map(|capability| capability.profile_id.as_str()),
+        Some("studio_vision_girl_u_want_v1")
+    );
+
+    let evidence = service.profile_evidence(&response.session_id).unwrap();
+    let registry = CompatibilityRegistry::new(vec![girl_u_want_profile().unwrap()]).unwrap();
+    let ProfileMatch::Matched {
+        capability,
+        resolved_policy,
+    } = registry.assess(&evidence, ordinal).unwrap()
+    else {
+        panic!("authenticated Girl-U-Want source must match");
+    };
+    assert_eq!(capability.profile_id, "studio_vision_girl_u_want_v1");
+    assert_eq!(resolved_policy.track_manifest.len(), 3);
+    assert_eq!(
+        resolved_policy
+            .track_manifest
+            .iter()
+            .map(|entry| match entry.output {
+                ResolvedTrackOutputDisposition::Included {
+                    midi_channel,
+                    ref patches,
+                } => {
+                    assert!(patches.is_empty());
+                    midi_channel
+                }
+                _ => panic!("Girl-U-Want tracks must all be included"),
+            })
+            .collect::<Vec<_>>(),
+        vec![2, 10, 1]
+    );
+    for (track, expected_count) in evidence.sequences[5].tracks.iter().zip([136, 109, 87]) {
+        assert_eq!(track.decoded_event_count, expected_count);
+        assert_eq!(
+            track.decoded_event_families,
+            vec![EvidenceEventFamily::Note]
+        );
+        assert!(track.patch_evidence.is_empty());
+    }
+
+    let mut changed = evidence.clone();
+    changed.source_sha256 = "0".repeat(64);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::NoMatch
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[5].sequence_range = ByteRange::new(1, 2).unwrap();
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::SequenceIdentityMismatch,
+            ..
+        }
+    ));
+    let mut changed = evidence.clone();
+    changed.sequences[5].tracks[1].observed_channel = Some(9);
+    assert!(matches!(
+        registry.assess(&changed, ordinal).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::ChannelPolicyMismatch,
+            ..
+        }
+    ));
+    assert!(matches!(
+        registry.assess(&evidence, 4).unwrap(),
+        ProfileMatch::Rejected {
+            reason: ProfileMismatchReason::SequenceIdentityMismatch,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn girl_u_want_reference_matches_all_notes_and_understood_zero_endings() {
+    let source = Path::new(SOURCE);
+    let reference = Path::new(GIRL_REFERENCE);
+    if !source.is_file() || !reference.is_file() {
+        return;
+    }
+    let expected = girl_source_note_keys();
+    assert_eq!(expected.iter().map(Vec::len).sum::<usize>(), 332);
+    let (format, division, tracks) = read_girl_reference();
+    assert_eq!(format, 1);
+    assert_eq!(division, 480);
+    assert_eq!(tracks.len(), 4);
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.channels.as_slice())
+            .collect::<Vec<_>>(),
+        vec![&[2][..], &[10][..], &[1][..]]
+    );
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.note_ons.len())
+            .collect::<Vec<_>>(),
+        vec![136, 109, 87]
+    );
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.note_ends.len())
+            .collect::<Vec<_>>(),
+        vec![136, 109, 87]
+    );
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.programs.len())
+            .sum::<usize>(),
+        0
+    );
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.controllers.len())
+            .sum::<usize>(),
+        0
+    );
+    assert_eq!(
+        tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.pitch_bends + track.pressures + track.sysex)
+            .sum::<usize>(),
+        0
+    );
+    for (track, notes) in tracks.iter().skip(1).zip(expected.iter()) {
+        let normalized = midi_note_keys(track, notes);
+        assert_eq!(normalized.as_slice(), notes.as_slice());
+    }
+    let zero_velocity_endings = tracks[1]
+        .note_ends
+        .iter()
+        .chain(tracks[2].note_ends.iter())
+        .chain(tracks[3].note_ends.iter())
+        .filter(|ending| ending.2 == 0)
+        .count();
+    assert_eq!(zero_velocity_endings, 3);
+}
+
+#[test]
+fn girl_u_want_export_is_ready_without_promoting_other_partial_sequences() {
+    let path = Path::new(SOURCE);
+    if !path.is_file() {
+        return;
+    }
+    let mut service = AppService::new();
+    let response = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: path.to_string_lossy().into_owned(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .expect("authentic source should inspect");
+    let girl = response
+        .sequences
+        .iter()
+        .find(|sequence| sequence.display_name == "Girl-U-Want")
+        .expect("Girl-U-Want sequence");
+    assert!(matches!(
+        girl.readiness,
+        phoenix::app_contract::Readiness::Ready
+    ));
+
+    let destination = std::env::temp_dir().join(format!(
+        "phoenix-girl-u-want-profile-{}-{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&destination).expect("temporary destination");
+    let exported = service
+        .export_sequence(ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: response.session_id.clone(),
+            sequence_id: girl.sequence_id.clone(),
+            destination_folder: destination.to_string_lossy().into_owned(),
+            filename_stem: "Girl-U-Want".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .expect("Girl-U-Want export should be conversion-ready");
+    assert_eq!(exported.musical_track_count, 3);
+    assert_eq!(exported.total_smf_track_count, 4);
+    assert_eq!(exported.counts.notes, 332);
+    assert_eq!(exported.counts.programs, 0);
+    assert_eq!(exported.counts.controllers, 0);
+    let generated = fs::read(destination.join("Girl-U-Want.mid")).expect("generated SMF");
+    assert_eq!(&generated[..4], b"MThd");
+    assert_eq!(u16::from_be_bytes(generated[10..12].try_into().unwrap()), 4);
+    let (generated_format, generated_division, generated_tracks) = parse_midi(&generated);
+    assert_eq!(generated_format, 1);
+    assert_eq!(generated_division, 480);
+    assert_eq!(
+        generated_tracks
+            .iter()
+            .skip(1)
+            .map(|track| track.channels.as_slice())
+            .collect::<Vec<_>>(),
+        vec![&[2][..], &[10][..], &[1][..]]
+    );
+    let expected = girl_source_note_keys();
+    for (track, notes) in generated_tracks.iter().skip(1).zip(expected.iter()) {
+        assert_eq!(midi_note_keys(track, notes).as_slice(), notes.as_slice());
+        assert!(track.programs.is_empty());
+        assert!(track.controllers.is_empty());
+        assert_eq!(track.pitch_bends, 0);
+        assert_eq!(track.pressures, 0);
+        assert_eq!(track.sysex, 0);
+    }
+    fs::remove_dir_all(destination).ok();
+
+    for sequence in &response.sequences {
+        if matches!(
+            sequence.display_name.as_str(),
+            "Ode to Clarke" | "Bells for her" | "Sequence K" | "Sequence Q" | "Girl-U-Want"
+        ) {
+            assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+        } else {
+            assert_ne!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+        }
+    }
 }
 
 #[test]

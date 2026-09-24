@@ -24,6 +24,8 @@ const SEQUENCE_K_PROFILE_ID: &str = "studio_vision_sequence_k_v1";
 const SEQUENCE_K_DISPLAY_LABEL: &str = "Validated research profile — Sequence K";
 const SEQUENCE_Q_PROFILE_ID: &str = "studio_vision_sequence_q_v1";
 const SEQUENCE_Q_DISPLAY_LABEL: &str = "Validated research profile — Sequence Q";
+const GIRL_U_WANT_PROFILE_ID: &str = "studio_vision_girl_u_want_v1";
+const GIRL_U_WANT_DISPLAY_LABEL: &str = "Validated research profile — Girl-U-Want";
 
 fn range(start: u64, end: u64) -> ByteRange {
     ByteRange::new(start, end).expect("built-in profile range is valid")
@@ -621,6 +623,69 @@ pub fn sequence_q_profile() -> Result<CompatibilityProfile, ProfileDefinitionErr
     })
 }
 
+/// The authenticated Experiment 007 Girl-U-Want proof: three Note-only
+/// performance tracks with explicit channels and no Patch output policy.
+pub fn girl_u_want_profile() -> Result<CompatibilityProfile, ProfileDefinitionError> {
+    use crate::compatibility::EvidenceEventFamily::Note;
+
+    let tracks = vec![
+        track_with_event_evidence(
+            2,
+            (0x01b2f7, 0x01b39d),
+            0,
+            (0x01b5b2, 0x01b955),
+            (0x01b5c5, 0x01b94e),
+            b"Track 1",
+            2,
+            136,
+            vec![Note],
+        )?,
+        track_with_event_evidence(
+            3,
+            (0x01b39d, 0x01b443),
+            1,
+            (0x01b9cb, 0x01bc72),
+            (0x01b9de, 0x01bc6b),
+            b"Track 2",
+            10,
+            109,
+            vec![Note],
+        )?,
+        track_with_event_evidence(
+            4,
+            (0x01b443, 0x01b4e9),
+            2,
+            (0x01bcca, 0x01bef0),
+            (0x01bcdd, 0x01bee9),
+            b"Track 3",
+            1,
+            87,
+            vec![Note],
+        )?,
+    ];
+
+    Ok(CompatibilityProfile {
+        id: ProfileId::new(GIRL_U_WANT_PROFILE_ID),
+        version: ProfileVersion::new(1),
+        display_label: GIRL_U_WANT_DISPLAY_LABEL.into(),
+        project: ProjectExpectation::new(
+            ODE_SOURCE_SHA256,
+            ODE_SOURCE_SIZE,
+            ParserProfileId::new("descriptor166"),
+            18,
+        )?,
+        sequences: vec![SequenceExpectation {
+            structural_ordinal: 5,
+            sequence_range: range(0x01b0db, 0x01bf6d),
+            expected_name_bytes: b"Girl-U-Want".to_vec(),
+            name_range: range(0x01b4db, 0x01b4e6),
+            descriptor_count: 5,
+            pair_count: 3,
+            track_expectations: tracks,
+        }],
+    })
+}
+
 /// Constructs the immutable registry of compiled-in research profiles.
 pub fn built_in_compatibility_registry() -> Result<CompatibilityRegistry, ProfileDefinitionError> {
     CompatibilityRegistry::new(vec![
@@ -628,5 +693,6 @@ pub fn built_in_compatibility_registry() -> Result<CompatibilityRegistry, Profil
         bells_for_her_profile()?,
         sequence_k_profile()?,
         sequence_q_profile()?,
+        girl_u_want_profile()?,
     ])
 }
