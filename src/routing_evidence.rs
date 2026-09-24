@@ -109,6 +109,25 @@ pub struct ProvisionalRoutingRelationship {
     pub provenance: ObservationProvenance,
 }
 
+/// A behaviorally validated, but still semantically provisional, MIDI channel
+/// resolution.  This value is deliberately separate from authoritative
+/// profile routing and carries every source range needed to audit it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProvisionalChannelResolution {
+    pub assignment: TrackAssignmentCandidate,
+    pub assignment_candidate: (u8, ObservationProvenance),
+    pub type10_record_index: usize,
+    pub type10_record_range: ByteRange,
+    pub type10_ordinal: (u8, ObservationProvenance),
+    pub device_identifier: (u8, ObservationProvenance),
+    pub zero_based_channel: (u8, ObservationProvenance),
+    pub type2a_record_index: usize,
+    pub type2a_record_range: ByteRange,
+    pub type2a_identifier: (u8, ObservationProvenance),
+    pub midi_channel: u8,
+    pub provenance: ObservationProvenance,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoutingEvidence {
     pub source_byte_size: u64,
@@ -118,6 +137,61 @@ pub struct RoutingEvidence {
     pub relationships: Vec<ProvisionalRoutingRelationship>,
     pub issues: Vec<RoutingEvidenceIssue>,
     pub status: RoutingEvidenceStatus,
+}
+
+impl RoutingEvidence {
+    /// Returns only relationships whose bounded fields and unique lookups are
+    /// complete.  The resulting channel is an evidence-derived observation;
+    /// it is not authoritative profile routing and does not affect readiness
+    /// or export policy.
+    pub fn provisional_channel_resolutions(&self) -> Vec<ProvisionalChannelResolution> {
+        self.relationships
+            .iter()
+            .filter_map(|relationship| self.provisional_channel_resolution(relationship))
+            .collect()
+    }
+
+    fn provisional_channel_resolution(
+        &self,
+        relationship: &ProvisionalRoutingRelationship,
+    ) -> Option<ProvisionalChannelResolution> {
+        if !matches!(
+            relationship.status,
+            ProvisionalRelationshipStatus::ProvisionalCorrelation
+        ) || relationship.type2a_record_indices.len() != 1
+        {
+            return None;
+        }
+        let candidate = relationship.assignment.candidate?;
+        let type10_index = relationship.type10_record_index?;
+        let type10 = self.type10_records.get(type10_index)?;
+        let ordinal = type10.ordinal_field?;
+        let device = type10.device_identifier_field?;
+        let zero_based_channel = type10.channel_candidate_field?;
+        if ordinal.0 != candidate.0 || zero_based_channel.0 > 15 {
+            return None;
+        }
+        let type2a_index = *relationship.type2a_record_indices.first()?;
+        let type2a = self.type2a_records.get(type2a_index)?;
+        let type2a_identifier = type2a.identifier_field?;
+        if type2a_identifier.0 != device.0 {
+            return None;
+        }
+        Some(ProvisionalChannelResolution {
+            assignment: relationship.assignment.clone(),
+            assignment_candidate: candidate,
+            type10_record_index: type10_index,
+            type10_record_range: type10.framed.record_range,
+            type10_ordinal: ordinal,
+            device_identifier: device,
+            zero_based_channel,
+            type2a_record_index: type2a_index,
+            type2a_record_range: type2a.framed.record_range,
+            type2a_identifier,
+            midi_channel: zero_based_channel.0 + 1,
+            provenance: relationship.provenance,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

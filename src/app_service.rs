@@ -27,7 +27,9 @@ use crate::mixed_event::{
 };
 use crate::multitrack_export::{assemble_multitrack_sequence, MultitrackExportResult};
 use crate::prologue_inspection::inspect_if_authorized;
-use crate::routing_evidence::{collect_routing_evidence, RoutingEvidence};
+use crate::routing_evidence::{
+    collect_routing_evidence, ProvisionalChannelResolution, RoutingEvidence,
+};
 use crate::sequence_container::{parse_project_166, TrackAssociations};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -1361,6 +1363,18 @@ impl AppService {
                 None,
             )
         })
+    }
+
+    /// Returns bounded, behaviorally validated channel observations without
+    /// making them authoritative routing or changing readiness/export policy.
+    #[allow(clippy::result_large_err)]
+    pub fn routing_channel_resolutions(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Vec<ProvisionalChannelResolution>, AppError> {
+        Ok(self
+            .routing_evidence(session_id)?
+            .provisional_channel_resolutions())
     }
 
     /// Core-only mapping used later when a registry assesses one sequence.

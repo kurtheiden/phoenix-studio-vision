@@ -174,6 +174,84 @@ fn controlled_assignment_candidates_and_bounded_records_are_reproduced() {
             }
         );
     }
+
+    let resolved33 = evidence(EXP33_EDIT).provisional_channel_resolutions();
+    let track2_33 = resolved33
+        .iter()
+        .find(|resolution| resolution.assignment_candidate.1.source_range.start() == 0x02f221)
+        .expect("Experiment 033 Track 2 channel resolution");
+    assert_eq!(track2_33.midi_channel, 3);
+    assert_eq!(track2_33.zero_based_channel.0, 2);
+
+    let resolved34 = evidence(EXP34_EDIT).provisional_channel_resolutions();
+    let track2_34 = resolved34
+        .iter()
+        .find(|resolution| resolution.assignment_candidate.1.source_range.start() == 0x02f221)
+        .expect("Experiment 034 Track 2 channel resolution");
+    assert_eq!(track2_34.midi_channel, 1);
+    assert_eq!(track2_34.zero_based_channel.0, 0);
+}
+
+#[test]
+fn authenticated_included_track_channels_match_bounded_field_plus_one() {
+    let collected = evidence(BASELINE);
+    let expected = [
+        // Ode to Clarke (ordinal 14)
+        (14, 2, 1),
+        (14, 3, 2),
+        (14, 4, 10),
+        (14, 5, 10),
+        (14, 6, 10),
+        (14, 7, 1),
+        (14, 8, 10),
+        (14, 9, 15),
+        (14, 10, 10),
+        // Bells for her (ordinal 1; nonempty omitted tracks are excluded)
+        (1, 2, 1),
+        (1, 4, 16),
+        (1, 5, 2),
+        (1, 6, 3),
+        (1, 7, 1),
+        (1, 9, 16),
+        (1, 10, 12),
+        (1, 12, 8),
+        (1, 13, 10),
+        (1, 15, 15),
+        // Sequence K, Sequence Q, Girl-U-Want, and Over the Top.
+        (10, 2, 15),
+        (16, 2, 2),
+        (5, 2, 2),
+        (5, 3, 10),
+        (5, 4, 1),
+        (15, 2, 1),
+        (15, 3, 2),
+        (15, 4, 3),
+    ];
+    assert_eq!(expected.len(), 27);
+    let resolutions = collected.provisional_channel_resolutions();
+    for (structural_ordinal, descriptor_ordinal, expected_channel) in expected {
+        let resolution = resolutions
+            .iter()
+            .into_iter()
+            .find(|resolution| {
+                resolution.assignment_candidate.1.source_range.start()
+                    == collected
+                        .assignments
+                        .iter()
+                        .find(|assignment| {
+                            assignment.structural_ordinal == structural_ordinal
+                                && assignment.descriptor_ordinal == descriptor_ordinal
+                        })
+                        .and_then(|assignment| assignment.candidate)
+                        .map(|candidate| candidate.1.source_range.start())
+                        .unwrap_or(u64::MAX)
+            })
+            .expect("authenticated included-track routing resolution");
+        assert_eq!(resolution.assignment.structural_ordinal, structural_ordinal);
+        assert_eq!(resolution.assignment.descriptor_ordinal, descriptor_ordinal);
+        assert_eq!(resolution.midi_channel, expected_channel);
+        assert_eq!(resolution.midi_channel, resolution.zero_based_channel.0 + 1);
+    }
 }
 
 #[test]
@@ -356,6 +434,10 @@ fn missing_matches_duplicate_identifiers_and_bad_channels_remain_unresolved() {
         target_relationship.status,
         ProvisionalRelationshipStatus::Unresolved(_)
     ));
+    assert!(out_of_range_evidence
+        .provisional_channel_resolutions()
+        .iter()
+        .all(|resolution| resolution.assignment_candidate.1.source_range.start() != 0x02f221));
 }
 
 #[test]
@@ -404,8 +486,15 @@ fn app_service_exposes_evidence_without_changing_readiness_or_channels() {
     let routing = service
         .routing_evidence(&response.session_id)
         .expect("routing evidence");
+    let channel_resolutions = service
+        .routing_channel_resolutions(&response.session_id)
+        .expect("routing channel resolutions");
     assert_eq!(routing.type10_records.len(), 85);
     assert_eq!(routing.type2a_records.len(), 12);
+    assert_eq!(channel_resolutions.len(), 133);
+    assert!(channel_resolutions
+        .iter()
+        .all(|resolution| (1..=16).contains(&resolution.midi_channel)));
     assert_eq!(
         before
             .iter()
