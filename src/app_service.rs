@@ -27,6 +27,7 @@ use crate::mixed_event::{
 };
 use crate::multitrack_export::{assemble_multitrack_sequence, MultitrackExportResult};
 use crate::prologue_inspection::inspect_if_authorized;
+use crate::routing_evidence::{collect_routing_evidence, RoutingEvidence};
 use crate::sequence_container::{parse_project_166, TrackAssociations};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -1338,6 +1339,28 @@ impl AppService {
             source_byte_size,
             structure,
         ))
+    }
+
+    /// Returns provisional, read-only routing observations for an inspected
+    /// source. This does not participate in profile matching, readiness, or
+    /// export policy and never populates authoritative channel evidence.
+    #[allow(clippy::result_large_err)]
+    pub fn routing_evidence(&self, session_id: &SessionId) -> Result<RoutingEvidence, AppError> {
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| self.unknown_session(AppOperation::GetDiagnostics))?;
+        collect_routing_evidence(&session.source_bytes).map_err(|error| {
+            self.error(
+                AppErrorCategory::InternalError,
+                "Routing evidence could not be bounded safely.",
+                error.to_string(),
+                AppOperation::GetDiagnostics,
+                "routing_evidence_framing_failed",
+                Some(session_id.clone()),
+                None,
+            )
+        })
     }
 
     /// Core-only mapping used later when a registry assesses one sequence.
