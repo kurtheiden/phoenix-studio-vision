@@ -496,6 +496,19 @@ fn decode_patch_transition(
     .map_err(|source| MixedEventWalkError::MalformedPatch { cursor, source })?;
     let payload_end = core.representation_range.end;
     let patch_position = add_position(previous_position, core.position.value, cursor)?;
+    // A complete core at the exact musical-event bound needs no successor.
+    // In particular, do not read the enclosing track tail as post-Patch timing.
+    if payload_end == event_end {
+        return Ok(PatchDispatch {
+            items: vec![MixedEventItem::Patch(Box::new(PositionedPatch {
+                position: patch_position,
+                patch: core,
+            }))],
+            next: payload_end,
+            next_position: patch_position,
+            next_state: ActiveEventState::None,
+        });
+    }
     let post_pc = located_vlq(bytes, payload_end, event_end, cursor)?;
     let mut transition_cursor = post_pc.range.end;
 
@@ -617,34 +630,82 @@ fn decode_patch_controller_note<'a>(
         controller_cursor,
     )?;
 
-    let note_cursor = controller_end;
-    let (note, next) = decode_note_at(bytes, note_cursor, event_end, true).map_err(|source| {
-        MixedEventWalkError::MalformedNote {
-            cursor: note_cursor,
-            source,
+    let mut items = vec![
+        MixedEventItem::Patch(Box::new(PositionedPatch {
+            position: patch_position,
+            patch,
+        })),
+        MixedEventItem::Event(Box::new(PositionedEvent {
+            position: controller_position,
+            event: MixedEventKind::Controller(controller),
+        })),
+    ];
+    let mut cursor = controller_end;
+    let mut position = controller_position;
+    let mut controller_count = 1;
+    loop {
+        let timing = located_vlq(bytes, cursor, event_end, cursor)?;
+        let tag = timing.range.end;
+        let observed = bytes.get(tag).copied().filter(|_| tag < event_end);
+        let pair = tag
+            .checked_add(2)
+            .and_then(|end| bytes.get(tag..end).filter(|_| end <= event_end));
+        let mismatch = || MixedEventWalkError::PatchContextMismatch {
+            cursor,
+            offset: tag,
+            observed,
+        };
+        let (item, next, next_position, next_state) = if observed == Some(0x90) {
+            let (note, next) = decode_note_at(bytes, cursor, event_end, true)
+                .map_err(|source| MixedEventWalkError::MalformedNote { cursor, source })?;
+            let next_position = add_position(position, note.timing.value, cursor)?;
+            (
+                MixedEventItem::Event(Box::new(PositionedEvent {
+                    position: next_position,
+                    event: MixedEventKind::Note(note),
+                })),
+                next,
+                next_position,
+                ActiveEventState::Note,
+            )
+        } else if pair == Some(&[0xff, 0x41]) && controller_count < 3 {
+            controller_count += 1;
+            dispatch_ff(bytes, cursor, tag, event_end, position)?
+        } else if pair == Some(&[0xff, 0x60]) && controller_count <= 2 {
+            // Only a single length-7/8 context immediately followed by an
+            // explicit Note is evidenced in this Patch/Controller branch.
+            let (context, after_context) = decode_ff60_context(bytes, tag, event_end, cursor)?;
+            if !matches!(context.payload_length.value, 7 | 8) {
+                return Err(mismatch());
+            }
+            let final_timing = located_vlq(bytes, after_context, event_end, cursor)?;
+            if bytes
+                .get(final_timing.range.end)
+                .copied()
+                .filter(|_| final_timing.range.end < event_end)
+                != Some(0x90)
+            {
+                return Err(mismatch());
+            }
+            decode_context_mediated_note(bytes, cursor, tag, event_end, position)?
+        } else {
+            return Err(mismatch());
+        };
+        require_advance(cursor, next, event_end)?;
+        items.push(item);
+        cursor = next;
+        position = next_position;
+        // Controllers clear compact state. Never return a partial chain:
+        // only its required explicit Note establishes the continuation state.
+        if next_state == ActiveEventState::Note {
+            return Ok(PatchDispatch {
+                items,
+                next: cursor,
+                next_position: position,
+                next_state,
+            });
         }
-    })?;
-    let note_position = add_position(controller_position, note.timing.value, note_cursor)?;
-
-    Ok(PatchDispatch {
-        items: vec![
-            MixedEventItem::Patch(Box::new(PositionedPatch {
-                position: patch_position,
-                patch,
-            })),
-            MixedEventItem::Event(Box::new(PositionedEvent {
-                position: controller_position,
-                event: MixedEventKind::Controller(controller),
-            })),
-            MixedEventItem::Event(Box::new(PositionedEvent {
-                position: note_position,
-                event: MixedEventKind::Note(note),
-            })),
-        ],
-        next,
-        next_position: note_position,
-        next_state: ActiveEventState::Note,
-    })
+    }
 }
 
 fn require_advance(

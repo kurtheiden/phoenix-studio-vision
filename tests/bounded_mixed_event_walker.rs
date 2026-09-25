@@ -781,54 +781,6 @@ fn strict_patch_controller_note_rejects_malformed_current_controller() {
 }
 
 #[test]
-fn strict_patch_controller_note_requires_one_direct_explicit_note() {
-    let mut non_note = synthetic_patch_controller_note();
-    non_note[21] = 0xd0;
-    non_note.extend([0x00, 0x90, 0x3c, 0x40, 0x20, 0x01]);
-    assert!(matches!(
-        walk(&non_note),
-        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
-    ));
-
-    let mut ff60 = synthetic_patch_controller_note();
-    ff60.splice(
-        20..,
-        [
-            0x00, 0xff, 0x60, 0x01, 0x11, 0x00, 0x90, 0x3c, 0x40, 0x20, 0x01,
-        ],
-    );
-    assert!(matches!(
-        walk(&ff60),
-        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
-    ));
-
-    let mut second_controller = synthetic_patch_controller_note();
-    second_controller.splice(
-        20..,
-        [
-            0x00, 0xff, 0x41, 0x05, 0, 0, 0, 7, 1, 0, 0x90, 0x3c, 0x40, 0x20, 1,
-        ],
-    );
-    assert!(matches!(
-        walk(&second_controller),
-        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
-    ));
-
-    let mut malformed_note = synthetic_patch_controller_note();
-    malformed_note[21] = 0x91;
-    malformed_note.extend([0x00, 0x90, 0x3c, 0x40, 0x20, 0x01]);
-    assert!(matches!(
-        walk(&malformed_note),
-        Err(MixedEventWalkError::MalformedNote { cursor: 20, .. })
-    ));
-
-    let bytes = synthetic_patch_controller_note();
-    for end in 20..bytes.len() {
-        assert!(walk(&bytes[..end]).is_err(), "unexpected success at {end}");
-    }
-}
-
-#[test]
 fn rejects_current_cursor_without_scanning_for_later_valid_event() {
     let bytes = [
         0x00, 0xff, 0x55, 0x00, // unsupported current tag
@@ -984,4 +936,235 @@ fn authentic_track_14_walks_all_events_and_stops_exactly() {
         panic!("expected final Controller")
     };
     assert!(matches!(last.event, MixedEventKind::Controller(_)));
+}
+
+fn patch_controller_chain(count: usize, context_length: Option<u8>) -> Vec<u8> {
+    let base = synthetic_patch_controller_note();
+    let mut bytes = base[..11].to_vec();
+    bytes[0] = 3;
+    for _ in 0..count {
+        bytes.extend(synthetic_controller()); // delta 10, context 00 00 00
+    }
+    if let Some(length) = context_length {
+        bytes.extend([4, 0xff, 0x60, length]);
+        bytes.extend(vec![0x55; usize::from(length)]);
+    }
+    bytes.extend([2, 0x90, 60, 64, 32, 1]);
+    bytes
+}
+
+#[test]
+fn bounded_controller_chains_preserve_timing_provenance_and_note_state() {
+    for (count, context) in [
+        (1, None),
+        (2, None),
+        (3, None),
+        (1, Some(7)),
+        (1, Some(8)),
+        (2, Some(7)),
+        (2, Some(8)),
+    ] {
+        let chain = patch_controller_chain(count, context);
+        let mut bytes = vec![0xaa; 5];
+        bytes.extend(&chain);
+        // Compact Note continuation proves the terminating Note established state.
+        bytes.extend([1, 61, 65, 33, 2]);
+        let w = walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds {
+                event_range: 5..bytes.len(),
+            },
+            MixedEventTimingBasis {
+                previous_event_position: 100,
+            },
+        )
+        .unwrap();
+        let MixedEventItem::Patch(p) = &w.items[0] else {
+            panic!("Patch")
+        };
+        assert_eq!(p.position, 103);
+        assert_eq!(p.patch.representation_range, 5..16);
+        for (i, item) in w.items[1..=count].iter().enumerate() {
+            let MixedEventItem::Event(e) = item else {
+                panic!("Controller")
+            };
+            let MixedEventKind::Controller(c) = &e.event else {
+                panic!("Controller")
+            };
+            assert_eq!(e.position, 113 + 10 * i as u32);
+            assert_eq!(c.record_range, 16 + 9 * i..25 + 9 * i);
+            assert_eq!(c.context.bytes, &[0, 0, 0]);
+            assert_eq!(
+                (c.controller_number.value, c.controller_value.value),
+                (7, 127)
+            );
+        }
+        let MixedEventItem::Event(n) = &w.items[count + 1] else {
+            panic!("Note")
+        };
+        let expected = 103 + 10 * count as u32 + 2 + if context.is_some() { 4 } else { 0 };
+        assert_eq!(n.position, expected);
+        match (&n.event, context) {
+            (MixedEventKind::Note(n), None) => {
+                assert_eq!(n.representation_range, 16 + 9 * count..5 + chain.len())
+            }
+            (MixedEventKind::ContextMediatedNote(n), Some(len)) => {
+                assert_eq!(n.representation_range, 16 + 9 * count..5 + chain.len());
+                assert_eq!(n.context.payload.bytes, vec![0x55; usize::from(len)]);
+                assert_eq!((n.leading_timing.value, n.final_timing.value), (4, 2));
+            }
+            _ => panic!("unexpected Note form"),
+        }
+        let MixedEventItem::Event(last) = w.items.last().unwrap() else {
+            panic!("continuation")
+        };
+        assert_eq!(last.position, expected + 1);
+    }
+}
+
+#[test]
+fn bounded_chain_rejects_unsupported_successors_without_scanning() {
+    for status in [0xf0, 0xd0, 0xe0, 0x91, 0x40] {
+        let mut b = synthetic_patch_controller_note();
+        b[21] = status;
+        b.extend([0, 0x90, 60, 64, 32, 1]);
+        assert!(walk(&b).is_err());
+    }
+    assert!(walk(&patch_controller_chain(4, None)).is_err());
+    assert!(walk(&patch_controller_chain(3, Some(7))).is_err());
+    for len in [0, 1, 6, 9] {
+        assert!(walk(&patch_controller_chain(1, Some(len))).is_err());
+    }
+    for tag in [0x41, 0x7c, 0x60] {
+        let mut b = patch_controller_chain(1, Some(7));
+        let note_status = b.len() - 5;
+        b[note_status] = 0xff;
+        b[note_status + 1] = tag;
+        b.extend([0, 0x90, 60, 64, 32, 1]);
+        assert!(walk(&b).is_err());
+    }
+    for b in [
+        patch_controller_chain(2, None),
+        patch_controller_chain(2, Some(8)),
+    ] {
+        for end in 12..b.len() {
+            assert!(
+                walk(&b[..end]).is_err(),
+                "accepted truncated chain at {end}"
+            );
+        }
+    }
+    let mut malformed = patch_controller_chain(2, None);
+    malformed[23] = 4; // second Controller's length must be five
+    assert!(walk(&malformed).is_err());
+    let b = patch_controller_chain(2, Some(8));
+    assert!(walk_bounded_mixed_events(
+        &b,
+        MixedEventBounds {
+            event_range: 0..b.len()
+        },
+        MixedEventTimingBasis {
+            previous_event_position: u32::MAX - 4
+        }
+    )
+    .is_err());
+}
+
+#[test]
+fn terminal_patch_requires_exact_complete_core_and_preserves_position() {
+    let b = synthetic_patch_note(3);
+    let core = &b[..11];
+    let w = walk_bounded_mixed_events(
+        &b,
+        MixedEventBounds { event_range: 0..11 },
+        MixedEventTimingBasis {
+            previous_event_position: 100,
+        },
+    )
+    .unwrap();
+    let MixedEventItem::Patch(p) = &w.items[0] else {
+        panic!("terminal Patch")
+    };
+    assert_eq!(p.position, 103);
+    assert_eq!(p.patch.representation_range, 0..11);
+    assert_eq!(p.patch.program_change.value, 25);
+    assert_eq!(w.consumed_range, 0..11);
+    for end in 1..11 {
+        assert!(walk(&core[..end]).is_err());
+    }
+    for suffix in [
+        vec![0],
+        vec![0, 0xf0, 0],
+        vec![0xff, 0xff, 0xff, 0x7f, 0xff, 0x2f, 0],
+    ] {
+        let mut x = core.to_vec();
+        x.extend(suffix);
+        assert!(walk(&x).is_err());
+    }
+}
+
+#[test]
+fn authentic_composition_extensions_complete_only_the_audited_tracks() {
+    let bytes = fs::read(BASELINE).unwrap();
+    let project = parse_project_166(&bytes).unwrap();
+    let audited = [
+        (0, 5, 135, 96151),
+        (0, 10, 72, 63360),
+        (0, 11, 123, 140154),
+        (0, 12, 73, 63363),
+        (8, 0, 106, 32400),
+        (12, 1, 255, 101286),
+        (12, 2, 255, 101292),
+        (0, 0, 65, 99818),
+        (9, 1, 1, 0),
+        (12, 9, 28, 69120),
+    ];
+    for (si, ti, count, position) in audited {
+        let range = project.sequences[si].track_pairs[ti]
+            .validated_event_bounds()
+            .unwrap()
+            .event_range;
+        let w = walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds {
+                event_range: range.clone(),
+            },
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(w.consumed_range, range);
+        assert_eq!(w.logical_event_count(), count);
+        let last = match w.items.last().unwrap() {
+            MixedEventItem::Event(e) => e.position,
+            MixedEventItem::Patch(p) => p.position,
+            MixedEventItem::PatchToNote(p) => p.first_note_position,
+        };
+        assert_eq!(last, position);
+    }
+    let mut failures = Vec::new();
+    for (si, s) in project.sequences.iter().enumerate() {
+        for (ti, t) in s.track_pairs.iter().enumerate() {
+            let r = t.validated_event_bounds().unwrap().event_range;
+            if walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds { event_range: r },
+                Default::default(),
+            )
+            .is_err()
+            {
+                failures.push((si, ti));
+            }
+        }
+    }
+    assert_eq!(
+        failures,
+        [(0, 1), (0, 8), (7, 5), (7, 6), (9, 0), (11, 4), (17, 0)]
+    );
+    assert!(matches!(
+        project.sequences[8].track_associations,
+        phoenix::sequence_container::TrackAssociations::Unresolved {
+            descriptor_count: 11,
+            pair_count: 10
+        }
+    ));
 }

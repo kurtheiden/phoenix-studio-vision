@@ -300,7 +300,7 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
         }
     }
     let expected_counts = [
-        ("xForm", (0, 4, 9)),
+        ("xForm", (1, 8, 4)),
         ("Bells for her", (2, 7, 5)),
         ("Situation", (0, 4, 2)),
         ("Sequence D", (0, 3, 3)),
@@ -309,10 +309,10 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
         ("mission impossibl", (0, 5, 5)),
         ("happyone", (3, 4, 4)),
         ("Sequence I", (0, 0, 11)),
-        ("newsong", (0, 1, 4)),
+        ("newsong", (0, 2, 3)),
         ("Sequence K", (0, 1, 1)),
         ("Renaissance", (0, 3, 3)),
-        ("Get on up & Dance", (1, 11, 4)),
+        ("Get on up & Dance", (1, 14, 1)),
         ("Jurrasic Park", (0, 4, 3)),
         ("Ode to Clarke", (2, 6, 1)),
         ("Over the Top", (0, 3, 0)),
@@ -325,10 +325,9 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
         .unwrap();
     assert_eq!(blocked.candidate_value, Some(0x88));
     assert_eq!(blocked.neighboring_guard, Some(GUARD));
-    assert_eq!(
-        blocked.state,
-        SavedMuteState::Unknown(SavedMuteUnknown::IncompleteEventWalk)
-    );
+    // The bounded composition extension now completes this event walk.
+    // This adds inferred saved state, not export omission authority.
+    assert_eq!(blocked.state, SavedMuteState::On);
     for (name, _) in &before {
         let group: Vec<_> = rows
             .iter()
