@@ -98,8 +98,16 @@ pub struct BoundedDoubleContextMediatedNoteEntry<'a> {
     pub note: BoundedNoteBody<'a>,
 }
 
+/// Opaque initial context retained with its enclosing direct Patch/Note form.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedInitialPatchContext<'a> {
+    pub leading_timing: LocatedVlq<'a>,
+    pub context: BoundedFf60Context<'a>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundedPatchToNoteTransition<'a> {
+    pub initial_context: Option<BoundedInitialPatchContext<'a>>,
     pub representation_range: Range<usize>,
     pub patch: BoundedPatchRepresentation<'a>,
     pub context: Option<BoundedFf60Context<'a>>,
@@ -286,6 +294,27 @@ pub fn walk_bounded_mixed_events(
         };
 
         let tag_offset = timing_end.checked_add(1);
+        if cursor == start
+            && state == ActiveEventState::None
+            && first == 0xff
+            && tag_offset.and_then(|offset| bytes.get(offset).filter(|_| offset < end))
+                == Some(&0x60)
+        {
+            if let Some(outcome) = decode_initial_context_patch_note(
+                bytes,
+                cursor,
+                timing_end,
+                end,
+                previous_position,
+            )? {
+                require_advance(cursor, outcome.next, end)?;
+                items.extend(outcome.items);
+                cursor = outcome.next;
+                previous_position = outcome.next_position;
+                state = outcome.next_state;
+                continue;
+            }
+        }
         if first == 0xff && tag_offset.and_then(|offset| bytes.get(offset).copied()) == Some(0x7c) {
             let outcome = decode_patch_transition(bytes, cursor, end, previous_position)?;
             require_advance(cursor, outcome.next, end)?;
@@ -480,6 +509,48 @@ fn dispatch_ff<'a>(
     }
 }
 
+// This helper is called only at the validated range beginning in None state.
+// Existing initial context/Note forms still use the unchanged normal dispatch.
+fn decode_initial_context_patch_note(
+    bytes: &[u8],
+    cursor: usize,
+    context_start: usize,
+    event_end: usize,
+    previous_position: u32,
+) -> Result<Option<PatchDispatch<'_>>, MixedEventWalkError> {
+    let leading_timing = located_vlq(bytes, cursor, event_end, cursor)?;
+    let (context, after_context) = decode_ff60_context(bytes, context_start, event_end, cursor)?;
+    let patch_timing = located_vlq(bytes, after_context, event_end, cursor)?;
+    let tag = patch_timing.range.end;
+    let pair = tag
+        .checked_add(2)
+        .and_then(|end| bytes.get(tag..end).filter(|_| end <= event_end));
+    if pair != Some(&[0xff, 0x7c]) {
+        return Ok(None);
+    }
+    let mismatch = || MixedEventWalkError::PatchContextMismatch {
+        cursor,
+        offset: tag,
+        observed: bytes.get(tag).copied().filter(|_| tag < event_end),
+    };
+    if leading_timing.value != 0 || !matches!(context.payload_length.value, 7 | 8) {
+        return Err(mismatch());
+    }
+    let mut outcome = decode_patch_transition(bytes, after_context, event_end, previous_position)?;
+    let [MixedEventItem::PatchToNote(transition)] = outcome.items.as_mut_slice() else {
+        return Err(mismatch());
+    };
+    if transition.context.is_some() {
+        return Err(mismatch());
+    }
+    transition.initial_context = Some(BoundedInitialPatchContext {
+        leading_timing,
+        context,
+    });
+    transition.representation_range.start = cursor;
+    Ok(Some(outcome))
+}
+
 fn decode_patch_transition(
     bytes: &[u8],
     cursor: usize,
@@ -511,6 +582,49 @@ fn decode_patch_transition(
     }
     let post_pc = located_vlq(bytes, payload_end, event_end, cursor)?;
     let mut transition_cursor = post_pc.range.end;
+
+    let following_tag = transition_cursor.checked_add(2).and_then(|end| {
+        bytes
+            .get(transition_cursor..end)
+            .filter(|_| end <= event_end)
+    });
+    if following_tag == Some(&[0xff, 0x7c]) {
+        // Exactly two cores, not a recursive or open-ended Patch chain.
+        let second = decode_bounded_patch_core(
+            bytes,
+            PatchCoreBounds {
+                position_start: payload_end,
+                end: event_end,
+            },
+        )
+        .map_err(|source| MixedEventWalkError::MalformedPatch {
+            cursor: payload_end,
+            source,
+        })?;
+        if second.representation_range.end != event_end {
+            return Err(MixedEventWalkError::PatchContextMismatch {
+                cursor,
+                offset: second.representation_range.end,
+                observed: bytes.get(second.representation_range.end).copied(),
+            });
+        }
+        let second_position = add_position(patch_position, second.position.value, payload_end)?;
+        return Ok(PatchDispatch {
+            items: vec![
+                MixedEventItem::Patch(Box::new(PositionedPatch {
+                    position: patch_position,
+                    patch: core,
+                })),
+                MixedEventItem::Patch(Box::new(PositionedPatch {
+                    position: second_position,
+                    patch: second,
+                })),
+            ],
+            next: event_end,
+            next_position: second_position,
+            next_state: ActiveEventState::None,
+        });
+    }
 
     let controller_tag_end = transition_cursor.checked_add(2);
     if controller_tag_end.and_then(|end| bytes.get(transition_cursor..end)) == Some(&[0xff, 0x41]) {
@@ -564,6 +678,7 @@ fn decode_patch_transition(
     };
     let first_note_position = add_position(patch_position, interval, cursor)?;
     let transition = BoundedPatchToNoteTransition {
+        initial_context: None,
         representation_range: cursor..next,
         patch_position,
         first_note_position,

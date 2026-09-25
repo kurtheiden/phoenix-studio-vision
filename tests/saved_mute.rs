@@ -311,13 +311,13 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
         ("Sequence I", (0, 0, 11)),
         ("newsong", (0, 2, 3)),
         ("Sequence K", (0, 1, 1)),
-        ("Renaissance", (0, 3, 3)),
+        ("Renaissance", (0, 4, 2)),
         ("Get on up & Dance", (1, 14, 1)),
         ("Jurrasic Park", (0, 4, 3)),
         ("Ode to Clarke", (2, 6, 1)),
         ("Over the Top", (0, 3, 0)),
         ("Sequence Q", (0, 1, 0)),
-        ("Sequence R", (0, 1, 1)),
+        ("Sequence R", (0, 2, 0)),
     ];
     let blocked = rows
         .iter()

@@ -1156,10 +1156,7 @@ fn authentic_composition_extensions_complete_only_the_audited_tracks() {
             }
         }
     }
-    assert_eq!(
-        failures,
-        [(0, 1), (0, 8), (7, 5), (7, 6), (9, 0), (11, 4), (17, 0)]
-    );
+    assert_eq!(failures, [(0, 1), (0, 8), (7, 5), (7, 6)]);
     assert!(matches!(
         project.sequences[8].track_associations,
         phoenix::sequence_container::TrackAssociations::Unresolved {
@@ -1167,4 +1164,327 @@ fn authentic_composition_extensions_complete_only_the_audited_tracks() {
             pair_count: 10
         }
     ));
+}
+
+fn initial_context_patch_note(length: u8) -> Vec<u8> {
+    let mut b = vec![0, 0xff, 0x60, length];
+    b.extend(vec![0x55; usize::from(length)]);
+    b.extend(synthetic_patch_note(3));
+    b
+}
+
+#[test]
+fn initial_zero_context_preserves_direct_patch_note_and_continuation() {
+    for length in [7, 8] {
+        let original = initial_context_patch_note(length);
+        let mut bytes = vec![0xaa; 5];
+        bytes.extend(&original);
+        bytes.extend([1, 61, 65, 33, 2]);
+        let w = walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds {
+                event_range: 5..bytes.len(),
+            },
+            MixedEventTimingBasis {
+                previous_event_position: 100,
+            },
+        )
+        .unwrap();
+        let MixedEventItem::PatchToNote(p) = &w.items[0] else {
+            panic!("composition")
+        };
+        let c = p.initial_context.as_ref().unwrap();
+        let patch_start = 9 + usize::from(length);
+        assert_eq!(p.representation_range, 5..5 + original.len());
+        assert_eq!(c.leading_timing.range, 5..6);
+        assert_eq!(c.leading_timing.value, 0);
+        assert_eq!(c.context.range, 6..patch_start);
+        assert_eq!(c.context.payload.bytes, vec![0x55; usize::from(length)]);
+        assert_eq!(p.patch.representation_range, patch_start..patch_start + 13);
+        assert_eq!(p.patch.position.range, patch_start..patch_start + 1);
+        assert_eq!(p.patch.program_change.value, 25);
+        assert_eq!(
+            p.first_note.representation_range,
+            patch_start + 12..patch_start + 17
+        );
+        assert_eq!((p.patch_position, p.first_note_position), (103, 105));
+        assert!(p.context.is_none());
+        let MixedEventItem::Event(e) = &w.items[1] else {
+            panic!("Note continuation")
+        };
+        assert_eq!(e.position, 106);
+        assert!(
+            matches!(&e.event,MixedEventKind::Note(n) if n.status.is_none() && n.pitch.value==61)
+        );
+    }
+}
+
+#[test]
+fn initial_context_patch_rejects_every_unsupported_boundary() {
+    let base = initial_context_patch_note(7);
+    for length in [0, 1, 6, 9, 255] {
+        assert!(walk(&initial_context_patch_note(length)).is_err());
+    }
+    let mut b = base.clone();
+    b[0] = 1;
+    assert!(walk(&b).is_err());
+    for end in 1..base.len() {
+        assert!(walk(&base[..end]).is_err(), "truncation {end}");
+    }
+    // A valid-looking later composition cannot resynchronize a bad current one.
+    for (offset, value) in [
+        (12, 0xf0),
+        (13, 0x41),
+        (14, 255),
+        (14, 0),
+        (23, 0x91),
+        (23, 0xf0),
+        (23, 0x40),
+    ] {
+        let mut b = base.clone();
+        b[offset] = value;
+        b.extend([0, 0x90, 60, 64, 32, 1]);
+        assert!(walk(&b).is_err(), "mutation at {offset}");
+    }
+    let context = base[..11].to_vec();
+    for successor in [
+        synthetic_patch_controller_note(),
+        synthetic_controller().to_vec(),
+        vec![0, 0xf0, 1],
+    ] {
+        let mut b = context.clone();
+        b.extend(successor);
+        assert!(walk(&b).is_err());
+    }
+    let mut b = context.clone();
+    b.extend(&base);
+    assert!(walk(&b).is_err());
+    let core = synthetic_patch_note(3)[..11].to_vec();
+    let mut b = context.clone();
+    b.extend(&core);
+    assert!(walk(&b).is_err());
+    let mut b = context;
+    b.extend(&core);
+    b.extend(&core);
+    assert!(walk(&b).is_err());
+    // A context after the Patch is not the approved direct Note form.
+    let mut b = base.clone();
+    b.splice(22..23, [0, 0xff, 0x60, 7, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert!(walk(&b).is_err());
+    // Neither initial position nor None state alone is enough: both are required.
+    let mut b = vec![0, 0x90, 60, 64, 32, 1];
+    b.extend(&base);
+    assert!(walk(&b).is_err());
+    let mut b = synthetic_controller().to_vec();
+    b.extend(&base);
+    assert!(walk(&b).is_err());
+    assert!(walk_bounded_mixed_events(
+        &base,
+        MixedEventBounds {
+            event_range: 0..base.len()
+        },
+        MixedEventTimingBasis {
+            previous_event_position: u32::MAX - 2
+        }
+    )
+    .is_err());
+    assert!(walk_bounded_mixed_events(
+        &base,
+        MixedEventBounds {
+            event_range: 0..usize::MAX
+        },
+        Default::default()
+    )
+    .is_err());
+}
+
+#[test]
+fn terminal_two_patch_cores_preserve_timing_and_provenance() {
+    let mut b = vec![0, 0x90, 60, 64, 32, 1];
+    b.extend(&synthetic_patch_note(3)[..11]);
+    b.extend(&synthetic_patch_note(7)[..11]);
+    let w = walk_bounded_mixed_events(
+        &b,
+        MixedEventBounds {
+            event_range: 0..b.len(),
+        },
+        MixedEventTimingBasis {
+            previous_event_position: 100,
+        },
+    )
+    .unwrap();
+    for (item, range, position) in [(&w.items[1], 6..17, 103), (&w.items[2], 17..28, 110)] {
+        let MixedEventItem::Patch(p) = item else {
+            panic!("standalone Patch")
+        };
+        assert_eq!(p.position, position);
+        assert_eq!(p.patch.representation_range, range);
+        assert_eq!(p.patch.program_change.value, 25);
+        assert_eq!(p.patch.pre_name_context.bytes, [0, 0, 0, 0, 0]);
+    }
+    assert_eq!(w.logical_event_count(), 3);
+    assert_eq!(w.consumed_range, 0..b.len());
+}
+
+#[test]
+fn terminal_pair_rejects_truncation_extra_bytes_and_recovery() {
+    let core = synthetic_patch_note(3)[..11].to_vec();
+    let mut pair = core.clone();
+    pair.extend(&core);
+    for end in 1..pair.len() {
+        if end != 11 {
+            assert!(walk(&pair[..end]).is_err());
+        }
+    }
+    for tail in [
+        vec![0],
+        vec![0, 0xf0, 0],
+        core.clone(),
+        vec![0, 0x90, 60, 64, 32, 1],
+        vec![0xff, 0xff, 0xfc, 0x1f, 0xff, 0x2f, 0],
+    ] {
+        let mut b = pair.clone();
+        b.extend(tail);
+        assert!(walk(&b).is_err());
+    }
+    for offset in [3, 14] {
+        let mut b = pair.clone();
+        b[offset] = 255;
+        b.extend(&pair);
+        assert!(walk(&b).is_err());
+    }
+    for offset in [1, 12] {
+        let mut b = pair.clone();
+        b[offset] = 0xf0;
+        b.extend(&pair);
+        assert!(walk(&b).is_err());
+    }
+    assert!(walk_bounded_mixed_events(
+        &pair,
+        MixedEventBounds {
+            event_range: 0..pair.len() - 1
+        },
+        Default::default()
+    )
+    .is_err());
+    assert!(walk_bounded_mixed_events(
+        &pair,
+        MixedEventBounds {
+            event_range: 0..pair.len()
+        },
+        MixedEventTimingBasis {
+            previous_event_position: u32::MAX - 4
+        }
+    )
+    .is_err());
+    // Actual data beyond the validated event end must remain untouched.
+    let mut b = pair.clone();
+    b.extend([0xff, 0xff, 0xfc, 0x1f, 0xff, 0x2f, 0]);
+    assert_eq!(
+        walk_bounded_mixed_events(
+            &b,
+            MixedEventBounds {
+                event_range: 0..pair.len()
+            },
+            Default::default()
+        )
+        .unwrap()
+        .consumed_range,
+        0..pair.len()
+    );
+}
+
+#[test]
+fn authentic_remaining_forms_have_exact_successes_and_failure_frontiers() {
+    let b = fs::read(BASELINE).unwrap();
+    let p = parse_project_166(&b).unwrap();
+    for (si, ti, count, position) in [(9, 0, 2, 480), (11, 4, 20, 33824), (17, 0, 38, 15117)] {
+        let range = p.sequences[si].track_pairs[ti]
+            .validated_event_bounds()
+            .unwrap()
+            .event_range;
+        let w = walk_bounded_mixed_events(
+            &b,
+            MixedEventBounds {
+                event_range: range.clone(),
+            },
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(w.consumed_range, range);
+        assert_eq!(w.logical_event_count(), count);
+        let last = match w.items.last().unwrap() {
+            MixedEventItem::Patch(x) => x.position,
+            MixedEventItem::Event(x) => x.position,
+            _ => panic!("unexpected final item"),
+        };
+        assert_eq!(last, position);
+    }
+    let mut complete = 0;
+    let mut failures = Vec::new();
+    let mut per_sequence = Vec::new();
+    for (si, s) in p.sequences.iter().enumerate() {
+        let mut n = 0;
+        for (ti, t) in s.track_pairs.iter().enumerate() {
+            let range = t.validated_event_bounds().unwrap().event_range;
+            match walk_bounded_mixed_events(
+                &b,
+                MixedEventBounds { event_range: range },
+                Default::default(),
+            ) {
+                Ok(_) => {
+                    complete += 1;
+                    n += 1
+                }
+                Err(e) => failures.push((si, ti, e)),
+            }
+        }
+        per_sequence.push(n);
+    }
+    assert_eq!(complete, 128);
+    assert_eq!(
+        (per_sequence[9], per_sequence[11], per_sequence[17]),
+        (5, 6, 2)
+    );
+    assert_eq!(
+        failures,
+        vec![
+            (
+                0,
+                1,
+                MixedEventWalkError::UnsupportedStatus {
+                    cursor: 0x7a25,
+                    offset: 0x7a27,
+                    observed: 0xf0
+                }
+            ),
+            (
+                0,
+                8,
+                MixedEventWalkError::PatchContextMismatch {
+                    cursor: 0xc490,
+                    offset: 0xc49c,
+                    observed: Some(0xff)
+                }
+            ),
+            (
+                7,
+                5,
+                MixedEventWalkError::UnsupportedStatus {
+                    cursor: 0x21476,
+                    offset: 0x21478,
+                    observed: 0xf0
+                }
+            ),
+            (
+                7,
+                6,
+                MixedEventWalkError::UnsupportedStatus {
+                    cursor: 0x219db,
+                    offset: 0x219dc,
+                    observed: 0xf0
+                }
+            ),
+        ]
+    );
 }
