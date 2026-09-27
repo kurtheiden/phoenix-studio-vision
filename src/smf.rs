@@ -268,6 +268,8 @@ pub enum SmfSerializeError {
     TrackCountOverflow { count: usize },
     TrackPayloadLengthOverflow { length: usize },
     SmfLengthOverflow,
+    AmbiguousSourceOrder { tick: u32, stable_ordinal: u64 },
+    UnsafeNoteOffOrder { tick: u32, channel: u8, key: u8 },
     InternalNonmonotonicOrdering { previous_tick: u32, tick: u32 },
 }
 
@@ -361,6 +363,16 @@ pub struct ScheduledEvent {
     pub absolute_tick: u32,
     pub stable_ordinal: u64,
     pub message: ChannelMessage,
+}
+
+/// Equal-tick policy. Existing entry points retain `ExistingPriority`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MusicalTrackOrdering {
+    ExistingPriority,
+    /// Uses adapter ordinals (source start = 2n, generated end = 2n+1).
+    /// Equal ordinals are supported only for an adapter-ordered bank/PC group.
+    /// Input order within that group is retained, never reconstructed.
+    SourceOrder,
 }
 
 /// Validated initial time-signature metadata.
@@ -500,7 +512,7 @@ pub fn serialize_end_of_track() -> [u8; 3] {
 pub fn serialize_musical_track(
     events: &[ScheduledEvent],
 ) -> Result<SerializedTrack, SmfSerializeError> {
-    serialize_musical_track_payload(None, events)
+    serialize_musical_track_with_ordering(events, MusicalTrackOrdering::ExistingPriority)
 }
 
 /// Serializes a named musical track. The Track Name meta event is emitted at
@@ -509,21 +521,50 @@ pub fn serialize_named_musical_track(
     name: &[u8],
     events: &[ScheduledEvent],
 ) -> Result<SerializedTrack, SmfSerializeError> {
-    serialize_musical_track_payload(Some(name), events)
+    serialize_named_musical_track_with_ordering(
+        name,
+        events,
+        MusicalTrackOrdering::ExistingPriority,
+    )
+}
+
+/// Explicit opt-in ordering; no inclusion or export authority is implied.
+pub fn serialize_musical_track_with_ordering(
+    events: &[ScheduledEvent],
+    ordering: MusicalTrackOrdering,
+) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_musical_track_payload(None, events, ordering)
+}
+
+/// Named counterpart of [`serialize_musical_track_with_ordering`].
+pub fn serialize_named_musical_track_with_ordering(
+    name: &[u8],
+    events: &[ScheduledEvent],
+    ordering: MusicalTrackOrdering,
+) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_musical_track_payload(Some(name), events, ordering)
 }
 
 fn serialize_musical_track_payload(
     name: Option<&[u8]>,
     events: &[ScheduledEvent],
+    ordering: MusicalTrackOrdering,
 ) -> Result<SerializedTrack, SmfSerializeError> {
     let mut ordered = events.to_vec();
-    ordered.sort_by_key(|event| {
-        (
-            event.absolute_tick,
-            message_priority(&event.message),
-            event.stable_ordinal,
-        )
-    });
+    match ordering {
+        MusicalTrackOrdering::ExistingPriority => ordered.sort_by_key(|event| {
+            (
+                event.absolute_tick,
+                message_priority(&event.message),
+                event.stable_ordinal,
+            )
+        }),
+        MusicalTrackOrdering::SourceOrder => {
+            // Stable sort preserves the adapter's intra-Patch message sequence.
+            ordered.sort_by_key(|event| (event.absolute_tick, event.stable_ordinal));
+            validate_source_order(&ordered)?;
+        }
+    }
 
     let mut payload = Vec::new();
     if let Some(name) = name {
@@ -545,6 +586,101 @@ fn serialize_musical_track_payload(
     payload.push(0);
     payload.extend_from_slice(&serialize_end_of_track());
     make_track_chunk(payload)
+}
+
+// Equal ordinals must represent an already ordered adapter expansion, not an
+// arbitrary tie. No priority-based repair is made in source-order mode.
+fn valid_patch_group(group: &[ScheduledEvent]) -> bool {
+    let Some(ScheduledEvent {
+        message: ChannelMessage::ProgramChange { channel, .. },
+        ..
+    }) = group.last()
+    else {
+        return false;
+    };
+    if !matches!(group.len(), 2 | 3) {
+        return false;
+    }
+    group[..group.len() - 1]
+        .iter()
+        .enumerate()
+        .all(|(i, event)| {
+            matches!(event.message, ChannelMessage::ControlChange {
+            channel: c, controller, ..
+        } if c == *channel && controller.get() == if i == 0 { 0 } else { 32 })
+        })
+}
+
+fn validate_source_order(events: &[ScheduledEvent]) -> Result<(), SmfSerializeError> {
+    let mut start = 0;
+    while start < events.len() {
+        let first = &events[start];
+        let mut end = start + 1;
+        while end < events.len()
+            && events[end].absolute_tick == first.absolute_tick
+            && events[end].stable_ordinal == first.stable_ordinal
+        {
+            end += 1;
+        }
+        if end - start > 1 && !valid_patch_group(&events[start..end]) {
+            return Err(SmfSerializeError::AmbiguousSourceOrder {
+                tick: first.absolute_tick,
+                stable_ordinal: first.stable_ordinal,
+            });
+        }
+        start = end;
+    }
+    // Only starts at the current tick matter for the retrigger hazard. A
+    // zero-duration Note may end after its own start, using the adapter's
+    // even/odd ordinal pair. An unrelated end after a start is refused.
+    let mut starts = std::collections::BTreeMap::new();
+    let mut tick = None;
+    for event in events {
+        if tick != Some(event.absolute_tick) {
+            starts.clear();
+            tick = Some(event.absolute_tick);
+        }
+        match event.message {
+            ChannelMessage::NoteOn {
+                channel,
+                key,
+                attack_velocity,
+            } if attack_velocity.get() > 0 => {
+                if starts
+                    .insert((channel.get(), key.get()), event.stable_ordinal)
+                    .is_some()
+                {
+                    return Err(SmfSerializeError::AmbiguousSourceOrder {
+                        tick: event.absolute_tick,
+                        stable_ordinal: event.stable_ordinal,
+                    });
+                }
+            }
+            ChannelMessage::NoteOff { channel, key, .. } => {
+                if let Some(on) = starts.remove(&(channel.get(), key.get())) {
+                    if on % 2 != 0 || on.checked_add(1) != Some(event.stable_ordinal) {
+                        return Err(SmfSerializeError::UnsafeNoteOffOrder {
+                            tick: event.absolute_tick,
+                            channel: channel.get(),
+                            key: key.get(),
+                        });
+                    }
+                }
+            }
+            // Velocity-zero Note On is an ending, not a new attack.
+            ChannelMessage::NoteOn { channel, key, .. }
+                if starts.remove(&(channel.get(), key.get())).is_some() =>
+            {
+                return Err(SmfSerializeError::UnsafeNoteOffOrder {
+                    tick: event.absolute_tick,
+                    channel: channel.get(),
+                    key: key.get(),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// Constructs the fixed first-version conductor track at tick zero.
