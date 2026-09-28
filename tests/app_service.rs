@@ -403,7 +403,10 @@ fn optional_authentic_fixture_projects_readiness_per_sequence() {
         } else {
             assert_ne!(status.match_kind, SequenceAssessmentKind::Matched);
             assert!(!status.has_resolved_policy);
-            assert_ne!(sequence.readiness, Readiness::Ready);
+            assert_eq!(
+                sequence.readiness == Readiness::Ready,
+                sequence.bounded_export_capability.is_some()
+            );
             assert!(sequence.export_capability.is_none());
         }
     }

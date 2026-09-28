@@ -419,6 +419,29 @@ impl CompatibilityRegistry {
         &self.profiles
     }
 
+    /// Assess only profiles that declare this structural selection. Full assessment
+    /// semantics remain unchanged; untargeted project profiles are not a veto.
+    pub(crate) fn assess_selected_sequence(
+        &self,
+        evidence: &ProfileEvidence,
+        selected_sequence_ordinal: u32,
+    ) -> Result<ProfileMatch, RegistryMatchError> {
+        let selected = Self {
+            profiles: self
+                .profiles
+                .iter()
+                .filter(|profile| {
+                    profile
+                        .sequences
+                        .iter()
+                        .any(|sequence| sequence.structural_ordinal == selected_sequence_ordinal)
+                })
+                .cloned()
+                .collect(),
+        };
+        selected.assess(evidence, selected_sequence_ordinal)
+    }
+
     pub fn assess(
         &self,
         evidence: &ProfileEvidence,

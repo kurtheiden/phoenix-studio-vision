@@ -101,6 +101,8 @@ impl ReasonSeverity {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ReadinessReasonCode {
+    #[serde(rename = "validated_bounded_sequence")]
+    ValidatedBoundedSequence,
     #[serde(rename = "validated_compatibility_profile")]
     ValidatedCompatibilityProfile,
     #[serde(rename = "missing_channel_routing")]
@@ -120,6 +122,7 @@ pub enum ReadinessReasonCode {
 impl ReadinessReasonCode {
     pub const fn stable_code(self) -> u32 {
         match self {
+            Self::ValidatedBoundedSequence => 8,
             Self::ValidatedCompatibilityProfile => 1,
             Self::MissingChannelRouting => 2,
             Self::UnsupportedEventFamily => 3,
@@ -132,6 +135,7 @@ impl ReadinessReasonCode {
 
     pub const fn stable_name(self) -> &'static str {
         match self {
+            Self::ValidatedBoundedSequence => "validated_bounded_sequence",
             Self::ValidatedCompatibilityProfile => "validated_compatibility_profile",
             Self::MissingChannelRouting => "missing_channel_routing",
             Self::UnsupportedEventFamily => "unsupported_event_family",
@@ -144,7 +148,9 @@ impl ReadinessReasonCode {
 
     pub const fn default_severity(self) -> ReasonSeverity {
         match self {
-            Self::ValidatedCompatibilityProfile => ReasonSeverity::Informational,
+            Self::ValidatedCompatibilityProfile | Self::ValidatedBoundedSequence => {
+                ReasonSeverity::Informational
+            }
             Self::MissingChannelRouting
             | Self::UnsupportedEventFamily
             | Self::UnsupportedPatchTranslation => ReasonSeverity::DataLossRisk,
@@ -156,7 +162,10 @@ impl ReadinessReasonCode {
     }
 
     pub const fn export_enabled(self) -> bool {
-        matches!(self, Self::ValidatedCompatibilityProfile)
+        matches!(
+            self,
+            Self::ValidatedCompatibilityProfile | Self::ValidatedBoundedSequence
+        )
     }
 }
 
@@ -321,6 +330,23 @@ pub struct ProfileCapability {
     pub display_label: String,
 }
 
+/// Descriptive eligibility only; never an export permit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct BoundedExportCapability {
+    pub contract_id: String,
+    pub contract_revision: u32,
+    pub display_label: String,
+}
+impl BoundedExportCapability {
+    pub(crate) fn validated() -> Self {
+        Self {
+            contract_id: "descriptor166_bounded_sequence".into(),
+            contract_revision: 1,
+            display_label: "Validated bounded sequence".into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct SequenceSummary {
     pub sequence_id: SequenceId,
@@ -331,6 +357,8 @@ pub struct SequenceSummary {
     pub supported_event_families: Vec<EventFamilySummary>,
     pub warning_count: u32,
     pub export_capability: Option<ProfileCapability>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bounded_export_capability: Option<BoundedExportCapability>,
     pub diagnostics_available: bool,
 }
 
@@ -545,6 +573,8 @@ pub struct ExportSequenceResponse {
     pub sequence_display_name: String,
     pub output_path: String,
     pub compatibility_profile: Option<ProfileCapability>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bounded_export_capability: Option<BoundedExportCapability>,
     pub musical_track_count: u32,
     pub total_smf_track_count: u32,
     pub counts: ExportCounts,

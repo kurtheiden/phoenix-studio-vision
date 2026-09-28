@@ -89,6 +89,7 @@ fn owned_project_and_sequence_summaries_outlive_inputs() {
             diagnostics_available: false,
         };
         let sequence = SequenceSummary {
+            bounded_export_capability: None,
             sequence_id: SequenceId::new("session-sequence-0"),
             display_name: sequence_name,
             readiness: Readiness::Ready,
@@ -130,6 +131,7 @@ fn request_response_types_are_owned_and_policy_limited() {
     };
     assert_eq!(request.collision_policy.stable_name(), "fail_if_exists");
     let response = ExportSequenceResponse {
+        bounded_export_capability: None,
         session_id: request.session_id,
         sequence_id: request.sequence_id,
         sequence_display_name: "sequence".into(),
@@ -215,4 +217,21 @@ fn every_public_cross_boundary_enum_has_stable_identity() {
     );
     assert_eq!(AppErrorCategory::InternalError.stable_code(), 11);
     assert_eq!(EventFamily::Meter.stable_name(), "meter");
+}
+
+#[test]
+fn bounded_reason_is_additive_at_contract_one() {
+    assert_eq!(CONTRACT_VERSION, 1);
+    let reason = ReadinessReason::new(
+        ReadinessReasonCode::ValidatedBoundedSequence,
+        "Validated bounded sequence",
+    );
+    assert_eq!(reason.code.stable_code(), 8);
+    assert_eq!(reason.code.stable_name(), "validated_bounded_sequence");
+    assert_eq!(reason.severity, ReasonSeverity::Informational);
+    assert!(reason.export_enabled);
+    assert_eq!(
+        serde_json::to_value(reason).unwrap()["code"],
+        "validated_bounded_sequence"
+    );
 }

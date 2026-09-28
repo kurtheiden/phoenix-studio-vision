@@ -14,9 +14,10 @@ use crate::{
         PatchPolicy, TimingPolicy,
     },
     mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind},
+    multitrack_export::{MultitrackExportReport, MultitrackExportResult, MusicalTrackExportReport},
     saved_mute::{collect_saved_mute_evidence, SavedMuteEvidence, SavedMuteState},
     sequence_container::{parse_project_166, FramedRecord, TrackAssociations},
-    smf::{self, MidiChannel, MusicalTrackOrdering, SerializedTrack},
+    smf::{self, MidiChannel, MusicalTrackOrdering},
     tempo::{decode_bounded_initial_tempo, InitialTempoBounds, InitialTempoEvent},
 };
 
@@ -318,13 +319,13 @@ pub fn build_bounded_sequence_manifest(
     };
     // Acceptance includes all adapter and source-order safety checks. This
     // prevents an accepted proof from hiding an unsupported value or tie.
-    assembly_tracks(&manifest)?;
+    assemble_bounded_sequence_with_report(&manifest)?;
     Ok(manifest)
 }
 
-fn assembly_tracks(
+pub(crate) fn assemble_bounded_sequence_with_report(
     manifest: &BoundedSequenceManifest,
-) -> Result<Vec<SerializedTrack>, ManifestRefusal> {
+) -> Result<MultitrackExportResult, ManifestRefusal> {
     let c = &manifest.conductor;
     let m = &c.meter;
     let conductor = midi_export::adapt_conductor(
@@ -349,6 +350,8 @@ fn assembly_tracks(
         conductor.time_signature,
     )
     .map_err(|e| refusal("conductor serialization", e))?];
+    let mut totals = conductor.counts.clone();
+    let mut reports = Vec::new();
     for t in &manifest.tracks {
         let name =
             midi_export::adapt_text(&t.routing.label_bytes).map_err(|e| refusal("label", e))?;
@@ -364,6 +367,18 @@ fn assembly_tracks(
             PatchPolicy::StrictKnownOnly,
         )
         .map_err(|e| refusal("track adaptation", e))?;
+        if !adapted.warnings.is_empty() || !adapted.untranslated_metadata.is_empty() {
+            return Err(refusal("track adaptation", "incomplete translation"));
+        }
+        totals.add_assign(&adapted.counts);
+        reports.push(MusicalTrackExportReport {
+            context: format!("track {}", t.source_ordinal),
+            name: name.clone(),
+            channel_assignment: adapted.channel_assignment,
+            counts: adapted.counts,
+            warnings: adapted.warnings,
+            untranslated_metadata: adapted.untranslated_metadata,
+        });
         tracks.push(
             smf::serialize_named_musical_track_with_ordering(
                 &name,
@@ -373,13 +388,149 @@ fn assembly_tracks(
             .map_err(|e| refusal("source ordering", e))?,
         );
     }
-    Ok(tracks)
+    let smf_bytes = smf::serialize_format1(manifest.ppqn, &tracks)
+        .map_err(|e| refusal("Format 1 assembly", e))?;
+    Ok(MultitrackExportResult {
+        smf_bytes,
+        report: MultitrackExportReport {
+            sequence_name: conductor.sequence_name,
+            musical_track_count: reports.len(),
+            total_smf_track_count: tracks.len(),
+            tracks: reports,
+            totals,
+            warnings: conductor.warnings,
+            untranslated_metadata: Vec::new(),
+        },
+    })
 }
 
 /// Construct Format 1 bytes in memory only. No publication or authorization.
 pub fn assemble_bounded_sequence(
     manifest: &BoundedSequenceManifest,
 ) -> Result<Vec<u8>, ManifestRefusal> {
-    smf::serialize_format1(manifest.ppqn, &assembly_tracks(manifest)?)
-        .map_err(|e| refusal("Format 1 assembly", e))
+    Ok(assemble_bounded_sequence_with_report(manifest)?.smf_bytes)
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    pub(crate) const NOTE: &[u8] = &[0, 0x90, 60, 127, 113, 102];
+
+    fn record(b: &mut Vec<u8>, tag: u8, p: &[u8]) {
+        b.push(tag);
+        b.extend((p.len() as u32).to_be_bytes());
+        b.extend(p);
+    }
+    pub(crate) fn synthetic(events: &[u8]) -> Vec<u8> {
+        let mut b = vec![0; 8];
+        for i in 0..2 {
+            let mut p = vec![0; 36];
+            p[25] = i;
+            p[26] = 7;
+            p[27] = 3;
+            record(&mut b, 0x10, &p);
+        }
+        let mut device = vec![0; 40];
+        device[0] = 4;
+        device[1..5].copy_from_slice(b"Test");
+        device[33] = 7;
+        record(&mut b, 0x2a, &device);
+        let start = b.len();
+        let mut p = vec![0; 3 * 166 + 172];
+        p[0] = 3;
+        record(&mut b, 1, &p);
+        let label = start + 208 + 2 * 166 + 15;
+        b[label..label + 5].copy_from_slice(b"Other");
+        b[label - 39..label - 31].copy_from_slice(&[128, 0, 4, 0, 0, 4, 1, 0]);
+        b[label - 33] = 1;
+        b[label - 31] = 1;
+        b[label - 30..label].fill(0xff);
+        let mut name = vec![0; 11];
+        name.extend([4, b'N', b'e', b'w', b'!']);
+        record(&mut b, 7, &name);
+        conductor_pair(&mut b, &[0, 255, 88, 4, 4, 2, 8, 8]);
+        conductor_pair(&mut b, &[0, 255, 81, 3, 7, 53, 120]);
+        let mut p = vec![0; 14];
+        p.extend(events);
+        p.extend([0xff, 0, 0, 0, 0xff, 0x2f, 0]);
+        record(&mut b, 2, &p);
+        record(&mut b, 0x29, &[]);
+        record(&mut b, 0, &[255; 8]);
+        b
+    }
+    fn patch(p: u8) -> Vec<u8> {
+        let mut e = vec![0, 0xff, 0x7c, 27, 0, 0, p | 0x80, 8, p, 12];
+        e.extend(b"Unseen name!");
+        e.extend([3, b'X', b'Y', b'Z', 4, 0xff, 0x50, 0xff, p]);
+        e.extend(NOTE);
+        e
+    }
+
+    fn conductor_pair(b: &mut Vec<u8>, event: &[u8]) {
+        let mut primary = vec![0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 12, 34, 56, 78];
+        primary.extend(event);
+        primary.extend([135, 255, 255, 127, 255, 47, 0]);
+        primary.resize(38, 0);
+        record(b, 2, &primary);
+        let n = event.len() as u8;
+        let mut secondary = vec![
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            n + 19,
+            0,
+            0,
+            0,
+            n + 19,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            n + 4,
+            0,
+            255,
+            255,
+            255,
+            47,
+            197,
+            0,
+            0,
+            0,
+            0,
+        ];
+        secondary.push(event[2]);
+        secondary.extend(&event[4..]);
+        secondary.extend([255; 3]);
+        record(b, 41, &secondary);
+    }
+
+    #[test]
+    fn report_bridge_uses_identical_source_order_and_adapter_counts() {
+        let bytes = synthetic(&patch(16));
+        let manifest = build_bounded_sequence_manifest(&bytes, 0, 480).unwrap();
+        let result = assemble_bounded_sequence_with_report(&manifest).unwrap();
+        assert_eq!(
+            result.smf_bytes,
+            assemble_bounded_sequence(&manifest).unwrap()
+        );
+        assert_eq!(result.report.totals.notes, 1);
+        assert_eq!(result.report.totals.generated_note_offs, 1);
+        assert_eq!(result.report.totals.bank_select_msb, 1);
+        assert_eq!(result.report.totals.bank_select_lsb, 0);
+        assert_eq!(result.report.totals.program_changes, 1);
+        assert_eq!(result.report.totals.tempo, 1);
+        assert_eq!(result.report.totals.meter, 1);
+        assert_eq!(result.report.tracks[0].channel_assignment.channel.get(), 4);
+        assert!(result.report.warnings.is_empty());
+        assert!(result.report.untranslated_metadata.is_empty());
+    }
 }

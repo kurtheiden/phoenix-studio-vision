@@ -498,14 +498,15 @@ fn app_service_exposes_evidence_without_changing_readiness_or_channels() {
     assert_eq!(
         before
             .iter()
-            .filter(|sequence| sequence.readiness == Readiness::Ready)
+            .filter(|sequence| sequence.readiness == Readiness::Ready
+                && sequence.export_capability.is_some())
             .count(),
         6
     );
     assert_eq!(
         before
             .iter()
-            .filter(|sequence| sequence.readiness != Readiness::Ready)
+            .filter(|sequence| sequence.export_capability.is_none())
             .count(),
         12
     );

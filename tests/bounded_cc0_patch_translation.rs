@@ -551,7 +551,7 @@ fn classification_does_not_change_profile_evidence_or_readiness() {
         before
             .sequences
             .iter()
-            .filter(|s| s.readiness == Readiness::Ready)
+            .filter(|s| s.readiness == Readiness::Ready && s.export_capability.is_some())
             .count(),
         6
     );
@@ -559,7 +559,7 @@ fn classification_does_not_change_profile_evidence_or_readiness() {
         before
             .sequences
             .iter()
-            .filter(|s| s.readiness == Readiness::PartiallySupported)
+            .filter(|s| s.export_capability.is_none())
             .count(),
         12
     );

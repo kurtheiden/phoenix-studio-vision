@@ -495,7 +495,7 @@ fn over_the_top_reference_matches_notes_patch_timing_and_known_endings() {
 }
 
 #[test]
-fn over_the_top_export_is_ready_without_promoting_other_partial_sequences() {
+fn over_the_top_export_retains_exact_authority_with_independent_bounded_rows() {
     let path = Path::new(SOURCE);
     if !path.is_file() {
         return;
@@ -568,8 +568,14 @@ fn over_the_top_export_is_ready_without_promoting_other_partial_sequences() {
                 | "Over the Top"
         ) {
             assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+            assert!(sequence.export_capability.is_some());
+            assert!(sequence.bounded_export_capability.is_none());
         } else {
-            assert_ne!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+            assert!(sequence.export_capability.is_none());
+            assert_eq!(
+                sequence.readiness == phoenix::app_contract::Readiness::Ready,
+                sequence.bounded_export_capability.is_some()
+            );
         }
     }
 }
@@ -979,7 +985,7 @@ fn girl_u_want_reference_matches_all_notes_and_understood_zero_endings() {
 }
 
 #[test]
-fn girl_u_want_export_is_ready_without_promoting_other_partial_sequences() {
+fn girl_u_want_export_retains_exact_authority_with_independent_bounded_rows() {
     let path = Path::new(SOURCE);
     if !path.is_file() {
         return;
@@ -1060,8 +1066,14 @@ fn girl_u_want_export_is_ready_without_promoting_other_partial_sequences() {
                 | "Over the Top"
         ) {
             assert_eq!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+            assert!(sequence.export_capability.is_some());
+            assert!(sequence.bounded_export_capability.is_none());
         } else {
-            assert_ne!(sequence.readiness, phoenix::app_contract::Readiness::Ready);
+            assert!(sequence.export_capability.is_none());
+            assert_eq!(
+                sequence.readiness == phoenix::app_contract::Readiness::Ready,
+                sequence.bounded_export_capability.is_some()
+            );
         }
     }
 }

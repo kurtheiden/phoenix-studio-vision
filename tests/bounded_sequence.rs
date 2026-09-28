@@ -106,6 +106,7 @@ fn accepted(b: &[u8]) -> BoundedSequenceManifest {
     build_bounded_sequence_manifest(b, 0, 480).unwrap()
 }
 fn refused(b: &[u8]) -> ManifestRefusal {
+    assert_application_refusal(b);
     build_bounded_sequence_manifest(b, 0, 480).unwrap_err()
 }
 #[test]
@@ -443,7 +444,19 @@ fn authenticated_native_sequence_reconciliation() {
     let m = build_bounded_sequence_manifest(&b, 17, 480).unwrap();
     assert_eq!(m.tracks().len(), 2);
     assert_eq!(m.conductor().tempo().mpqn(), 472440);
-    let generated = smf(&assemble_bounded_sequence(&m).unwrap());
+    let (output, receipt) = application_export(&b, 17);
+    assert_eq!(output, assemble_bounded_sequence(&m).unwrap());
+    assert!(receipt.compatibility_profile.is_none());
+    assert!(receipt.bounded_export_capability.is_some());
+    assert_eq!(receipt.counts.notes, 99);
+    assert_eq!(receipt.counts.generated_note_offs, 99);
+    assert_eq!(receipt.counts.bank_select_msb, 2);
+    assert_eq!(receipt.counts.bank_select_lsb, 0);
+    assert_eq!(receipt.counts.programs, 2);
+    assert_eq!(receipt.counts.controllers, 0);
+    assert_eq!(receipt.untranslated_metadata_count, 0);
+    assert!(receipt.warnings.is_empty());
+    let generated = smf(&output);
     let mut native = smf(&native);
     assert_eq!(generated[0].meta, native[0].meta);
     let mut normalized = 0;
@@ -560,17 +573,23 @@ fn authorization_firewall_and_exact_profile_precedence_remain() {
         .filter(|s| s.readiness == Readiness::Ready)
         .map(|s| s.display_name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(
-        ready,
-        vec![
-            "Bells for her",
-            "Girl-U-Want",
-            "Sequence K",
-            "Ode to Clarke",
-            "Over the Top",
-            "Sequence Q"
-        ]
-    );
+    for name in [
+        "Bells for her",
+        "Girl-U-Want",
+        "Sequence K",
+        "Ode to Clarke",
+        "Over the Top",
+        "Sequence Q",
+    ] {
+        assert!(ready.contains(&name));
+        let row = response
+            .sequences
+            .iter()
+            .find(|s| s.display_name == name)
+            .unwrap();
+        assert!(row.export_capability.is_some());
+        assert!(row.bounded_export_capability.is_none());
+    }
     let r = response
         .sequences
         .iter()
@@ -581,25 +600,169 @@ fn authorization_firewall_and_exact_profile_precedence_remain() {
         .unwrap();
     let manifest = build_bounded_sequence_manifest(&b, 17, 480).unwrap();
     assemble_bounded_sequence(&manifest).unwrap();
-    assert_ne!(r.readiness, Readiness::Ready);
+    assert_eq!(r.readiness, Readiness::Ready);
+    assert!(r.bounded_export_capability.is_some());
     assert!(r.export_capability.is_none());
     assert!(!before.has_resolved_policy);
     assert!(before.capability.is_none());
-    let error = service
-        .export_sequence(ExportSequenceRequest {
-            contract_version: CONTRACT_VERSION,
-            session_id: response.session_id.clone(),
-            sequence_id: r.sequence_id.clone(),
-            destination_folder: "/tmp".into(),
-            filename_stem: "phoenix-must-never-export-bounded".into(),
-            collision_policy: CollisionPolicy::FailIfExists,
-            operation_id: None,
-        })
-        .unwrap_err();
-    assert_eq!(error.diagnostic_code, "sequence_not_export_capable");
+    // A manifest is not accepted by any application API; the session authority
+    // is independently established by inspection and refreshed by export.
+    let (_, receipt) = application_export(&b, 17);
+    assert!(receipt.compatibility_profile.is_none());
     let after = service
         .assessment_for_sequence(&response.session_id, &r.sequence_id)
         .unwrap();
     assert!(!after.has_resolved_policy);
     assert!(after.capability.is_none());
+}
+
+fn application_export(
+    bytes: &[u8],
+    ordinal: usize,
+) -> (Vec<u8>, phoenix::app_contract::ExportSequenceResponse) {
+    use phoenix::app_contract::*;
+    let directory = TestDirectory::new();
+    let source = directory.path().join("unrelated-project");
+    std::fs::write(&source, bytes).unwrap();
+    let mut service = phoenix::app_service::AppService::new();
+    let inspected = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: source.to_str().unwrap().into(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .unwrap();
+    let sequence = &inspected.sequences[ordinal];
+    assert_eq!(sequence.readiness, Readiness::Ready);
+    let receipt = service
+        .export_sequence(ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: inspected.session_id,
+            sequence_id: sequence.sequence_id.clone(),
+            destination_folder: directory.path().to_str().unwrap().into(),
+            filename_stem: "output".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .unwrap();
+    (std::fs::read(&receipt.output_path).unwrap(), receipt)
+}
+
+#[test]
+fn unrelated_bounded_application_exports_reinspected_changed_identity() {
+    let b = synthetic(&patch(35));
+    let (first, receipt) = application_export(&b, 0);
+    assert!(receipt.compatibility_profile.is_none());
+    let mut changed = b.clone();
+    let p = parse_project_166(&b).unwrap();
+    changed[p.sequences[0].sequence_name.bytes.range.clone()].copy_from_slice(b"Else");
+    changed[p.sequences[0].track_descriptors()[0]
+        .label
+        .as_ref()
+        .unwrap()
+        .range
+        .clone()]
+    .copy_from_slice(b"Fresh");
+    changed[96..100].copy_from_slice(b"Name");
+    let (second, receipt) = application_export(&changed, 0);
+    assert!(receipt.bounded_export_capability.is_some());
+    assert_ne!(first, second);
+    assert_ne!(Sha256::digest(&b), Sha256::digest(&changed));
+}
+
+struct TestDirectory(std::path::PathBuf);
+impl TestDirectory {
+    fn new() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "phoenix-bounded-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+impl Drop for TestDirectory {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.0).unwrap();
+    }
+}
+
+fn assert_application_refusal(bytes: &[u8]) {
+    use phoenix::app_contract::*;
+    let directory = TestDirectory::new();
+    let source = directory.path().join("unsupported");
+    std::fs::write(&source, bytes).unwrap();
+    let mut service = phoenix::app_service::AppService::new();
+    let inspected = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: source.to_str().unwrap().into(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .unwrap();
+    for sequence in &inspected.sequences {
+        assert_ne!(sequence.readiness, Readiness::Ready);
+        assert!(sequence.export_capability.is_none());
+        assert!(sequence.bounded_export_capability.is_none());
+        let error = service
+            .export_sequence(ExportSequenceRequest {
+                contract_version: CONTRACT_VERSION,
+                session_id: inspected.session_id.clone(),
+                sequence_id: sequence.sequence_id.clone(),
+                destination_folder: directory.path().to_str().unwrap().into(),
+                filename_stem: "refused".into(),
+                collision_policy: CollisionPolicy::FailIfExists,
+                operation_id: None,
+            })
+            .unwrap_err();
+        assert_eq!(error.diagnostic_code, "sequence_not_export_capable");
+    }
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn invalid_selected_sequence_is_not_replaced_by_valid_sibling() {
+    use phoenix::app_contract::*;
+    let valid = synthetic(NOTE);
+    let mut bytes = synthetic(&[]);
+    let parsed = parse_project_166(&valid).unwrap();
+    bytes.extend_from_slice(&valid[parsed.sequences[0].sequence_range.clone()]);
+    let directory = TestDirectory::new();
+    let path = directory.path().join("siblings");
+    std::fs::write(&path, &bytes).unwrap();
+    let mut service = phoenix::app_service::AppService::new();
+    let response = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: path.to_str().unwrap().into(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .unwrap();
+    assert_eq!(response.sequences.len(), 2);
+    assert_ne!(response.sequences[0].readiness, Readiness::Ready);
+    assert_eq!(response.sequences[1].readiness, Readiness::Ready);
+    let error = service
+        .export_sequence(ExportSequenceRequest {
+            contract_version: CONTRACT_VERSION,
+            session_id: response.session_id,
+            sequence_id: response.sequences[0].sequence_id.clone(),
+            destination_folder: directory.path().to_str().unwrap().into(),
+            filename_stem: "refused".into(),
+            collision_policy: CollisionPolicy::FailIfExists,
+            operation_id: None,
+        })
+        .unwrap_err();
+    assert_eq!(error.diagnostic_code, "sequence_not_export_capable");
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    application_export(&bytes, 1);
 }

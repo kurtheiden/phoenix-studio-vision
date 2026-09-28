@@ -59,10 +59,32 @@ struct ProjectWarning: Decodable, Equatable {
 }
 
 struct ProfileCapability: Decodable, Equatable {
+    let profileID: String
+    let profileVersion: UInt32
+    let displayLabel: String
+
+    var isRecognized: Bool { !profileID.isEmpty && profileVersion > 0 }
+
+    enum CodingKeys: String, CodingKey {
+        case profileID = "profile_id"
+        case profileVersion = "profile_version"
+        case displayLabel = "display_label"
+    }
+}
+
+struct BoundedExportCapability: Decodable, Equatable {
+    let contractID: String
+    let contractRevision: UInt32
     let displayLabel: String
 
     enum CodingKeys: String, CodingKey {
+        case contractID = "contract_id"
+        case contractRevision = "contract_revision"
         case displayLabel = "display_label"
+    }
+
+    var isRecognized: Bool {
+        contractID == "descriptor166_bounded_sequence" && contractRevision == 1
     }
 }
 
@@ -74,6 +96,7 @@ struct SequenceViewData: Decodable, Equatable {
     let musicalTrackCount: UInt32?
     let warningCount: UInt32
     let exportCapability: ProfileCapability?
+    let boundedExportCapability: BoundedExportCapability?
     let diagnosticsAvailable: Bool
 
     enum CodingKeys: String, CodingKey {
@@ -84,11 +107,14 @@ struct SequenceViewData: Decodable, Equatable {
         case musicalTrackCount = "musical_track_count"
         case warningCount = "warning_count"
         case exportCapability = "export_capability"
+        case boundedExportCapability = "bounded_export_capability"
         case diagnosticsAvailable = "diagnostics_available"
     }
 
     var isExportEligible: Bool {
-        readiness == .ready && exportCapability != nil
+        guard readiness == .ready else { return false }
+        if let exportCapability { return exportCapability.isRecognized && boundedExportCapability == nil }
+        return boundedExportCapability?.isRecognized == true
     }
 }
 
@@ -207,6 +233,7 @@ struct ExportSequenceResult: Decodable, Equatable {
     let sequenceDisplayName: String
     let outputPath: String
     let compatibilityProfile: ProfileCapability?
+    let boundedExportCapability: BoundedExportCapability?
     let musicalTrackCount: UInt32
     let totalSMFTrackCount: UInt32
     let counts: ExportCounts
@@ -220,6 +247,7 @@ struct ExportSequenceResult: Decodable, Equatable {
         case sequenceDisplayName = "sequence_display_name"
         case outputPath = "output_path"
         case compatibilityProfile = "compatibility_profile"
+        case boundedExportCapability = "bounded_export_capability"
         case musicalTrackCount = "musical_track_count"
         case totalSMFTrackCount = "total_smf_track_count"
         case counts

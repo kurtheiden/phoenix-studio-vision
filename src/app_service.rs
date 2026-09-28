@@ -6,12 +6,15 @@
 //! parser structures or own broader UI/FFI behavior.
 
 use crate::app_contract::{
-    ApiInfo, AppError, AppErrorCategory, AppOperation, CollisionPolicy, Diagnostics,
-    DiagnosticsLevel, EventFamilySummary, ExportCounts as AppExportCounts, ExportSequenceRequest,
-    ExportSequenceResponse, InspectProjectRequest, InspectProjectResponse, OperationId,
-    ProfileCapability, ProjectSummary, Readiness, ReadinessReason, ReadinessReasonCode, SequenceId,
-    SequenceSummary, SessionId, ValidationStatus, Warning, WarningScope, WarningSeverity,
-    CONTRACT_VERSION,
+    ApiInfo, AppError, AppErrorCategory, AppOperation, BoundedExportCapability, CollisionPolicy,
+    Diagnostics, DiagnosticsLevel, EventFamilySummary, ExportCounts as AppExportCounts,
+    ExportSequenceRequest, ExportSequenceResponse, InspectProjectRequest, InspectProjectResponse,
+    OperationId, ProfileCapability, ProjectSummary, Readiness, ReadinessReason,
+    ReadinessReasonCode, SequenceId, SequenceSummary, SessionId, ValidationStatus, Warning,
+    WarningScope, WarningSeverity, CONTRACT_VERSION,
+};
+use crate::bounded_sequence::{
+    assemble_bounded_sequence_with_report, build_bounded_sequence_manifest, BoundedSequenceManifest,
 };
 use crate::compatibility::{
     ByteRange, CompatibilityRegistry, EvidenceEventFamily, ParserProfileId, PatchEvidence,
@@ -49,6 +52,7 @@ enum SequenceMatchState {
 
 #[derive(Clone)]
 struct SequenceAssessment {
+    authority: Option<InspectedExportAuthority>,
     structural_ordinal: u32,
     #[allow(dead_code)]
     generic_readiness: Readiness,
@@ -58,6 +62,32 @@ struct SequenceAssessment {
     diagnostic_code: Option<String>,
     #[allow(dead_code)]
     technical_detail: Option<String>,
+}
+
+#[derive(Clone)]
+enum InspectedExportAuthority {
+    ExactProfile {
+        capability: ProfileCapability,
+        resolved_policy: ResolvedProfilePolicy,
+    },
+    Bounded {
+        selection: InspectedSequenceStructure,
+        contract_revision: u32,
+    },
+}
+
+// Private immediate-preparation permission, minted only by fresh_authorization.
+enum FreshExportAuthorization {
+    ExactProfile(Box<FreshValidatedSequence>),
+    Bounded(Box<FreshBoundedAuthorization>),
+}
+struct FreshBoundedAuthorization {
+    source_sha256: String,
+    session_id: SessionId,
+    sequence_id: SequenceId,
+    selection: InspectedSequenceStructure,
+    contract_revision: u32,
+    manifest: BoundedSequenceManifest,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,7 +147,8 @@ pub(crate) struct PreparedExportSequence {
     pub(crate) session_id: SessionId,
     pub(crate) sequence_id: SequenceId,
     pub(crate) sequence_display_name: String,
-    pub(crate) compatibility_profile: ProfileCapability,
+    pub(crate) compatibility_profile: Option<ProfileCapability>,
+    bounded_export_capability: Option<BoundedExportCapability>,
     pub(crate) result: MultitrackExportResult,
 }
 
@@ -139,7 +170,8 @@ struct ExportResponsePreflight {
     session_id: SessionId,
     sequence_id: SequenceId,
     sequence_display_name: String,
-    compatibility_profile: ProfileCapability,
+    compatibility_profile: Option<ProfileCapability>,
+    bounded_export_capability: Option<BoundedExportCapability>,
     musical_track_count: u32,
     total_smf_track_count: u32,
     counts: AppExportCounts,
@@ -209,7 +241,7 @@ struct InspectedProjectStructure {
     sequences: Vec<InspectedSequenceStructure>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct InspectedSequenceStructure {
     structural_ordinal: u32,
     sequence_range: ByteRange,
@@ -220,7 +252,7 @@ struct InspectedSequenceStructure {
     tracks: Vec<InspectedTrackStructure>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct InspectedTrackStructure {
     descriptor_ordinal: u32,
     descriptor_range: ByteRange,
@@ -338,16 +370,29 @@ impl AppService {
             )
         })?;
 
-        let finder = identify(read_finder_metadata(&inspection.full_path));
+        self.inspect_snapshot(request, inspection.filename, inspection.full_path, bytes)
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn inspect_snapshot(
+        &mut self,
+        request: InspectProjectRequest,
+        filename: String,
+        full_path: PathBuf,
+        bytes: Vec<u8>,
+    ) -> Result<InspectProjectResponse, AppError> {
+        let source_sha256 = sha256_hex(&bytes);
+        let source_size = bytes.len() as u64;
+        let finder = identify(read_finder_metadata(&full_path));
         // Authenticate the bytes actually parsed; `inspect` made an earlier read.
-        let research_observation = inspect_if_authorized(&bytes, &sha256_hex(&bytes));
+        let research_observation = inspect_if_authorized(&bytes, &source_sha256);
         let finder_recognized = !finder.confidence.to_string().eq("Unknown");
         let session_id = self.allocate_session_id();
         let (project, sequences, warnings, diagnostics, structure) = match parse_project_166(&bytes)
         {
             Ok(parsed) => self.build_parsed_result(
-                &inspection.filename,
-                inspection.size,
+                &filename,
+                source_size,
                 &finder,
                 &bytes,
                 parsed.sequences,
@@ -355,15 +400,15 @@ impl AppService {
                 request.diagnostics_level,
             ),
             Err(error) if finder_recognized => self.build_profile_failure(
-                &inspection.filename,
-                inspection.size,
+                &filename,
+                source_size,
                 &finder,
                 format!("166-byte profile rejected: {error}"),
                 &session_id,
             ),
             Err(error) => self.build_unrecognized_result(
-                &inspection.filename,
-                inspection.size,
+                &filename,
+                source_size,
                 &finder,
                 format!("no established Studio Vision profile accepted the input: {error}"),
                 &session_id,
@@ -385,13 +430,13 @@ impl AppService {
             .map(|(index, summary)| (summary.sequence_id.clone(), index as u32))
             .collect();
         let mut diagnostics = diagnostics;
-        diagnostics.source_sha256 = Some(inspection.sha256.clone());
+        diagnostics.source_sha256 = Some(source_sha256.clone());
         self.sessions.insert(
             session_id.clone(),
             Session {
                 source_path: request.source_path,
                 source_bytes: bytes,
-                source_sha256: inspection.sha256,
+                source_sha256,
                 response: response.clone(),
                 diagnostics,
                 structure,
@@ -436,6 +481,7 @@ impl AppService {
                 })
                 .count() as u32;
         }
+        session.response.project.warning_count = session.response.warnings.len() as u32;
         session.response.project.overall_readiness = overall_readiness(&session.response.sequences);
     }
 
@@ -458,6 +504,7 @@ impl AppService {
                     session.assessments.insert(
                         summary.sequence_id.clone(),
                         SequenceAssessment {
+                            authority: None,
                             structural_ordinal: ordinal,
                             generic_readiness,
                             match_state: SequenceMatchState::RegistryError,
@@ -477,7 +524,7 @@ impl AppService {
                     continue;
                 };
                 let (match_state, capability, resolved_policy, diagnostic_code, technical_detail) =
-                    match registry.assess(&evidence, ordinal) {
+                    match assess_export_precedence(&registry, &evidence, ordinal) {
                         Ok(ProfileMatch::NoMatch) => {
                             (SequenceMatchState::NoMatch, None, None, None, None)
                         }
@@ -508,9 +555,42 @@ impl AppService {
                             Some(format!("{error:?}")),
                         ),
                     };
+                let authority = match (&capability, &resolved_policy) {
+                    (Some(capability), Some(resolved_policy)) => {
+                        Some(InspectedExportAuthority::ExactProfile {
+                            capability: capability.clone(),
+                            resolved_policy: resolved_policy.clone(),
+                        })
+                    }
+                    _ if match_state == SequenceMatchState::NoMatch => session
+                        .structure
+                        .as_ref()
+                        .and_then(|structure| structure.sequences.get(ordinal as usize))
+                        .filter(|selection| selection.structural_ordinal == ordinal)
+                        .and_then(|selection| {
+                            build_bounded_sequence_manifest(
+                                &session.source_bytes,
+                                ordinal as usize,
+                                480,
+                            )
+                            .ok()
+                            .filter(|manifest| {
+                                owned_range(&manifest.sequence_range())
+                                    == Some(selection.sequence_range)
+                            })
+                            .map(|_| {
+                                InspectedExportAuthority::Bounded {
+                                    selection: selection.clone(),
+                                    contract_revision: 1,
+                                }
+                            })
+                        }),
+                    _ => None,
+                };
                 session.assessments.insert(
                     summary.sequence_id.clone(),
                     SequenceAssessment {
+                        authority,
                         structural_ordinal: ordinal,
                         generic_readiness: summary.readiness,
                         match_state,
@@ -620,85 +700,104 @@ impl AppService {
             ));
         }
 
-        let (sequence_display_name, compatibility_profile) = {
-            let session = self
-                .sessions
-                .get(&request.session_id)
-                .ok_or_else(|| self.unknown_session(AppOperation::ExportSequence))?;
-            let sequence = session
-                .response
-                .sequences
-                .iter()
-                .find(|sequence| sequence.sequence_id == request.sequence_id)
-                .ok_or_else(|| {
-                    self.unknown_sequence(
-                        &request.session_id,
-                        &request.sequence_id,
-                        AppOperation::ExportSequence,
-                    )
-                })?;
-            let capability = session
-                .assessments
-                .get(&request.sequence_id)
-                .and_then(|assessment| {
-                    (sequence.readiness == Readiness::Ready
-                        && assessment.match_state == SequenceMatchState::Matched
-                        && assessment.resolved_policy.is_some())
-                    .then_some(assessment)
-                })
-                .and_then(|assessment| assessment.capability.as_ref())
-                .filter(|capability| sequence.export_capability.as_ref() == Some(*capability))
-                .cloned();
-            let Some(capability) = capability else {
-                return Err(self.error(
-                    AppErrorCategory::ExportValidationFailed,
-                    "This sequence is not eligible for export.",
-                    "inspection-time readiness, capability, and matched policy are not complete"
-                        .into(),
+        let session = self
+            .sessions
+            .get(&request.session_id)
+            .ok_or_else(|| self.unknown_session(AppOperation::ExportSequence))?;
+        let sequence = session
+            .response
+            .sequences
+            .iter()
+            .find(|s| s.sequence_id == request.sequence_id)
+            .ok_or_else(|| {
+                self.unknown_sequence(
+                    &request.session_id,
+                    &request.sequence_id,
                     AppOperation::ExportSequence,
-                    "sequence_not_export_capable",
-                    Some(request.session_id.clone()),
-                    Some(request.sequence_id.clone()),
-                ));
-            };
-            (sequence.display_name.clone(), capability)
-        };
-
-        let fresh = self.revalidated_policy_for_sequence_with_operation(
-            &request.session_id,
-            &request.sequence_id,
-            AppOperation::ExportSequence,
-        )?;
-        let ready = build_conversion_ready_sequence(&fresh).map_err(|error| {
-            self.error(
-                AppErrorCategory::ExportValidationFailed,
-                "Phoenix could not prepare this sequence for export.",
-                error.to_string(),
-                AppOperation::ExportSequence,
-                "conversion_failed",
-                Some(request.session_id.clone()),
-                Some(request.sequence_id.clone()),
-            )
-        })?;
-        let result = ready
-            .with_multitrack_input(|input| assemble_multitrack_sequence(&input))
-            .map_err(|error| {
-                self.error(
-                    AppErrorCategory::ExportValidationFailed,
-                    "Phoenix could not prepare this sequence for export.",
-                    error.to_string(),
-                    AppOperation::ExportSequence,
-                    "conversion_failed",
-                    Some(request.session_id.clone()),
-                    Some(request.sequence_id.clone()),
                 )
             })?;
+        let assessment = session.assessments.get(&request.sequence_id);
+        let consistent = assessment.is_some_and(|assessment| match &assessment.authority {
+            Some(InspectedExportAuthority::ExactProfile { capability, .. }) => {
+                assessment.match_state == SequenceMatchState::Matched
+                    && assessment.capability.as_ref() == Some(capability)
+                    && assessment.resolved_policy.is_some()
+                    && sequence.export_capability.as_ref() == Some(capability)
+                    && sequence.bounded_export_capability.is_none()
+            }
+            Some(InspectedExportAuthority::Bounded {
+                contract_revision: 1,
+                ..
+            }) => {
+                assessment.match_state == SequenceMatchState::NoMatch
+                    && assessment.capability.is_none()
+                    && assessment.resolved_policy.is_none()
+                    && sequence.export_capability.is_none()
+                    && sequence.bounded_export_capability
+                        == Some(BoundedExportCapability::validated())
+            }
+            _ => false,
+        });
+        if sequence.readiness != Readiness::Ready || !consistent {
+            return Err(self.export_authorization_error(
+                request,
+                "sequence_not_export_capable",
+                "Inspection eligibility and descriptive capability are inconsistent.",
+            ));
+        }
+        let sequence_display_name = sequence.display_name.clone();
+        let compatibility_profile = sequence.export_capability.clone();
+        let bounded_export_capability = sequence.bounded_export_capability.clone();
+        let fresh = self.fresh_authorization(request)?;
+        let result = match fresh {
+            FreshExportAuthorization::ExactProfile(fresh) => {
+                let ready = build_conversion_ready_sequence(&fresh).map_err(|error| {
+                    self.export_authorization_error(
+                        request,
+                        "conversion_failed",
+                        &error.to_string(),
+                    )
+                })?;
+                ready
+                    .with_multitrack_input(|input| assemble_multitrack_sequence(&input))
+                    .map_err(|error| {
+                        self.export_authorization_error(
+                            request,
+                            "conversion_failed",
+                            &error.to_string(),
+                        )
+                    })?
+            }
+            FreshExportAuthorization::Bounded(fresh) => {
+                if fresh.source_sha256 != session.source_sha256
+                    || fresh.session_id != request.session_id
+                    || fresh.sequence_id != request.sequence_id
+                    || fresh.contract_revision != 1
+                    || owned_range(&fresh.manifest.sequence_range())
+                        != Some(fresh.selection.sequence_range)
+                {
+                    return Err(self.export_authorization_error(
+                        request,
+                        "source_sequence_identity_changed",
+                        "Fresh bounded selection is inconsistent.",
+                    ));
+                }
+                assemble_bounded_sequence_with_report(&fresh.manifest).map_err(|_| {
+                    self.export_authorization_error(
+                        request,
+                        "conversion_failed",
+                        "Bounded sequence adaptation or serialization failed.",
+                    )
+                })?
+            }
+        };
 
         Ok(PreparedExportSequence {
             session_id: request.session_id.clone(),
             sequence_id: request.sequence_id.clone(),
             sequence_display_name,
             compatibility_profile,
+            bounded_export_capability,
             result,
         })
     }
@@ -904,7 +1003,8 @@ impl AppService {
             sequence_id: response.sequence_id,
             sequence_display_name: response.sequence_display_name,
             output_path,
-            compatibility_profile: Some(response.compatibility_profile),
+            compatibility_profile: response.compatibility_profile,
+            bounded_export_capability: response.bounded_export_capability,
             musical_track_count: response.musical_track_count,
             total_smf_track_count: response.total_smf_track_count,
             counts: response.counts,
@@ -950,6 +1050,7 @@ impl AppService {
             sequence_id: prepared.sequence_id.clone(),
             sequence_display_name: prepared.sequence_display_name.clone(),
             compatibility_profile: prepared.compatibility_profile.clone(),
+            bounded_export_capability: prepared.bounded_export_capability.clone(),
             musical_track_count,
             total_smf_track_count,
             counts: AppExportCounts {
@@ -1046,10 +1147,185 @@ impl AppService {
         )
     }
 
+    fn export_authorization_error(
+        &self,
+        request: &ExportSequenceRequest,
+        code: &str,
+        detail: &str,
+    ) -> AppError {
+        self.error(
+            AppErrorCategory::ExportValidationFailed,
+            "Phoenix could not authorize this sequence for export.",
+            detail.into(),
+            AppOperation::ExportSequence,
+            code,
+            Some(request.session_id.clone()),
+            Some(request.sequence_id.clone()),
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn fresh_authorization(
+        &self,
+        request: &ExportSequenceRequest,
+    ) -> Result<FreshExportAuthorization, AppError> {
+        let session = self
+            .sessions
+            .get(&request.session_id)
+            .ok_or_else(|| self.unknown_session(AppOperation::ExportSequence))?;
+        let assessment = session
+            .assessments
+            .get(&request.sequence_id)
+            .ok_or_else(|| {
+                self.unknown_sequence(
+                    &request.session_id,
+                    &request.sequence_id,
+                    AppOperation::ExportSequence,
+                )
+            })?;
+        let fail = |code, detail| self.export_authorization_error(request, code, detail);
+        if session.sequence_ordinals.get(&request.sequence_id)
+            != Some(&assessment.structural_ordinal)
+        {
+            return Err(fail(
+                "source_sequence_identity_changed",
+                "The service sequence mapping disagrees with the assessment.",
+            ));
+        }
+        let (selection, contract_revision) = match &assessment.authority {
+            Some(InspectedExportAuthority::ExactProfile {
+                resolved_policy, ..
+            }) => {
+                let fresh = self.revalidated_policy_for_sequence_with_operation(
+                    &request.session_id,
+                    &request.sequence_id,
+                    AppOperation::ExportSequence,
+                )?;
+                if &fresh.resolved_policy != resolved_policy {
+                    return Err(fail(
+                        "profile_policy_changed",
+                        "Fresh policy differs from the inspected exact authority.",
+                    ));
+                }
+                return Ok(FreshExportAuthorization::ExactProfile(Box::new(fresh)));
+            }
+            Some(InspectedExportAuthority::Bounded {
+                selection,
+                contract_revision,
+            }) => (selection, *contract_revision),
+            None => {
+                return Err(fail(
+                    "sequence_not_export_capable",
+                    "No inspected export authority exists.",
+                ))
+            }
+        };
+        if contract_revision != 1 || selection.structural_ordinal != assessment.structural_ordinal {
+            return Err(fail(
+                "source_sequence_identity_changed",
+                "The inspected bounded selection or revision disagrees.",
+            ));
+        }
+        let bytes = fs::read(&session.source_path).map_err(|error| {
+            self.error(
+                AppErrorCategory::FileUnreadable,
+                "Phoenix could not re-read the inspected source.",
+                error.to_string(),
+                AppOperation::ExportSequence,
+                "source_revalidation_failed",
+                Some(request.session_id.clone()),
+                Some(request.sequence_id.clone()),
+            )
+        })?;
+        let hash = sha256_hex(&bytes);
+        if bytes.len() as u64 != session.response.project.byte_size || hash != session.source_sha256
+        {
+            return Err(fail(
+                "source_identity_changed",
+                "Fresh source size or SHA-256 differs from the inspected snapshot.",
+            ));
+        }
+        let parsed = parse_project_166(&bytes).map_err(|_| {
+            fail(
+                "source_revalidation_failed",
+                "Fresh source structure could not be parsed.",
+            )
+        })?;
+        let structure = build_structure_snapshot(&parsed.sequences, &bytes).ok_or_else(|| {
+            fail(
+                "source_revalidation_failed",
+                "Fresh structural evidence is incomplete.",
+            )
+        })?;
+        let fresh_selection = structure
+            .sequences
+            .get(selection.structural_ordinal as usize)
+            .filter(|fresh| *fresh == selection)
+            .ok_or_else(|| {
+                fail(
+                    "source_sequence_identity_changed",
+                    "Fresh selected sequence differs from the inspected structural selection.",
+                )
+            })?;
+        let registry = self.registry.as_ref().ok_or_else(|| {
+            fail(
+                "profile_registry_configuration",
+                "Compatibility registry unavailable.",
+            )
+        })?;
+        let evidence = profile_evidence_from_structure(&hash, bytes.len() as u64, &structure);
+        match assess_export_precedence(registry, &evidence, selection.structural_ordinal).map_err(
+            |_| {
+                fail(
+                    "profile_ambiguous_match",
+                    "Compatibility assessment is ambiguous.",
+                )
+            },
+        )? {
+            ProfileMatch::NoMatch => {}
+            ProfileMatch::Matched { .. } => {
+                return Err(fail(
+                    "sequence_not_export_capable",
+                    "Export authority changed; inspect the source again.",
+                ))
+            }
+            ProfileMatch::Rejected { reason, .. } => {
+                return Err(fail(
+                    reason.diagnostic_code(),
+                    "An applicable exact profile rejected the source.",
+                ))
+            }
+        }
+        let manifest =
+            build_bounded_sequence_manifest(&bytes, selection.structural_ordinal as usize, 480)
+                .map_err(|refusal| {
+                    fail(
+                        "source_revalidation_failed",
+                        bounded_refusal_detail(&refusal),
+                    )
+                })?;
+        if owned_range(&manifest.sequence_range()) != Some(fresh_selection.sequence_range) {
+            return Err(fail(
+                "source_sequence_identity_changed",
+                "Fresh manifest range disagrees with the selected sequence.",
+            ));
+        }
+        Ok(FreshExportAuthorization::Bounded(Box::new(
+            FreshBoundedAuthorization {
+                source_sha256: hash,
+                session_id: request.session_id.clone(),
+                sequence_id: request.sequence_id.clone(),
+                selection: fresh_selection.clone(),
+                contract_revision,
+                manifest,
+            },
+        )))
+    }
+
+    #[allow(clippy::result_large_err)]
     /// Internal handoff for a future exporter. The returned bytes and policy
     /// belong to the same successful revalidation call, avoiding a stale
     /// policy or a second source read at the export boundary.
-    #[allow(clippy::result_large_err)]
     pub(crate) fn revalidated_policy_for_sequence(
         &self,
         session_id: &SessionId,
@@ -1193,17 +1469,18 @@ impl AppService {
                 Some(sequence_id.clone()),
             ));
         };
-        let fresh_match = registry.assess(&evidence, ordinal).map_err(|error| {
-            self.error(
-                AppErrorCategory::ExportValidationFailed,
-                "Phoenix could not validate the compatibility policy.",
-                format!("{error:?}"),
-                operation,
-                "profile_ambiguous_match",
-                Some(session_id.clone()),
-                Some(sequence_id.clone()),
-            )
-        })?;
+        let fresh_match =
+            assess_export_precedence(&registry, &evidence, ordinal).map_err(|error| {
+                self.error(
+                    AppErrorCategory::ExportValidationFailed,
+                    "Phoenix could not validate the compatibility policy.",
+                    format!("{error:?}"),
+                    operation,
+                    "profile_ambiguous_match",
+                    Some(session_id.clone()),
+                    Some(sequence_id.clone()),
+                )
+            })?;
         let (fresh_capability, fresh_policy) = match fresh_match {
             ProfileMatch::Matched {
                 capability,
@@ -1475,6 +1752,7 @@ impl AppService {
                 supported_event_families: Vec::<EventFamilySummary>::new(),
                 warning_count: 1,
                 export_capability: None,
+                bounded_export_capability: None,
                 diagnostics_available: true,
             });
         }
@@ -1841,8 +2119,59 @@ fn owned_range(range: &std::ops::Range<usize>) -> Option<ByteRange> {
     .ok()
 }
 
+fn bounded_refusal_detail(refusal: &crate::bounded_sequence::ManifestRefusal) -> &'static str {
+    match refusal.stage {
+        "structure" | "sequence" => {
+            "The source does not contain the complete selected sequence structure."
+        }
+        "ownership" => "Track ownership is ambiguous or incomplete.",
+        "mute" => "Every musical track must have established saved Mute OFF evidence.",
+        "routing" | "channel" => "A musical track has unsupported or incomplete routing.",
+        "Patch" => "A Patch event does not satisfy the supported bounded translation contract.",
+        "event walk" | "translation" | "track adaptation" => {
+            "Musical event coverage or translation is incomplete or unsupported."
+        }
+        "source ordering" => {
+            "Musical events cannot be serialized with the required source ordering."
+        }
+        "label" => "A track label cannot be represented in the export.",
+        "division" => "The requested timing division is not supported by the bounded contract.",
+        _ => "The sequence conductor or framing does not satisfy the complete bounded contract.",
+    }
+}
+
+fn assess_export_precedence(
+    registry: &CompatibilityRegistry,
+    evidence: &ProfileEvidence,
+    ordinal: u32,
+) -> Result<ProfileMatch, crate::compatibility::RegistryMatchError> {
+    match registry.assess(evidence, ordinal)? {
+        matched @ ProfileMatch::Matched { .. } => Ok(matched),
+        _ => registry.assess_selected_sequence(evidence, ordinal),
+    }
+}
+
 fn project_sequence_readiness(summary: &mut SequenceSummary, assessment: &SequenceAssessment) {
-    if assessment.match_state == SequenceMatchState::Matched && assessment.resolved_policy.is_some()
+    if let Some(InspectedExportAuthority::Bounded {
+        contract_revision: 1,
+        ..
+    }) = &assessment.authority
+    {
+        summary.readiness = Readiness::Ready;
+        summary.readiness_reason = ReadinessReason::new(
+            ReadinessReasonCode::ValidatedBoundedSequence,
+            "This sequence satisfies the validated bounded sequence contract.",
+        );
+        summary.export_capability = None;
+        summary.bounded_export_capability = Some(BoundedExportCapability::validated());
+        return;
+    }
+
+    if matches!(
+        assessment.authority,
+        Some(InspectedExportAuthority::ExactProfile { .. })
+    ) && assessment.match_state == SequenceMatchState::Matched
+        && assessment.resolved_policy.is_some()
     {
         if let Some(capability) = assessment.capability.clone() {
             summary.readiness = Readiness::Ready;
@@ -1851,6 +2180,7 @@ fn project_sequence_readiness(summary: &mut SequenceSummary, assessment: &Sequen
                 "This sequence matches a validated compatibility profile.",
             );
             summary.export_capability = Some(capability);
+            summary.bounded_export_capability = None;
         }
     }
 }
@@ -2276,6 +2606,421 @@ pub(crate) mod tests {
         (service, path, response)
     }
 
+    fn bounded_service() -> (AppService, PathBuf, InspectProjectResponse) {
+        let bytes = crate::bounded_sequence::tests::synthetic(crate::bounded_sequence::tests::NOTE);
+        let path = portable_path(&bytes);
+        let mut service = AppService::new();
+        let response = service
+            .inspect_project(InspectProjectRequest {
+                contract_version: CONTRACT_VERSION,
+                source_path: path.to_string_lossy().into_owned(),
+                diagnostics_level: DiagnosticsLevel::Full,
+            })
+            .unwrap();
+        assert_eq!(response.sequences[0].readiness, Readiness::Ready);
+        assert!(response.sequences[0].bounded_export_capability.is_some());
+        (service, path, response)
+    }
+
+    fn assert_no_destination(service: &AppService, request: &ExportSequenceRequest, code: &str) {
+        let fs = FaultExportFileSystem::default();
+        let error = service
+            .export_sequence_with_file_system(
+                request,
+                &fs,
+                ExportLimits {
+                    candidate_count: 10,
+                    temp_attempt_count: 10,
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.diagnostic_code, code);
+        assert_eq!(error.operation, AppOperation::ExportSequence);
+        assert_eq!(fs.destination_calls.get(), 0);
+        assert_eq!(fs.create_calls.get(), 0);
+        assert_eq!(fs.hard_link_calls.get(), 0);
+    }
+
+    #[test]
+    fn canonical_snapshot_ignores_earlier_inspection_identity() {
+        let bytes = crate::bounded_sequence::tests::synthetic(crate::bounded_sequence::tests::NOTE);
+        let path = portable_path(b"stale earlier read");
+        let earlier = inspect(&path).unwrap();
+        assert_ne!(earlier.sha256, sha256_hex(&bytes));
+        assert_ne!(earlier.size, bytes.len() as u64);
+        let mut service = AppService::new();
+        let response = service
+            .inspect_snapshot(
+                InspectProjectRequest {
+                    contract_version: CONTRACT_VERSION,
+                    source_path: path.to_string_lossy().into_owned(),
+                    diagnostics_level: DiagnosticsLevel::Full,
+                },
+                earlier.filename,
+                earlier.full_path,
+                bytes.clone(),
+            )
+            .unwrap();
+        let session = &service.sessions[&response.session_id];
+        assert_eq!(session.source_bytes, bytes);
+        assert_eq!(session.source_sha256, sha256_hex(&bytes));
+        assert_eq!(
+            session.diagnostics.source_sha256.as_deref(),
+            Some(session.source_sha256.as_str())
+        );
+        assert_eq!(response.project.byte_size, bytes.len() as u64);
+        let evidence = service.profile_evidence(&response.session_id).unwrap();
+        assert_eq!(evidence.source_sha256, sha256_hex(&bytes));
+        assert_eq!(evidence.source_byte_size, bytes.len() as u64);
+        assert_eq!(evidence.sequences.len(), 1);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn bounded_selection_and_projection_tampering_fail_before_destination() {
+        for mutation in 0..10 {
+            let (mut service, path, response) = bounded_service();
+            let request = export_request(
+                response.session_id.clone(),
+                response.sequences[0].sequence_id.clone(),
+            );
+            let session = service.sessions.get_mut(&response.session_id).unwrap();
+            let assessment = session.assessments.get_mut(&request.sequence_id).unwrap();
+            let mut code = "source_sequence_identity_changed";
+            match mutation {
+                0 => {
+                    session
+                        .sequence_ordinals
+                        .insert(request.sequence_id.clone(), 1);
+                }
+                1 => assessment.structural_ordinal = 1,
+                2..=5 => {
+                    let Some(InspectedExportAuthority::Bounded {
+                        selection,
+                        contract_revision,
+                    }) = &mut assessment.authority
+                    else {
+                        panic!()
+                    };
+                    match mutation {
+                        2 => selection.sequence_range = ByteRange::new(0, 1).unwrap(),
+                        3 => selection.name_bytes[0] ^= 1,
+                        4 => selection.pair_count += 1,
+                        _ => *contract_revision = 2,
+                    }
+                    if mutation == 5 {
+                        code = "sequence_not_export_capable";
+                    }
+                }
+                6 => {
+                    session.response.sequences[0].bounded_export_capability = None;
+                    code = "sequence_not_export_capable";
+                }
+                7 => {
+                    session.response.sequences[0].export_capability = Some(ProfileCapability {
+                        profile_id: "fake".into(),
+                        profile_version: 1,
+                        display_label: "fake".into(),
+                    });
+                    code = "sequence_not_export_capable";
+                }
+                8 => {
+                    assessment.authority = None;
+                    code = "sequence_not_export_capable";
+                }
+                _ => {
+                    session.response.sequences[0].readiness = Readiness::PartiallySupported;
+                    code = "sequence_not_export_capable";
+                }
+            }
+            assert_no_destination(&service, &request, code);
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn bounded_source_freshness_and_cross_session_fail_before_destination() {
+        for mutation in 0..4 {
+            let (mut service, path, response) = bounded_service();
+            let mut request = export_request(
+                response.session_id.clone(),
+                response.sequences[0].sequence_id.clone(),
+            );
+            let code = match mutation {
+                0 => {
+                    fs::remove_file(&path).unwrap();
+                    "source_revalidation_failed"
+                }
+                1 => {
+                    let mut bytes = fs::read(&path).unwrap();
+                    bytes[0] ^= 1;
+                    fs::write(&path, bytes).unwrap();
+                    "source_identity_changed"
+                }
+                2 => {
+                    fs::write(&path, b"replacement").unwrap();
+                    "source_identity_changed"
+                }
+                _ => {
+                    let other = service
+                        .inspect_project(InspectProjectRequest {
+                            contract_version: CONTRACT_VERSION,
+                            source_path: path.to_string_lossy().into_owned(),
+                            diagnostics_level: DiagnosticsLevel::None,
+                        })
+                        .unwrap();
+                    request.session_id = other.session_id;
+                    "unknown_sequence"
+                }
+            };
+            assert_no_destination(&service, &request, code);
+            if path.exists() {
+                fs::remove_file(path).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_fresh_reconstruction_is_not_a_retained_manifest() {
+        for parse_failure in [false, true] {
+            let (mut service, path, response) = bounded_service();
+            let request = export_request(
+                response.session_id.clone(),
+                response.sequences[0].sequence_id.clone(),
+            );
+            let mut bytes = fs::read(&path).unwrap();
+            if parse_failure {
+                bytes.truncate(10);
+            } else {
+                let p = parse_project_166(&bytes).unwrap();
+                let offset = p.sequences[0].track_descriptors()[0].label_start - 39;
+                bytes[offset] = 136;
+            }
+            fs::write(&path, &bytes).unwrap();
+            // Fault injection bypasses only the fingerprint guard to reach the
+            // independent parse/builder checks. Production cannot modify it.
+            let session = service.sessions.get_mut(&response.session_id).unwrap();
+            session.source_sha256 = sha256_hex(&bytes);
+            session.response.project.byte_size = bytes.len() as u64;
+            assert_no_destination(&service, &request, "source_revalidation_failed");
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn bounded_authority_never_switches_to_exact_and_registry_failures_veto() {
+        for case in 0..4 {
+            let (mut service, path, response) = bounded_service();
+            let request = export_request(
+                response.session_id.clone(),
+                response.sequences[0].sequence_id.clone(),
+            );
+            let registry = portable_registry(&fs::read(&path).unwrap());
+            let mut profile = registry.profiles()[0].clone();
+            let code = match case {
+                0 => {
+                    service.registry = Some(registry);
+                    "sequence_not_export_capable"
+                }
+                1 => {
+                    profile.sequences[0].expected_name_bytes = b"wrong".to_vec();
+                    service.registry = Some(CompatibilityRegistry::new(vec![profile]).unwrap());
+                    "profile_sequence_identity_mismatch"
+                }
+                2 => {
+                    let mut other = profile.clone();
+                    other.id = ProfileId::new("other");
+                    service.registry =
+                        Some(CompatibilityRegistry::new(vec![profile, other]).unwrap());
+                    "profile_ambiguous_match"
+                }
+                _ => {
+                    service.registry = None;
+                    "profile_registry_configuration"
+                }
+            };
+            assert_no_destination(&service, &request, code);
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn selected_profile_precedence_preserves_legacy_assessment() {
+        let bytes = crate::bounded_sequence::tests::synthetic(crate::bounded_sequence::tests::NOTE);
+        let parsed = parse_project_166(&bytes).unwrap();
+        let structure = build_structure_snapshot(&parsed.sequences, &bytes).unwrap();
+        let evidence =
+            profile_evidence_from_structure(&sha256_hex(&bytes), bytes.len() as u64, &structure);
+        let registry = portable_registry(&bytes);
+        let mut untargeted = registry.profiles()[0].clone();
+        untargeted.sequences[0].structural_ordinal = 1;
+        let registry = CompatibilityRegistry::new(vec![untargeted]).unwrap();
+        assert!(matches!(
+            registry.assess(&evidence, 0).unwrap(),
+            ProfileMatch::Rejected { .. }
+        ));
+        assert!(matches!(
+            registry.assess_selected_sequence(&evidence, 0).unwrap(),
+            ProfileMatch::NoMatch
+        ));
+        let path = portable_path(&bytes);
+        let mut service = AppService::with_registry(registry);
+        let request = InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: path.to_string_lossy().into_owned(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        };
+        let response = service.inspect_project(request.clone()).unwrap();
+        assert!(response.sequences[0].bounded_export_capability.is_some());
+        service
+            .prepare_export_sequence(&export_request(
+                response.session_id.clone(),
+                response.sequences[0].sequence_id.clone(),
+            ))
+            .unwrap();
+        for case in 0..3 {
+            let mut profile = portable_registry(&bytes).profiles()[0].clone();
+            service.registry = match case {
+                0 => {
+                    profile.sequences[0].expected_name_bytes = b"wrong".to_vec();
+                    Some(CompatibilityRegistry::new(vec![profile]).unwrap())
+                }
+                1 => {
+                    let mut other = profile.clone();
+                    other.id = ProfileId::new("other");
+                    Some(CompatibilityRegistry::new(vec![profile, other]).unwrap())
+                }
+                _ => None,
+            };
+            let response = service.inspect_project(request.clone()).unwrap();
+            assert_ne!(response.sequences[0].readiness, Readiness::Ready);
+            assert!(response.sequences[0].bounded_export_capability.is_none());
+        }
+        fs::remove_file(path).unwrap();
+        let (service, path, response) = portable_service();
+        assert!(build_bounded_sequence_manifest(&fs::read(&path).unwrap(), 0, 480).is_err());
+        assert!(response.sequences[0].export_capability.is_some());
+        service
+            .prepare_export_sequence(&export_request(
+                response.session_id,
+                response.sequences[0].sequence_id.clone(),
+            ))
+            .unwrap();
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn exact_authority_cannot_fall_back_to_valid_bounded_source() {
+        let bytes = crate::bounded_sequence::tests::synthetic(crate::bounded_sequence::tests::NOTE);
+        let path = portable_path(&bytes);
+        let mut service = AppService::with_registry(portable_registry(&bytes));
+        let response = service
+            .inspect_project(InspectProjectRequest {
+                contract_version: CONTRACT_VERSION,
+                source_path: path.to_string_lossy().into_owned(),
+                diagnostics_level: DiagnosticsLevel::Full,
+            })
+            .unwrap();
+        assert!(response.sequences[0].export_capability.is_some());
+        assert!(response.sequences[0].bounded_export_capability.is_none());
+        assert!(build_bounded_sequence_manifest(&bytes, 0, 480).is_ok());
+        service.registry = Some(CompatibilityRegistry::empty());
+        assert_no_destination(
+            &service,
+            &export_request(
+                response.session_id,
+                response.sequences[0].sequence_id.clone(),
+            ),
+            "profile_no_longer_matches",
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn bounded_projection_preserves_unrelated_warnings() {
+        let (mut service, path, response) = bounded_service();
+        let session = service.sessions.get_mut(&response.session_id).unwrap();
+        session.response.warnings.push(Warning {
+            code: "unrelated".into(),
+            message: "Keep this warning".into(),
+            technical_detail: None,
+            scope: WarningScope::Sequence,
+            severity: WarningSeverity::Caution,
+            diagnostic_ref: None,
+            source_order: 0,
+        });
+        session.response.warnings.push(Warning {
+            code: "missing_channel_routing".into(),
+            message: "Obsolete routing warning".into(),
+            technical_detail: None,
+            scope: WarningScope::Sequence,
+            severity: WarningSeverity::DataLossRisk,
+            diagnostic_ref: None,
+            source_order: 0,
+        });
+        service.project_readiness(&response.session_id);
+        let session = &service.sessions[&response.session_id];
+        assert_eq!(session.response.sequences[0].warning_count, 1);
+        assert!(session
+            .response
+            .warnings
+            .iter()
+            .any(|w| w.code == "unrelated"));
+        assert!(!session
+            .response
+            .warnings
+            .iter()
+            .any(|w| w.code == "missing_channel_routing"));
+        assert_eq!(
+            session.response.project.warning_count as usize,
+            session.response.warnings.len()
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn bounded_report_projection_and_owned_preparation() {
+        let (service, path, response) = bounded_service();
+        let sequence = &response.sequences[0];
+        assert_eq!(sequence.readiness_reason.code.stable_code(), 8);
+        assert_eq!(
+            sequence.readiness_reason.code.stable_name(),
+            "validated_bounded_sequence"
+        );
+        assert!(sequence.readiness_reason.export_enabled);
+        assert_eq!(sequence.warning_count, 0);
+        assert_eq!(
+            response.project.warning_count as usize,
+            response.warnings.len()
+        );
+        let request = export_request(response.session_id, sequence.sequence_id.clone());
+        let prepared = service.prepare_export_sequence(&request).unwrap();
+        let manifest = build_bounded_sequence_manifest(&fs::read(&path).unwrap(), 0, 480).unwrap();
+        assert_eq!(
+            prepared.result.smf_bytes,
+            crate::bounded_sequence::assemble_bounded_sequence(&manifest).unwrap()
+        );
+        fs::remove_file(&path).unwrap();
+        let directory = portable_directory();
+        let mut request = request;
+        request.destination_folder = directory.to_string_lossy().into_owned();
+        let receipt = service
+            .commit_prepared_export(
+                &request,
+                prepared,
+                &RealExportFileSystem,
+                ExportLimits {
+                    candidate_count: 10,
+                    temp_attempt_count: 10,
+                },
+            )
+            .unwrap();
+        assert!(receipt.compatibility_profile.is_none());
+        assert_eq!(receipt.counts.notes, 1);
+        assert_eq!(receipt.counts.bank_select_lsb, 0);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn ui0d2_prepares_owned_export_and_ignores_destination_fields() {
         let (service, path, response) = portable_service();
@@ -2300,7 +3045,10 @@ pub(crate) mod tests {
         assert_eq!(first.session_id, response.session_id);
         assert_eq!(first.sequence_id, sequence.sequence_id);
         assert_eq!(first.sequence_display_name, "Portable Sequence");
-        assert_eq!(first.compatibility_profile.profile_id, "portable-ui0d2");
+        assert_eq!(
+            first.compatibility_profile.as_ref().unwrap().profile_id,
+            "portable-ui0d2"
+        );
         assert!(!first.result.smf_bytes.is_empty());
         assert_eq!(first.result.report.musical_track_count, 3);
         assert_eq!(first.result.report.total_smf_track_count, 4);
@@ -2414,6 +3162,7 @@ pub(crate) mod tests {
         session.assessments.insert(
             sibling_id.clone(),
             SequenceAssessment {
+                authority: None,
                 structural_ordinal: 1,
                 generic_readiness: Readiness::PartiallySupported,
                 match_state: SequenceMatchState::NoMatch,
@@ -2547,11 +3296,12 @@ pub(crate) mod tests {
             session_id: SessionId::new("prepared-session"),
             sequence_id: SequenceId::new("prepared-sequence"),
             sequence_display_name: "Prepared Sequence".into(),
-            compatibility_profile: ProfileCapability {
+            bounded_export_capability: None,
+            compatibility_profile: Some(ProfileCapability {
                 profile_id: "prepared-profile".into(),
                 profile_version: 7,
                 display_label: "Prepared Profile".into(),
-            },
+            }),
             result: MultitrackExportResult {
                 smf_bytes: b"prepared-smf".to_vec(),
                 report: MultitrackExportReport {
@@ -2582,42 +3332,52 @@ pub(crate) mod tests {
 
     #[test]
     fn ui0d3_public_export_writes_exact_bytes_and_maps_response() {
-        let (service, source, inspection) = portable_service();
-        let destination = portable_directory();
-        let request = ui0d3_request(
-            &inspection,
-            &destination,
-            "Song.MID",
-            CollisionPolicy::FailIfExists,
-        );
-        let expected = service.prepare_export_sequence(&request).unwrap();
+        for (service, source, inspection) in [portable_service(), bounded_service()] {
+            let destination = portable_directory();
+            let request = ui0d3_request(
+                &inspection,
+                &destination,
+                "Song.MID",
+                CollisionPolicy::FailIfExists,
+            );
+            let expected = service.prepare_export_sequence(&request).unwrap();
 
-        let response = service.export_sequence(request).unwrap();
-        let output = destination.join("Song.mid");
-        assert_eq!(response.output_path, output.to_string_lossy());
-        assert_eq!(fs::read(&output).unwrap(), expected.result.smf_bytes);
-        assert_eq!(response.session_id, expected.session_id);
-        assert_eq!(response.sequence_id, expected.sequence_id);
-        assert_eq!(
-            response.sequence_display_name,
-            expected.sequence_display_name
-        );
-        assert_eq!(
-            response.compatibility_profile,
-            Some(expected.compatibility_profile)
-        );
-        assert_eq!(response.musical_track_count, 3);
-        assert_eq!(response.total_smf_track_count, 4);
-        assert_eq!(response.counts.notes, 2);
-        assert_eq!(response.counts.programs, 1);
-        assert_eq!(response.counts.bank_select_msb, 1);
-        assert_eq!(response.counts.bank_select_lsb, 1);
-        assert_eq!(response.validation_status, ValidationStatus::Validated);
-        assert!(response.warnings.is_empty());
-        assert!(temp_entries(&destination).is_empty());
+            let response = service.export_sequence(request).unwrap();
+            let output = destination.join("Song.mid");
+            assert_eq!(response.output_path, output.to_string_lossy());
+            assert_eq!(fs::read(&output).unwrap(), expected.result.smf_bytes);
+            assert_eq!(response.session_id, expected.session_id);
+            assert_eq!(response.sequence_id, expected.sequence_id);
+            assert_eq!(
+                response.sequence_display_name,
+                expected.sequence_display_name
+            );
+            assert_eq!(
+                response.compatibility_profile,
+                expected.compatibility_profile
+            );
+            if response.bounded_export_capability.is_some() {
+                assert_eq!(response.musical_track_count, 1);
+                assert_eq!(response.total_smf_track_count, 2);
+                assert_eq!(response.counts.notes, 1);
+                assert_eq!(response.counts.programs, 0);
+                assert_eq!(response.counts.bank_select_msb, 0);
+                assert_eq!(response.counts.bank_select_lsb, 0);
+            } else {
+                assert_eq!(response.musical_track_count, 3);
+                assert_eq!(response.total_smf_track_count, 4);
+                assert_eq!(response.counts.notes, 2);
+                assert_eq!(response.counts.programs, 1);
+                assert_eq!(response.counts.bank_select_msb, 1);
+                assert_eq!(response.counts.bank_select_lsb, 1);
+            }
+            assert_eq!(response.validation_status, ValidationStatus::Validated);
+            assert!(response.warnings.is_empty());
+            assert!(temp_entries(&destination).is_empty());
 
-        fs::remove_dir_all(destination).unwrap();
-        fs::remove_file(source).unwrap();
+            fs::remove_dir_all(destination).unwrap();
+            fs::remove_file(source).unwrap();
+        }
     }
 
     #[test]
@@ -2673,148 +3433,153 @@ pub(crate) mod tests {
 
     #[test]
     fn ui0d3_invalid_destinations_and_directory_symlink_are_bounded() {
-        let (service, source, inspection) = portable_service();
-        let missing = source.with_extension("missing-directory");
-        let request = ui0d3_request(&inspection, &missing, "Song", CollisionPolicy::FailIfExists);
-        let error = service.export_sequence(request).unwrap_err();
-        assert_eq!(error.category, AppErrorCategory::OutputIoFailed);
-        assert_eq!(error.diagnostic_code, "invalid_destination_folder");
-        assert_eq!(error.operation, AppOperation::ExportSequence);
+        for (service, source, inspection) in [portable_service(), bounded_service()] {
+            let missing = source.with_extension("missing-directory");
+            let request =
+                ui0d3_request(&inspection, &missing, "Song", CollisionPolicy::FailIfExists);
+            let error = service.export_sequence(request).unwrap_err();
+            assert_eq!(error.category, AppErrorCategory::OutputIoFailed);
+            assert_eq!(error.diagnostic_code, "invalid_destination_folder");
+            assert_eq!(error.operation, AppOperation::ExportSequence);
 
-        let request = ui0d3_request(&inspection, &source, "Song", CollisionPolicy::FailIfExists);
-        let error = service.export_sequence(request).unwrap_err();
-        assert_eq!(error.diagnostic_code, "invalid_destination_folder");
+            let request =
+                ui0d3_request(&inspection, &source, "Song", CollisionPolicy::FailIfExists);
+            let error = service.export_sequence(request).unwrap_err();
+            assert_eq!(error.diagnostic_code, "invalid_destination_folder");
 
-        #[cfg(unix)]
-        {
-            let destination = portable_directory();
-            let symlink = destination.with_extension("symlink");
-            std::os::unix::fs::symlink(&destination, &symlink).unwrap();
-            let request = ui0d3_request(
-                &inspection,
-                &symlink,
-                "Symlink Song",
-                CollisionPolicy::FailIfExists,
-            );
-            let response = service.export_sequence(request).unwrap();
-            assert_eq!(fs::read(response.output_path).unwrap()[..4], *b"MThd");
-            fs::remove_file(symlink).unwrap();
-            fs::remove_dir_all(destination).unwrap();
+            #[cfg(unix)]
+            {
+                let destination = portable_directory();
+                let symlink = destination.with_extension("symlink");
+                std::os::unix::fs::symlink(&destination, &symlink).unwrap();
+                let request = ui0d3_request(
+                    &inspection,
+                    &symlink,
+                    "Symlink Song",
+                    CollisionPolicy::FailIfExists,
+                );
+                let response = service.export_sequence(request).unwrap();
+                assert_eq!(fs::read(response.output_path).unwrap()[..4], *b"MThd");
+                fs::remove_file(symlink).unwrap();
+                fs::remove_dir_all(destination).unwrap();
+            }
+            fs::remove_file(source).unwrap();
         }
-        fs::remove_file(source).unwrap();
     }
 
     #[test]
     fn ui0d3_collision_policies_preserve_existing_entries_and_choose_lowest_gap() {
-        let (service, source, inspection) = portable_service();
-        let fail_directory = portable_directory();
-        let occupied = fail_directory.join("Song.mid");
-        fs::write(&occupied, b"preserve-me").unwrap();
-        let request = ui0d3_request(
-            &inspection,
-            &fail_directory,
-            "Song",
-            CollisionPolicy::FailIfExists,
-        );
-        let error = service.export_sequence(request).unwrap_err();
-        assert_eq!(error.category, AppErrorCategory::DestinationExists);
-        assert_eq!(error.diagnostic_code, "destination_exists");
-        assert_eq!(fs::read(&occupied).unwrap(), b"preserve-me");
-        assert!(temp_entries(&fail_directory).is_empty());
-
-        let unique_directory = portable_directory();
-        fs::write(unique_directory.join("Song.mid"), b"base").unwrap();
-        fs::write(unique_directory.join("Song 3.mid"), b"three").unwrap();
-        let request = ui0d3_request(
-            &inspection,
-            &unique_directory,
-            "Song.mid",
-            CollisionPolicy::GenerateUniqueName,
-        );
-        let response = service.export_sequence(request).unwrap();
-        assert_eq!(
-            response.output_path,
-            unique_directory.join("Song 2.mid").to_string_lossy()
-        );
-        assert_eq!(
-            fs::read(unique_directory.join("Song.mid")).unwrap(),
-            b"base"
-        );
-        assert_eq!(
-            fs::read(unique_directory.join("Song 3.mid")).unwrap(),
-            b"three"
-        );
-
-        let base_directory = portable_directory();
-        let response = service
-            .export_sequence(ui0d3_request(
+        for (service, source, inspection) in [portable_service(), bounded_service()] {
+            let fail_directory = portable_directory();
+            let occupied = fail_directory.join("Song.mid");
+            fs::write(&occupied, b"preserve-me").unwrap();
+            let request = ui0d3_request(
                 &inspection,
-                &base_directory,
+                &fail_directory,
                 "Song",
-                CollisionPolicy::GenerateUniqueName,
-            ))
-            .unwrap();
-        assert_eq!(
-            response.output_path,
-            base_directory.join("Song.mid").to_string_lossy()
-        );
+                CollisionPolicy::FailIfExists,
+            );
+            let error = service.export_sequence(request).unwrap_err();
+            assert_eq!(error.category, AppErrorCategory::DestinationExists);
+            assert_eq!(error.diagnostic_code, "destination_exists");
+            assert_eq!(fs::read(&occupied).unwrap(), b"preserve-me");
+            assert!(temp_entries(&fail_directory).is_empty());
 
-        let third_directory = portable_directory();
-        fs::write(third_directory.join("Song.mid"), b"base").unwrap();
-        fs::write(third_directory.join("Song 2.mid"), b"two").unwrap();
-        let response = service
-            .export_sequence(ui0d3_request(
+            let unique_directory = portable_directory();
+            fs::write(unique_directory.join("Song.mid"), b"base").unwrap();
+            fs::write(unique_directory.join("Song 3.mid"), b"three").unwrap();
+            let request = ui0d3_request(
                 &inspection,
-                &third_directory,
-                "Song",
+                &unique_directory,
+                "Song.mid",
                 CollisionPolicy::GenerateUniqueName,
-            ))
-            .unwrap();
-        assert_eq!(
-            response.output_path,
-            third_directory.join("Song 3.mid").to_string_lossy()
-        );
+            );
+            let response = service.export_sequence(request).unwrap();
+            assert_eq!(
+                response.output_path,
+                unique_directory.join("Song 2.mid").to_string_lossy()
+            );
+            assert_eq!(
+                fs::read(unique_directory.join("Song.mid")).unwrap(),
+                b"base"
+            );
+            assert_eq!(
+                fs::read(unique_directory.join("Song 3.mid")).unwrap(),
+                b"three"
+            );
 
-        fs::remove_dir_all(fail_directory).unwrap();
-        fs::remove_dir_all(unique_directory).unwrap();
-        fs::remove_dir_all(base_directory).unwrap();
-        fs::remove_dir_all(third_directory).unwrap();
-        fs::remove_file(source).unwrap();
+            let base_directory = portable_directory();
+            let response = service
+                .export_sequence(ui0d3_request(
+                    &inspection,
+                    &base_directory,
+                    "Song",
+                    CollisionPolicy::GenerateUniqueName,
+                ))
+                .unwrap();
+            assert_eq!(
+                response.output_path,
+                base_directory.join("Song.mid").to_string_lossy()
+            );
+
+            let third_directory = portable_directory();
+            fs::write(third_directory.join("Song.mid"), b"base").unwrap();
+            fs::write(third_directory.join("Song 2.mid"), b"two").unwrap();
+            let response = service
+                .export_sequence(ui0d3_request(
+                    &inspection,
+                    &third_directory,
+                    "Song",
+                    CollisionPolicy::GenerateUniqueName,
+                ))
+                .unwrap();
+            assert_eq!(
+                response.output_path,
+                third_directory.join("Song 3.mid").to_string_lossy()
+            );
+
+            fs::remove_dir_all(fail_directory).unwrap();
+            fs::remove_dir_all(unique_directory).unwrap();
+            fs::remove_dir_all(base_directory).unwrap();
+            fs::remove_dir_all(third_directory).unwrap();
+            fs::remove_file(source).unwrap();
+        }
     }
 
     #[test]
     fn ui0d3_public_operation_id_is_inert() {
-        let (service, source, inspection) = portable_service();
-        let first_directory = portable_directory();
-        let second_directory = portable_directory();
-        let first = ui0d3_request(
-            &inspection,
-            &first_directory,
-            "Song",
-            CollisionPolicy::FailIfExists,
-        );
-        let mut second = ui0d3_request(
-            &inspection,
-            &second_directory,
-            "Song",
-            CollisionPolicy::FailIfExists,
-        );
-        second.operation_id = Some(OperationId::new("ignored-token"));
-        let first_response = service.export_sequence(first).unwrap();
-        let second_response = service.export_sequence(second).unwrap();
-        assert_eq!(
-            fs::read(first_response.output_path).unwrap(),
-            fs::read(second_response.output_path).unwrap()
-        );
-        assert_eq!(first_response.counts, second_response.counts);
-        assert_eq!(first_response.warnings, second_response.warnings);
-        assert_eq!(
-            first_response.compatibility_profile,
-            second_response.compatibility_profile
-        );
-        fs::remove_dir_all(first_directory).unwrap();
-        fs::remove_dir_all(second_directory).unwrap();
-        fs::remove_file(source).unwrap();
+        for (service, source, inspection) in [portable_service(), bounded_service()] {
+            let first_directory = portable_directory();
+            let second_directory = portable_directory();
+            let first = ui0d3_request(
+                &inspection,
+                &first_directory,
+                "Song",
+                CollisionPolicy::FailIfExists,
+            );
+            let mut second = ui0d3_request(
+                &inspection,
+                &second_directory,
+                "Song",
+                CollisionPolicy::FailIfExists,
+            );
+            second.operation_id = Some(OperationId::new("ignored-token"));
+            let first_response = service.export_sequence(first).unwrap();
+            let second_response = service.export_sequence(second).unwrap();
+            assert_eq!(
+                fs::read(first_response.output_path).unwrap(),
+                fs::read(second_response.output_path).unwrap()
+            );
+            assert_eq!(first_response.counts, second_response.counts);
+            assert_eq!(first_response.warnings, second_response.warnings);
+            assert_eq!(
+                first_response.compatibility_profile,
+                second_response.compatibility_profile
+            );
+            fs::remove_dir_all(first_directory).unwrap();
+            fs::remove_dir_all(second_directory).unwrap();
+            fs::remove_file(source).unwrap();
+        }
     }
 
     #[test]
@@ -3366,12 +4131,14 @@ pub(crate) mod tests {
             supported_event_families: Vec::new(),
             warning_count: 0,
             export_capability: None,
+            bounded_export_capability: None,
             diagnostics_available: true,
         }
     }
 
     fn matched_assessment() -> SequenceAssessment {
-        SequenceAssessment {
+        let mut assessment = SequenceAssessment {
+            authority: None,
             structural_ordinal: 0,
             generic_readiness: Readiness::PartiallySupported,
             match_state: SequenceMatchState::Matched,
@@ -3391,7 +4158,12 @@ pub(crate) mod tests {
             }),
             diagnostic_code: None,
             technical_detail: None,
-        }
+        };
+        assessment.authority = Some(InspectedExportAuthority::ExactProfile {
+            capability: assessment.capability.clone().unwrap(),
+            resolved_policy: assessment.resolved_policy.clone().unwrap(),
+        });
+        assessment
     }
 
     #[test]

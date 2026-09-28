@@ -315,6 +315,52 @@ mod tests {
     }
 
     #[test]
+    fn bounded_capability_is_additive_without_a_fake_profile() {
+        let bytes = crate::bounded_sequence::tests::synthetic(crate::bounded_sequence::tests::NOTE);
+        let source = portable_path(&bytes);
+        let destination = crate::app_service::tests::portable_directory();
+        let mut service = AppService::new();
+        let inspection = inspect(&mut service, &source);
+        assert_eq!(inspection["result"]["contract_version"], 1);
+        let row = &inspection["result"]["sequences"][0];
+        assert_eq!(row["readiness"], "ready");
+        assert!(row["export_capability"].is_null());
+        assert_eq!(
+            row["readiness_reason"]["code"],
+            "validated_bounded_sequence"
+        );
+        assert_eq!(row["readiness_reason"]["export_enabled"], true);
+        assert_eq!(
+            row["bounded_export_capability"],
+            json!({ "contract_id": "descriptor166_bounded_sequence", "contract_revision": 1, "display_label": "Validated bounded sequence" })
+        );
+        let receipt = dispatch(
+            &mut service,
+            json!({
+                "operation": "export_sequence", "contract_version": 1,
+                "payload": { "session_id": inspection["result"]["session_id"], "sequence_id": row["sequence_id"], "destination_folder": destination.to_string_lossy(), "filename_stem": "bounded", "collision_policy": "fail_if_exists", "operation_id": null }
+            }),
+        );
+        assert_eq!(receipt["ok"], true);
+        assert!(receipt["result"]["compatibility_profile"].is_null());
+        assert_eq!(
+            receipt["result"]["bounded_export_capability"],
+            row["bounded_export_capability"]
+        );
+        assert_eq!(receipt["result"]["counts"]["notes"], 1);
+        assert_eq!(receipt["result"]["untranslated_metadata_count"], 0);
+        fs::remove_file(source).unwrap();
+        fs::remove_dir_all(destination).unwrap();
+        let (mut service, source) = portable_transport_service();
+        let exact = inspect(&mut service, &source);
+        assert!(exact["result"]["sequences"][0]
+            .get("bounded_export_capability")
+            .is_none());
+        assert!(exact["result"]["sequences"][0]["export_capability"]["profile_id"].is_string());
+        fs::remove_file(source).unwrap();
+    }
+
+    #[test]
     fn ui0f1_api_info_has_one_strict_bootstrap_shape() {
         let mut service = AppService::new();
         let response = dispatch(

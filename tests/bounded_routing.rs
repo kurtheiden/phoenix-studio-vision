@@ -443,7 +443,7 @@ fn bounded_success_leaves_existing_readiness_and_profile_evidence_unchanged() {
         before
             .sequences
             .iter()
-            .filter(|s| s.readiness == Readiness::Ready)
+            .filter(|s| s.readiness == Readiness::Ready && s.export_capability.is_some())
             .count(),
         6
     );
@@ -451,7 +451,7 @@ fn bounded_success_leaves_existing_readiness_and_profile_evidence_unchanged() {
         before
             .sequences
             .iter()
-            .filter(|s| s.readiness == Readiness::PartiallySupported)
+            .filter(|s| s.export_capability.is_none())
             .count(),
         12
     );

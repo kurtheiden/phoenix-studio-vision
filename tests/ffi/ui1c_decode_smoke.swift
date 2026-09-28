@@ -148,3 +148,24 @@ let readyWithoutCapability = try decoder.decode(SequenceViewData.self, from: rea
 check(!readyWithoutCapability.isExportEligible, "ready without capability is not export eligible")
 
 print("UI1D/UI1E Swift production model smoke passed")
+
+var boundedRow = try JSONSerialization.jsonObject(with: readyWithoutCapabilityJSON) as! [String: Any]
+boundedRow["bounded_export_capability"] = ["contract_id": "descriptor166_bounded_sequence", "contract_revision": 1, "display_label": "Validated bounded sequence"]
+boundedRow["readiness_reason"] = ["code": "validated_bounded_sequence", "severity": "informational", "display_detail": "Validated bounded sequence", "export_enabled": true]
+func decodeRow(_ row: [String: Any]) throws -> SequenceViewData {
+    try decoder.decode(SequenceViewData.self, from: JSONSerialization.data(withJSONObject: row))
+}
+check((try! decodeRow(boundedRow)).isExportEligible, "bounded Ready eligibility")
+boundedRow["export_capability"] = ["profile_id": "exact", "profile_version": 1, "display_label": "Exact"]
+check(!(try! decodeRow(boundedRow)).isExportEligible, "contradictory capabilities refuse")
+boundedRow["export_capability"] = NSNull()
+boundedRow["bounded_export_capability"] = ["contract_id": "descriptor166_bounded_sequence", "contract_revision": 2, "display_label": "Future"]
+check(!(try! decodeRow(boundedRow)).isExportEligible, "unknown bounded revision refuses")
+boundedRow["bounded_export_capability"] = ["contract_id": "descriptor166_bounded_sequence", "contract_revision": 1, "display_label": "Validated bounded sequence"]
+boundedRow["readiness"] = "partially_supported"
+check(!(try! decodeRow(boundedRow)).isExportEligible, "non-ready bounded capability refuses")
+var boundedReceipt = try JSONSerialization.jsonObject(with: noProfileJSON) as! [String: Any]
+boundedReceipt["bounded_export_capability"] = boundedRow["bounded_export_capability"]
+let boundedExport = try decoder.decode(ExportSequenceResult.self, from: JSONSerialization.data(withJSONObject: boundedReceipt))
+check(boundedExport.compatibilityProfile == nil && boundedExport.boundedExportCapability?.isRecognized == true, "bounded receipt without fake profile")
+print("Step 3 additive bounded capability decode smoke passed")

@@ -237,7 +237,7 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
             .unwrap()
             .sequences
             .into_iter()
-            .map(|s| (s.display_name, s.readiness))
+            .map(|s| (s.display_name, s.readiness, s.export_capability.is_some()))
             .collect::<Vec<_>>()
     };
     let before = inspect();
@@ -247,17 +247,11 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
     assert_eq!(
         before
             .iter()
-            .filter(|(_, r)| *r == Readiness::Ready)
+            .filter(|(_, r, exact)| *r == Readiness::Ready && *exact)
             .count(),
         6
     );
-    assert_eq!(
-        before
-            .iter()
-            .filter(|(_, r)| *r == Readiness::PartiallySupported)
-            .count(),
-        12
-    );
+    assert_eq!(before.iter().filter(|(_, _, exact)| !*exact).count(), 12);
     for row in rows.iter().filter(|r| r.sequence_name == b"Sequence I") {
         assert_eq!(
             row.state,
@@ -328,7 +322,7 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
     // The bounded composition extension now completes this event walk.
     // This adds inferred saved state, not export omission authority.
     assert_eq!(blocked.state, SavedMuteState::On);
-    for (name, _) in &before {
+    for (name, _, _) in &before {
         let group: Vec<_> = rows
             .iter()
             .filter(|r| r.sequence_name == name.as_bytes())
