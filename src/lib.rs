@@ -5,6 +5,7 @@ pub mod app_contract;
 pub mod app_service;
 pub mod bounded_patch_translation;
 pub mod bounded_routing;
+pub mod bounded_sequence;
 mod c_abi;
 pub mod channel_pressure;
 pub mod comparison;
