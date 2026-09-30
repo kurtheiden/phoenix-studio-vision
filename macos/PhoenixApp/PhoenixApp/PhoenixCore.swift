@@ -116,7 +116,7 @@ private enum PhoenixCoreError: LocalizedError {
     }
 }
 
-actor PhoenixCore {
+actor PhoenixCore: PhoenixCoreServing {
     private var handle: phoenix_service_handle_t = 0
     private var destroyed = false
 

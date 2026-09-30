@@ -4,22 +4,25 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Phoenix").font(.largeTitle)
-            switch model.state {
-            case .starting:
-                ProgressView()
-                Text("Connecting to Phoenix Core…")
-            case .ready(let version):
-                Text("Phoenix Core connected")
-                Text("Application contract version \(version)")
-                projectContent
-            case .failed(let message):
-                Text("Phoenix Core connection failed").font(.headline)
-                Text(message).multilineTextAlignment(.center)
+        ScrollView {
+            VStack(spacing: 16) {
+                Text("Phoenix").font(.largeTitle)
+                switch model.state {
+                case .starting:
+                    ProgressView()
+                    Text("Connecting to Phoenix Core…")
+                case .ready(let version):
+                    Text("Phoenix Core connected")
+                    Text("Application contract version \(version)")
+                    projectContent
+                    LatestExportView(model: model)
+                case .failed(let message):
+                    Text("Phoenix Core connection failed").font(.headline)
+                    Text(message).multilineTextAlignment(.center)
+                }
             }
+            .padding(40)
         }
-        .padding(40)
         .frame(minWidth: 640, minHeight: 440)
     }
 
@@ -51,7 +54,17 @@ private struct ProjectInspectionView: View {
     @State private var detailsExpanded = false
 
     var body: some View {
-        Text(inspection.displayName).font(.headline)
+        Text(model.inspectedSourceURL?.lastPathComponent ?? inspection.displayName).font(.headline)
+        if let source = model.inspectedSourceURL {
+            Text(source.path)
+                .font(.caption)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(source.path)
+                .frame(maxWidth: 560, alignment: .leading)
+                .accessibilityLabel("Source path: \(source.path)")
+        }
         Text(inspection.recognizedStudioVision ? "Studio Vision project recognized" : "File inspected")
         Label(inspection.overallReadiness.displayName, systemImage: "gauge.with.dots.needle.50percent")
             .accessibilityLabel("Project readiness: \(inspection.overallReadiness.displayName)")
@@ -75,7 +88,7 @@ private struct ProjectInspectionView: View {
             }
         }
         if inspection.sequences.isEmpty {
-            Text(inspection.recognizedStudioVision ? "No sequences found." : "No Studio Vision sequences found.")
+            Text("Phoenix could not identify sequences using its supported project structures.")
                 .foregroundStyle(.secondary)
         } else {
             List(Array(inspection.sequences.enumerated()), id: \.element.sequenceID,
@@ -101,6 +114,9 @@ private struct ProjectInspectionView: View {
             }
             .frame(minHeight: 160)
         }
+        Text("Only Ready sequences with a validated recovery capability can be exported.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
         if let sequence = inspection.sequences.first(where: { $0.sequenceID == model.selectedSequenceID }) {
             GroupBox("Selected sequence") {
                 VStack(alignment: .leading, spacing: 5) {
@@ -118,7 +134,7 @@ private struct ProjectInspectionView: View {
                         Button(model.retainedExportDestination == nil
                             ? "Export MIDI…"
                             : "Choose Different Folder…") { model.exportSelectedSequence() }
-                            .disabled(!sequence.isExportEligible || model.exportState == .exporting)
+                            .disabled(!sequence.isExportEligible || model.isExporting)
                             .accessibilityHint(sequence.isExportEligible
                                 ? "Choose a destination folder and export this sequence"
                                 : "This sequence is not currently eligible for export")
@@ -126,7 +142,7 @@ private struct ProjectInspectionView: View {
                             Button("Export to Last Folder") {
                                 model.exportSelectedSequenceToRetainedDestination()
                             }
-                            .disabled(!sequence.isExportEligible || model.exportState == .exporting)
+                            .disabled(!sequence.isExportEligible || model.isExporting)
                             .accessibilityHint("Export this sequence to the previously successful destination")
                             Text(destination.lastPathComponent)
                                 .font(.caption)
@@ -134,7 +150,6 @@ private struct ProjectInspectionView: View {
                                 .help(destination.path)
                         }
                     }
-                    exportContent
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -152,50 +167,6 @@ private struct ProjectInspectionView: View {
             }
         }
         Button("Open Another Project") { model.openProject() }
-    }
-
-    @ViewBuilder
-    private var exportContent: some View {
-        switch model.exportState {
-        case .idle:
-            EmptyView()
-        case .exporting:
-            HStack {
-                ProgressView()
-                Text("Exporting MIDI")
-            }
-            .accessibilityElement(children: .combine)
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 4) {
-                Text("MIDI export failed").font(.headline)
-                Text(message).foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-        case .succeeded(let result):
-            VStack(alignment: .leading, spacing: 5) {
-                Text("MIDI exported").font(.headline)
-                Text(result.sequenceDisplayName)
-                Text(URL(fileURLWithPath: result.outputPath).lastPathComponent)
-                Text(result.outputPath)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                Text("\(result.musicalTrackCount) musical tracks · \(result.totalSMFTrackCount) SMF tracks")
-                    .font(.caption)
-                if result.untranslatedMetadataCount > 0 {
-                    Text("\(result.untranslatedMetadataCount) untranslated metadata items")
-                        .font(.caption)
-                }
-                ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
-                    Text(warning.message)
-                        .accessibilityLabel("Export warning: \(warning.message)")
-                }
-                Button("Reveal in Finder") {
-                    ExportDestinationPanel.revealInFinder(path: result.outputPath)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 
     @ViewBuilder
@@ -231,5 +202,84 @@ private struct ProjectInspectionView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// Session-level receipt, deliberately outside the current project's selection.
+private struct LatestExportView: View {
+    @ObservedObject var model: AppModel
+
+    @ViewBuilder
+    var body: some View {
+        GroupBox("Most recent export") {
+            switch model.exportState {
+            case .idle:
+                Text("No sequence exported yet in this app session.")
+                    .foregroundStyle(.secondary)
+            case .exporting(let context):
+                VStack(alignment: .leading, spacing: 5) {
+                    ProgressView()
+                    Text("Exporting MIDI: \(context.sequenceDisplayName)")
+                    sourceContext(context)
+                }
+                .accessibilityElement(children: .combine)
+            case .failed(let context, let message):
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("MIDI export failed").font(.headline)
+                    Text(context.sequenceDisplayName)
+                    sourceContext(context)
+                    Text(message).foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            case .succeeded(let context, let result):
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("MIDI exported").font(.headline)
+                    Text(context.sequenceDisplayName)
+                    sourceContext(context)
+                    Text(URL(fileURLWithPath: result.outputPath).lastPathComponent)
+                    Text(result.outputPath)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Text("\(result.musicalTrackCount) musical tracks · \(result.totalSMFTrackCount) SMF tracks")
+                        .font(.caption)
+                    if result.untranslatedMetadataCount > 0 {
+                        Text("\(result.untranslatedMetadataCount) untranslated metadata items")
+                            .font(.caption)
+                    }
+                    ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
+                        Text(warning.message)
+                            .accessibilityLabel("Export warning: \(warning.message)")
+                    }
+                    Button("Reveal in Finder") {
+                        ExportDestinationPanel.revealInFinder(path: result.outputPath)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func sourceContext(_ context: AppModel.ExportContext) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if case .inspected(let current) = model.projectState,
+               current.sessionID != context.sessionID {
+                Text("Export from a previously opened project")
+            }
+            Text("Source: \(context.sourceURL.lastPathComponent)")
+            Text(context.sourceURL.path)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(context.sourceURL.path)
+            Text("Destination: \(context.destination.path)")
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(context.destination.path)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: 560, alignment: .leading)
     }
 }

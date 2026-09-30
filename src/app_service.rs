@@ -1719,7 +1719,7 @@ impl AppService {
                     Readiness::PartiallySupported,
                     ReadinessReason::new(
                         ReadinessReasonCode::MissingChannelRouting,
-                        "Phoenix can inspect this sequence, but general MIDI routing is not established.",
+                        "Phoenix can inspect this sequence, but cannot safely export it with the currently supported recovery rules.",
                     ),
                 ),
                 TrackAssociations::Unresolved { .. } => (
@@ -1732,7 +1732,7 @@ impl AppService {
             };
             warnings.push(Warning {
                 code: "missing_channel_routing".into(),
-                message: "This sequence is inspectable but is not generally export-ready.".into(),
+                message: "This sequence is inspectable, but is not currently eligible for safe MIDI export.".into(),
                 technical_detail: Some(reason.display_detail.clone()),
                 scope: WarningScope::Sequence,
                 severity: WarningSeverity::DataLossRisk,
@@ -2620,6 +2620,46 @@ pub(crate) mod tests {
         assert_eq!(response.sequences[0].readiness, Readiness::Ready);
         assert!(response.sequences[0].bounded_export_capability.is_some());
         (service, path, response)
+    }
+
+    #[test]
+    fn inspection_refusal_uses_midi_without_claiming_general_midi() {
+        let path = portable_path(&crate::export_handoff::tests::portable_project());
+        let mut service = AppService::with_registry(CompatibilityRegistry::empty());
+        let response = service
+            .inspect_project(InspectProjectRequest {
+                contract_version: CONTRACT_VERSION,
+                source_path: path.to_string_lossy().into_owned(),
+                diagnostics_level: DiagnosticsLevel::Full,
+            })
+            .unwrap();
+        let messages = response
+            .sequences
+            .iter()
+            .map(|sequence| sequence.readiness_reason.display_detail.as_str())
+            .chain(
+                response
+                    .warnings
+                    .iter()
+                    .map(|warning| warning.message.as_str()),
+            );
+        for message in messages {
+            let lower = message.to_lowercase();
+            assert!(!lower.contains("general midi"), "{message}");
+            assert!(!lower.contains("generally export-ready"), "{message}");
+        }
+        assert!(response.sequences.iter().any(|sequence| {
+            sequence.readiness != Readiness::Ready
+                && sequence
+                    .readiness_reason
+                    .display_detail
+                    .contains("currently supported recovery rules")
+        }));
+        assert!(response
+            .warnings
+            .iter()
+            .any(|warning| { warning.message.contains("safe MIDI export") }));
+        fs::remove_file(path).unwrap();
     }
 
     fn assert_no_destination(service: &AppService, request: &ExportSequenceRequest, code: &str) {
