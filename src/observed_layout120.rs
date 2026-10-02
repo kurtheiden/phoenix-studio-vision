@@ -8,11 +8,30 @@ use crate::sequence_container::{
     parse_root_record_stream, parse_sequence_candidate, FramedRecord, RootHeader, RootRecordError,
 };
 
+/// Exact observed bytes, with no decoded role, version or flag meaning.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Observed120MarkerForm {
+    FeFf,
+    FfFf,
+}
+
+impl Observed120MarkerForm {
+    fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        match bytes {
+            [0xfe, 0xff] => Some(Self::FeFf),
+            [0xff, 0xff] => Some(Self::FfFf),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Observed120Candidate<'a> {
     pub record_index: usize,
     pub candidate_range: Range<usize>,
     pub count: LocatedByte,
+    pub marker_form: Observed120MarkerForm,
+    pub observed_marker: LocatedBytes<'a>,
     pub observed_name: LocatedBytes<'a>,
     pub terminator_offset: usize,
     // Opaque bytes, explicitly NOT required to be zero or interpreted as padding.
@@ -45,7 +64,17 @@ impl Observed120Project<'_> {
             .iter()
             .filter(|c| c.name_as_utf8().is_none())
             .count();
-        format!("Bounded structural observation: {} 120-layout structural candidates, including {empty} empty observed name spans and {undecoded} non-UTF-8 observed name spans. Semantic sequence ownership, readiness and export capability are not established.", self.candidates.len())
+        let fe_count = self
+            .candidates
+            .iter()
+            .filter(|c| c.marker_form == Observed120MarkerForm::FeFf)
+            .count();
+        let ff_count = self
+            .candidates
+            .iter()
+            .filter(|c| c.marker_form == Observed120MarkerForm::FfFf)
+            .count();
+        format!("Bounded structural observation: {} 120-layout structural candidates, including {empty} empty observed name spans and {undecoded} non-UTF-8 observed name spans. Semantic sequence ownership, readiness and export capability are not established. Observed marker forms: fe ff {fe_count}, ff ff {ff_count}.", self.candidates.len())
     }
 }
 
@@ -155,12 +184,12 @@ fn observe_candidate<'a>(
         return None;
     }
     // Established local corroborating bytes; their semantics remain unknown.
-    if raw.get(15..22)? != [0, 0, 0, 0, 0, 0, 1]
-        || !matches!(raw.get(22)?, 0x80 | 0x88)
-        || raw.get(41..43)? != [0xfe, 0xff]
-    {
+    if raw.get(15..22)? != [0, 0, 0, 0, 0, 0, 1] || !matches!(raw.get(22)?, 0x80 | 0x88) {
         return None;
     }
+    let marker_range = local_range(range, 41..43)?;
+    let marker_bytes = bytes.get(marker_range.clone())?;
+    let marker_form = Observed120MarkerForm::from_bytes(marker_bytes)?;
     let following = following?;
     if following.record_type.value != 0x07 || following.record_range.start != range.end {
         return None;
@@ -177,6 +206,11 @@ fn observe_candidate<'a>(
         count: LocatedByte {
             value: count,
             offset: range.start.checked_add(5)?,
+        },
+        marker_form,
+        observed_marker: LocatedBytes {
+            bytes: marker_bytes,
+            range: marker_range,
         },
         observed_name: LocatedBytes {
             bytes: bytes.get(name_range.clone())?,

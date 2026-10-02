@@ -2718,7 +2718,19 @@ pub(crate) mod tests {
             crate::bounded_sequence::tests::synthetic(crate::bounded_sequence::tests::NOTE);
         let mut mixed = crate::observed_layout120::tests::synthetic(3, b"Mixed");
         mixed.extend(&semantic[8..]);
+        let ff = crate::observed_layout120::tests::synthetic_marker(3, b"Unrelated", [0xff, 0xff]);
+        let mut forms = crate::observed_layout120::tests::synthetic(3, b"Both forms");
+        forms.extend(&ff[8..]);
+        let unsupported =
+            crate::observed_layout120::tests::synthetic_marker(3, b"Unsupported", [0xfd, 0xff]);
+        let mut ff_mixed = ff.clone();
+        ff_mixed.extend(&semantic[8..]);
         for bytes in [
+            ff,
+            forms,
+            unsupported,
+            ff_mixed,
+            crate::observed_layout120::tests::ambiguous_marker([0xff, 0xff]),
             crate::observed_layout120::tests::synthetic(3, b"Unrelated"),
             malformed,
             mixed,
