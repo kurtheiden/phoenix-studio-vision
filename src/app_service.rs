@@ -443,6 +443,18 @@ impl AppService {
                 status.push_str(&summary);
             }
             diagnostics.technical_errors.push(summary);
+            if let Ok(bridge) = crate::semantic_layout120::associate_project_120(&bytes) {
+                // Internal incomplete associations only. Neither the semantic DTO
+                // nor capability-bearing session structure receives source data.
+                diagnostics
+                    .technical_errors
+                    .push(bridge.diagnostic_summary());
+                if request.diagnostics_level == DiagnosticsLevel::Full {
+                    diagnostics
+                        .technical_errors
+                        .extend(bridge.diagnostic_details());
+                }
+            }
         }
         let response = InspectProjectResponse {
             contract_version: CONTRACT_VERSION,

@@ -29,6 +29,7 @@ pub mod pitch_bend;
 mod prologue_inspection;
 pub mod routing_evidence;
 pub mod saved_mute;
+mod semantic_layout120;
 pub mod sequence_container;
 pub mod smf;
 pub mod tempo;
