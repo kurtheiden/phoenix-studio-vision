@@ -29,6 +29,7 @@ use crate::mixed_event::{
     MixedEventTimingBasis,
 };
 use crate::multitrack_export::{assemble_multitrack_sequence, MultitrackExportResult};
+use crate::observed_layout120::observe_project_120;
 use crate::prologue_inspection::inspect_if_authorized;
 use crate::routing_evidence::{
     collect_routing_evidence, ProvisionalChannelResolution, RoutingEvidence,
@@ -388,32 +389,61 @@ impl AppService {
         let research_observation = inspect_if_authorized(&bytes, &source_sha256);
         let finder_recognized = !finder.confidence.to_string().eq("Unknown");
         let session_id = self.allocate_session_id();
-        let (project, sequences, warnings, diagnostics, structure) = match parse_project_166(&bytes)
-        {
-            Ok(parsed) => self.build_parsed_result(
-                &filename,
-                source_size,
-                &finder,
-                &bytes,
-                parsed.sequences,
-                &session_id,
-                request.diagnostics_level,
-            ),
-            Err(error) if finder_recognized => self.build_profile_failure(
-                &filename,
-                source_size,
-                &finder,
-                format!("166-byte profile rejected: {error}"),
-                &session_id,
-            ),
-            Err(error) => self.build_unrecognized_result(
-                &filename,
-                source_size,
-                &finder,
-                format!("no established Studio Vision profile accepted the input: {error}"),
-                &session_id,
-            ),
-        };
+        // Independent positive structural classification, never a semantic fallback.
+        let observations120 = observe_project_120(&bytes);
+        let conflict = observations120
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.is_layout_conflict());
+        let (project, sequences, warnings, mut diagnostics, structure) =
+            match parse_project_166(&bytes) {
+                Ok(_) if conflict && finder_recognized => self.build_profile_failure(
+                    &filename,
+                    source_size,
+                    &finder,
+                    "Project discovery refused: ambiguous or mixed structural layouts.".into(),
+                    &session_id,
+                ),
+                Ok(_) if conflict => self.build_unrecognized_result(
+                    &filename,
+                    source_size,
+                    &finder,
+                    "Project discovery refused: ambiguous or mixed structural layouts.".into(),
+                    &session_id,
+                ),
+                Ok(parsed) => self.build_parsed_result(
+                    &filename,
+                    source_size,
+                    &finder,
+                    &bytes,
+                    parsed.sequences,
+                    &session_id,
+                    request.diagnostics_level,
+                ),
+                Err(error) if finder_recognized => self.build_profile_failure(
+                    &filename,
+                    source_size,
+                    &finder,
+                    format!("166-byte profile rejected: {error}"),
+                    &session_id,
+                ),
+                Err(error) => self.build_unrecognized_result(
+                    &filename,
+                    source_size,
+                    &finder,
+                    format!("no established Studio Vision profile accepted the input: {error}"),
+                    &session_id,
+                ),
+            };
+        if let Ok(observations) = observations120 {
+            // Diagnostic evidence only: no semantic structure, IDs or capabilities.
+            let summary = observations.diagnostic_summary();
+            if let Some(status) = &mut diagnostics.structural_status {
+                status.push_str("; ");
+                status.push_str(&summary);
+            }
+            diagnostics.technical_errors.push(summary);
+        }
         let response = InspectProjectResponse {
             contract_version: CONTRACT_VERSION,
             session_id: session_id.clone(),
@@ -429,7 +459,6 @@ impl AppService {
             .enumerate()
             .map(|(index, summary)| (summary.sequence_id.clone(), index as u32))
             .collect();
-        let mut diagnostics = diagnostics;
         diagnostics.source_sha256 = Some(source_sha256.clone());
         self.sessions.insert(
             session_id.clone(),
@@ -2679,6 +2708,61 @@ pub(crate) mod tests {
         assert_eq!(fs.destination_calls.get(), 0);
         assert_eq!(fs.create_calls.get(), 0);
         assert_eq!(fs.hard_link_calls.get(), 0);
+    }
+
+    #[test]
+    fn raw120_observations_cannot_mint_semantic_structure_or_export_authority() {
+        let mut malformed = crate::observed_layout120::tests::synthetic(3, b"Unrelated");
+        malformed[8 + 21] = 0;
+        let semantic =
+            crate::bounded_sequence::tests::synthetic(crate::bounded_sequence::tests::NOTE);
+        let mut mixed = crate::observed_layout120::tests::synthetic(3, b"Mixed");
+        mixed.extend(&semantic[8..]);
+        for bytes in [
+            crate::observed_layout120::tests::synthetic(3, b"Unrelated"),
+            malformed,
+            mixed,
+            crate::observed_layout120::tests::ambiguous(),
+        ] {
+            for _ in 0..2 {
+                let path = portable_path(&bytes);
+                let mut service = AppService::new();
+                let response = service
+                    .inspect_project(InspectProjectRequest {
+                        contract_version: CONTRACT_VERSION,
+                        source_path: path.to_string_lossy().into_owned(),
+                        diagnostics_level: DiagnosticsLevel::Full,
+                    })
+                    .unwrap();
+                assert!(response.sequences.is_empty());
+                assert_eq!(response.project.overall_readiness, Readiness::Unknown);
+                assert!(response.project.profile_label.is_none());
+                let session = &service.sessions[&response.session_id];
+                assert!(session.structure.is_none());
+                assert!(session.assessments.is_empty());
+                assert!(session.sequence_ordinals.is_empty());
+                assert!(session.diagnostics.compatibility_profile.is_none());
+                let expected_observation =
+                    crate::observed_layout120::observe_project_120(&bytes).is_ok();
+                assert_eq!(
+                    session
+                        .diagnostics
+                        .structural_status
+                        .as_ref()
+                        .unwrap()
+                        .contains("Bounded structural observation:"),
+                    expected_observation
+                );
+                assert!(session.diagnostics.recognized_profile.is_none());
+                assert!(service.profile_evidence(&response.session_id).is_err());
+                let request = export_request(
+                    response.session_id,
+                    SequenceId::new("unissued-raw-candidate"),
+                );
+                assert_no_destination(&service, &request, "unknown_sequence");
+                fs::remove_file(path).unwrap();
+            }
+        }
     }
 
     #[test]

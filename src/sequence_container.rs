@@ -616,7 +616,8 @@ fn parse_root_header(bytes: &[u8]) -> Result<RootHeader<'_>, RootRecordError> {
     })
 }
 
-fn parse_sequence_candidate<'a>(
+// Internal reuse requires an index into the already checked root stream.
+pub(crate) fn parse_sequence_candidate<'a>(
     bytes: &'a [u8],
     records: &[FramedRecord<'a>],
     candidate_index: usize,
