@@ -55,6 +55,24 @@ fn synthetic(count: usize, events: &[u8], f: bool) -> Vec<u8> {
 fn result(b: &[u8]) -> Result<BoundedRoutingResolution, RoutingRefusal> {
     decode_bounded_routing(b).unwrap().remove(0).result
 }
+
+#[test]
+fn source_controller_channel_does_not_change_or_refuse_track_routing() {
+    for status in [0xbf, 0xb2] {
+        let mut events = NOTE.to_vec();
+        events.extend([3, status, 7, 99, 4, 10, 20]);
+        let route = result(&synthetic(3, &events, true)).unwrap();
+        assert_eq!(route.midi_channel, 16);
+        assert_eq!(route.consumed_range, route.event_range);
+        assert!(route.validated_contexts.is_empty());
+    }
+    let mut malformed = NOTE.to_vec();
+    malformed.extend([0, 0xb2, 7, 128]);
+    assert!(matches!(
+        result(&synthetic(3, &malformed, true)),
+        Err(RoutingRefusal::IncompleteEventWalk(_))
+    ));
+}
 fn label(b: &[u8]) -> usize {
     parse_project_166(b).unwrap().sequences[0].descriptors[2].label_start
 }

@@ -51,6 +51,134 @@ fn adapt(
 }
 
 #[test]
+fn source_controller_channels_preserve_data_timing_and_other_family_routing() {
+    let events = [
+        note(0, 0, 60, 100, 37, 20),
+        event(
+            3,
+            1,
+            DecodedExportEventKind::MidiController {
+                channel: 3,
+                number: 7,
+                value: 99,
+            },
+        ),
+        event(
+            7,
+            2,
+            DecodedExportEventKind::MidiController {
+                channel: 1,
+                number: 10,
+                value: 20,
+            },
+        ),
+        event(
+            12,
+            3,
+            DecodedExportEventKind::MidiController {
+                channel: 16,
+                number: 1,
+                value: 40,
+            },
+        ),
+        event(
+            15,
+            4,
+            DecodedExportEventKind::Patch {
+                program: 42,
+                translation: phoenix::midi_export::PatchTranslation::ProgramOnlyConfirmed,
+            },
+        ),
+        event(
+            16,
+            5,
+            DecodedExportEventKind::PitchBend { lsb: 12, msb: 64 },
+        ),
+        event(
+            17,
+            6,
+            DecodedExportEventKind::Controller {
+                number: 11,
+                value: 50,
+                has_opaque_context: true,
+            },
+        ),
+    ];
+    let result = adapt(&events, 3).unwrap();
+    let messages: Vec<_> = result
+        .scheduled_events
+        .iter()
+        .map(|e| {
+            (
+                e.absolute_tick,
+                e.stable_ordinal,
+                phoenix::smf::serialize_channel_message(&e.message),
+            )
+        })
+        .collect();
+    assert_eq!(
+        messages,
+        vec![
+            (0, 0, vec![0x92, 60, 100]),
+            (20, 1, vec![0x82, 60, 37]),
+            (3, 2, vec![0xb2, 7, 99]),
+            (7, 4, vec![0xb0, 10, 20]),
+            (12, 6, vec![0xbf, 1, 40]),
+            (15, 8, vec![0xc2, 42]),
+            (16, 10, vec![0xe2, 12, 64]),
+            (17, 12, vec![0xb2, 11, 50]),
+        ]
+    );
+    assert_eq!(result.channel_assignment.channel.get(), 3);
+    assert_eq!(result.counts.controllers, 4);
+    assert_eq!(result.counts.notes, 1);
+    assert_eq!(result.counts.program_changes, 1);
+    assert_eq!(result.counts.pitch_bend, 1);
+    let serialized = serialize_musical_track(&result.scheduled_events).unwrap();
+    assert_eq!(
+        &serialized.as_bytes()[8..],
+        &[
+            0, 0x92, 60, 100, 3, 0xb2, 7, 99, 4, 0xb0, 10, 20, 5, 0xbf, 1, 40, 3, 0xc2, 42, 1,
+            0xe2, 12, 64, 1, 0xb2, 11, 50, 3, 0x82, 60, 37, 0, 0xff, 0x2f, 0,
+        ]
+    );
+}
+
+#[test]
+fn invalid_source_controller_fields_refuse_with_source_provenance() {
+    for (channel, number, value, error) in [
+        (0, 7, 99, SmfSerializeError::InvalidChannel { value: 0 }),
+        (17, 7, 99, SmfSerializeError::InvalidChannel { value: 17 }),
+        (
+            1,
+            128,
+            99,
+            SmfSerializeError::InvalidDataByte { value: 128 },
+        ),
+        (1, 7, 128, SmfSerializeError::InvalidDataByte { value: 128 }),
+    ] {
+        let mut controller = event(
+            7,
+            3,
+            DecodedExportEventKind::MidiController {
+                channel,
+                number,
+                value,
+            },
+        );
+        controller.source_range = Some(30..34);
+        assert_eq!(
+            adapt(&[note(0, 0, 60, 100, 37, 20), controller], 3),
+            Err(MidiExportError::InvalidMidiValue {
+                source_ordinal: Some(3),
+                source_range: Some(30..34),
+                source: error
+            })
+        );
+    }
+}
+
+#[test]
 fn note_creates_start_and_generated_end_with_release_velocity() {
     let result = adapt(&[note(120, 4, 60, 100, 37, 480)], 1).unwrap();
     assert_eq!(result.scheduled_events.len(), 2);

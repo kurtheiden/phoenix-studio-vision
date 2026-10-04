@@ -392,11 +392,12 @@ pub(crate) fn build_conversion_ready_sequence(
                                 &note.note,
                             )
                         }
-                        MixedEventKind::MidiController(_) => {
-                            return Err(ConversionReadyError::PolicyMismatch(
-                                "source channel Controller requires event-channel export policy"
-                                    .into(),
-                            ));
+                        MixedEventKind::MidiController(controller) => {
+                            DecodedExportEvent::from_midi_controller(
+                                positioned.position,
+                                source_ordinal,
+                                &controller,
+                            )
                         }
                         MixedEventKind::Controller(controller) => {
                             DecodedExportEvent::from_controller(
@@ -677,6 +678,10 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn portable_project() -> Vec<u8> {
+        portable_project_with_track_b(vec![0, 0x90, 65, 70, 16, 2])
+    }
+
+    fn portable_project_with_track_b(track_b: Vec<u8>) -> Vec<u8> {
         const ROOT_HEADER_LENGTH: usize = 8;
         const SEQUENCE_PREAMBLE_LENGTH: usize = 208;
         const DESCRIPTOR_STRIDE: usize = 166;
@@ -715,7 +720,7 @@ pub(crate) mod tests {
         push_record(&mut bytes, 0x02, &tempo);
         push_record(&mut bytes, 0x29, &[]);
 
-        let track_events = [patch_to_note(42), vec![0, 0x90, 65, 70, 16, 2], Vec::new()];
+        let track_events = [patch_to_note(42), track_b, Vec::new()];
         for events in track_events {
             let mut payload = vec![0x11; 14];
             payload.extend(events);
@@ -732,7 +737,10 @@ pub(crate) mod tests {
     }
 
     fn portable_fresh() -> FreshValidatedSequence {
-        let source_bytes = portable_project();
+        portable_fresh_with_source(portable_project())
+    }
+
+    fn portable_fresh_with_source(source_bytes: Vec<u8>) -> FreshValidatedSequence {
         let parsed = parse_project_166(&source_bytes).unwrap();
         let sequence = &parsed.sequences[0];
         let TrackAssociations::Ordinal(bindings) = &sequence.track_associations else {
@@ -785,11 +793,7 @@ pub(crate) mod tests {
                 primary_range: fixed_range(&pair.primary.record_range),
                 exact_event_range: Some(fixed_range(&bounds.event_range)),
                 label_bytes: descriptor.label.as_ref().unwrap().bytes.to_vec(),
-                decoded_event_families: match index {
-                    0 => vec![EvidenceEventFamily::Patch, EvidenceEventFamily::Note],
-                    1 => vec![EvidenceEventFamily::Note],
-                    _ => Vec::new(),
-                },
+                decoded_event_families: omission_inventory(&walk).unwrap().1,
                 decoded_event_count: walk.logical_event_count() as u64,
                 patch_evidence,
                 observed_channel: None,
@@ -877,6 +881,79 @@ pub(crate) mod tests {
             }),
             PatchTranslation::ConfirmedBankSelect { msb: 1, lsb: 2 }
         );
+    }
+
+    #[test]
+    fn portable_handoff_preserves_source_controller_channels_and_spans() {
+        let events = vec![
+            0, 0x90, 65, 70, 16, 2, 3, 0xba, 7, 99, 4, 10, 20, 5, 0xb2, 1, 40,
+        ];
+        let fresh = portable_fresh_with_source(portable_project_with_track_b(events));
+        let ready = build_conversion_ready_sequence(&fresh).unwrap();
+        let track = &ready.tracks[1];
+        assert_eq!(track.channel_assignment.channel.get(), 11);
+        assert_eq!(track.events.len(), 4);
+        let parsed = parse_project_166(&fresh.source_bytes).unwrap();
+        let range = parsed.sequences[0].track_pairs[1]
+            .validated_event_bounds()
+            .unwrap()
+            .event_range;
+        for (ordinal, (event, (channel, number, value, tick, span))) in track.events[1..]
+            .iter()
+            .zip([
+                (11, 7, 99, 3, range.start + 6..range.start + 10),
+                (11, 10, 20, 7, range.start + 10..range.start + 13),
+                (3, 1, 40, 12, range.start + 13..range.start + 17),
+            ])
+            .enumerate()
+        {
+            assert_eq!(event.source_ordinal, ordinal as u64 + 1);
+            assert_eq!(event.absolute_position, tick);
+            assert_eq!(event.source_range, Some(span));
+            assert_eq!(
+                event.kind,
+                DecodedExportEventKind::MidiController {
+                    channel,
+                    number,
+                    value
+                }
+            );
+        }
+        let adapted = crate::midi_export::adapt_track(
+            &track.events,
+            Some(track.channel_assignment),
+            TimingPolicy::Identity480,
+            PatchPolicy::StrictKnownOnly,
+        )
+        .unwrap();
+        let messages: Vec<_> = adapted
+            .scheduled_events
+            .iter()
+            .map(|e| {
+                (
+                    e.absolute_tick,
+                    crate::smf::serialize_channel_message(&e.message),
+                )
+            })
+            .collect();
+        assert_eq!(
+            messages,
+            vec![
+                (0, vec![0x9a, 65, 70]),
+                (2, vec![0x8a, 65, 16]),
+                (3, vec![0xba, 7, 99]),
+                (7, vec![0xba, 10, 20]),
+                (12, vec![0xb2, 1, 40])
+            ]
+        );
+        // Existing Patch policy on the neighboring track is untouched.
+        assert!(matches!(
+            ready.tracks[0].events[0].kind,
+            DecodedExportEventKind::Patch {
+                program: 42,
+                translation: PatchTranslation::ConfirmedBankSelect { msb: 81, lsb: 2 }
+            }
+        ));
     }
 
     #[test]

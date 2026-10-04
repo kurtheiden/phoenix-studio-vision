@@ -253,11 +253,9 @@ fn resolve(
                 }
             }
             MixedEventItem::Event(e) => match &e.event {
-                MixedEventKind::MidiController(_) => {
-                    return Err(RoutingRefusal::IncompleteEventWalk(
-                        "source channel Controller requires event-channel routing agreement".into(),
-                    ));
-                }
+                // The bounded decoder already retains the status-derived
+                // Controller channel; this does not alter the track route.
+                MixedEventKind::MidiController(_) => {}
                 MixedEventKind::Controller(c) => {
                     guard(&mut contexts, ContextKind::Controller, &c.context, i)?
                 }

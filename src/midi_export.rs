@@ -8,6 +8,7 @@ use crate::{
     channel_pressure::ChannelPressureEntry,
     controller::BoundedControllerRecord,
     meter::InitialMeterEvent,
+    mixed_event::BoundedMidiController,
     patch::BoundedPatchRepresentation,
     pitch_bend::PitchBendEntry,
     smf::{MidiChannel, MidiDataByte, ScheduledEvent, SmfSerializeError, TimeSignature},
@@ -80,6 +81,12 @@ pub enum DecodedExportEventKind {
         value: u8,
         has_opaque_context: bool,
     },
+    /// Channel established by the source status, independent of track routing.
+    MidiController {
+        channel: u8,
+        number: u8,
+        value: u8,
+    },
     ChannelPressure {
         value: u8,
     },
@@ -97,6 +104,23 @@ pub enum DecodedExportEventKind {
 }
 
 impl DecodedExportEvent {
+    pub fn from_midi_controller(
+        absolute_position: u32,
+        source_ordinal: u64,
+        controller: &BoundedMidiController<'_>,
+    ) -> Self {
+        Self {
+            absolute_position,
+            source_ordinal,
+            source_range: Some(controller.representation_range.clone()),
+            kind: DecodedExportEventKind::MidiController {
+                channel: controller.channel,
+                number: controller.controller_number.value,
+                value: controller.controller_value.value,
+            },
+        }
+    }
+
     pub fn from_note(
         absolute_position: u32,
         source_ordinal: u64,
@@ -435,6 +459,29 @@ pub fn adapt_track(
                         source_ordinal: event.source_ordinal,
                     });
                 }
+            }
+            DecodedExportEventKind::MidiController {
+                channel: source_channel,
+                number,
+                value,
+            } => {
+                let channel = MidiChannel::new(source_channel).map_err(|source| {
+                    MidiExportError::InvalidMidiValue {
+                        source_ordinal: Some(event.source_ordinal),
+                        source_range: event.source_range.clone(),
+                        source,
+                    }
+                })?;
+                scheduled_events.push(ScheduledEvent {
+                    absolute_tick: event.absolute_position,
+                    stable_ordinal: source_stable_ordinal,
+                    message: crate::smf::ChannelMessage::ControlChange {
+                        channel,
+                        controller: midi_data(event, number)?,
+                        value: midi_data(event, value)?,
+                    },
+                });
+                counts.controllers += 1;
             }
             DecodedExportEventKind::ChannelPressure { value } => {
                 scheduled_events.push(ScheduledEvent {
