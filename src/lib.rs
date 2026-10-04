@@ -8,6 +8,7 @@ pub mod bounded_multi_patch;
 pub mod bounded_patch_translation;
 pub mod bounded_routing;
 pub mod bounded_sequence;
+pub mod bounded_terminal;
 mod c_abi;
 pub mod channel_pressure;
 pub mod comparison;
