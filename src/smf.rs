@@ -263,6 +263,7 @@ pub enum SmfSerializeError {
     InvalidDataByte { value: u8 },
     InvalidPpqn { value: u16 },
     InvalidTempo { mpqn: u32 },
+    InvalidKeySignature { accidentals: i8 },
     InvalidTimeSignatureNumerator { value: u8 },
     MidiVlqOverflow { value: u32 },
     TrackCountOverflow { count: usize },
@@ -689,10 +690,28 @@ pub fn serialize_conductor_track(
     mpqn: u32,
     signature: TimeSignature,
 ) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_conductor_track_with_key(name, mpqn, signature, None)
+}
+
+/// Initial name/tempo/optional key/meter ordering; no inferred timecode or end padding.
+pub fn serialize_conductor_track_with_key(
+    name: &[u8],
+    mpqn: u32,
+    signature: TimeSignature,
+    key: Option<(i8, bool)>,
+) -> Result<SerializedTrack, SmfSerializeError> {
+    if let Some((accidentals, _)) = key {
+        if !(-7..=7).contains(&accidentals) {
+            return Err(SmfSerializeError::InvalidKeySignature { accidentals });
+        }
+    }
     let mut payload = vec![0];
     payload.extend_from_slice(&serialize_track_name(name)?);
     payload.push(0);
     payload.extend_from_slice(&serialize_set_tempo(mpqn)?);
+    if let Some((accidentals, minor)) = key {
+        payload.extend_from_slice(&[0, 0xff, 0x59, 2, accidentals as u8, u8::from(minor)]);
+    }
     payload.push(0);
     payload.extend_from_slice(&serialize_time_signature(signature));
     payload.push(0);
