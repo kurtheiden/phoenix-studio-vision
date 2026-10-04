@@ -54,3 +54,39 @@ track. It does not validate complex multitrack synchronization, Controller
 automation, Patch behavior, Pitch Bend, NRPN, or ff40 fader behavior. It does
 not establish production readiness or equivalence to an authentic Studio
 Vision MIDI export.
+
+## Nothing FINAL — full multitrack human listening validation
+
+**Human listening result: PASS.** Kurt imported the Phoenix experimental MIDI
+into Logic, assigned replacement/new instruments and reported:
+
+> Yeah that all sounds pretty good! I was able to assign some new instruments
+> to it. Comes up all pianos by default in Logic.
+
+This successfully validates the recovered musical performance by owner listening.
+Logic initially presented the imported material using piano sounds by default;
+the owner assigned new sounds. It does not demonstrate recreation of the original
+Studio Vision instrument sounds, sonic identity with historical hardware,
+bit-for-bit native-export equivalence or production export readiness.
+
+The experimental artifact `/tmp/phoenix-school-experimental-Nothing-FINAL.mid`
+is Format 1, 480 PPQN, with conductor plus all 15 ordinary source tracks.
+It contains 5,109 recovered Notes, 70 source-channel Controllers, 18 Program
+Changes and 406 Pitch Bends. Independent structural readback matched every
+serialized channel message's tick, status and data to the bounded source handoff.
+The initial tempo, meter and key annotation were included. Saved-muted tracks
+were included; native timecode metadata and trailing padding were not synthesized.
+Artifact: 44,633 bytes, SHA-256
+`4366b0b3f83eadc4e36166ae48258bc0d0282f29713c783da489f1881eae4ca3`.
+Implementation checkpoint: `02a46154e2805854bc728fe3a8693218b4eec782`.
+
+The listening result reinforces the future Phoenix Recovery Report requirement:
+expose original Studio Vision Instrument assignments and Patch information,
+separately from translated MIDI Program/Bank events, to help users assign modern
+instruments in Logic. Imported piano sounds are not evidence of original source
+instrument identity. No Recovery Report or export UI is implemented here.
+
+Saved mute is historical project state, not permission to discard data. Future
+export should offer **Include All** (recommended/default) or **Exclude Muted**,
+and identify saved-muted tracks in the Recovery Report regardless of the choice.
+This is a product requirement, not an implemented prompt or authorization change.
