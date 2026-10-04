@@ -291,6 +291,7 @@ pub enum UntranslatedMetadata {
 pub struct ExportTrackResult {
     pub channel_assignment: ChannelAssignment,
     pub scheduled_events: Vec<ScheduledEvent>,
+    pub note_provenance: Vec<crate::smf::NoteSourceProvenance>,
     pub counts: ExportCounts,
     pub warnings: Vec<ExportWarning>,
     pub untranslated_metadata: Vec<UntranslatedMetadata>,
@@ -394,6 +395,7 @@ pub fn adapt_track(
     let channel_assignment = channel_assignment.ok_or(MidiExportError::UnknownChannel)?;
     let mut seen_ordinals = BTreeSet::new();
     let mut scheduled_events = Vec::new();
+    let mut note_provenance = Vec::new();
     let mut counts = ExportCounts::default();
     let warnings = Vec::new();
     let mut untranslated_metadata = Vec::new();
@@ -441,6 +443,12 @@ pub fn adapt_track(
                         release_velocity,
                     },
                 });
+                if let Some(source_range) = &event.source_range {
+                    note_provenance.push(crate::smf::NoteSourceProvenance {
+                        start_ordinal: source_stable_ordinal,
+                        source_range: source_range.clone(),
+                    });
+                }
                 counts.notes += 1;
                 counts.generated_note_offs += 1;
             }
@@ -604,6 +612,7 @@ pub fn adapt_track(
     Ok(ExportTrackResult {
         channel_assignment,
         scheduled_events,
+        note_provenance,
         counts,
         warnings,
         untranslated_metadata,

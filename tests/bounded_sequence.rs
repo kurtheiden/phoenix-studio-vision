@@ -209,8 +209,20 @@ fn unsupported_patch_refuses() {
 #[test]
 fn ambiguous_source_order_refuses() {
     let mut notes = NOTE.to_vec();
-    notes.extend(NOTE);
+    let mut unequal = NOTE.to_vec();
+    unequal[3] -= 1; // Same pitch/start, unequal attack: still genuinely ambiguous.
+    notes.extend(unequal);
     assert_eq!(refused(&synthetic(&notes)).stage, "source ordering");
+}
+#[test]
+fn bounded_sequence_retains_equivalent_duplicate_notes() {
+    let mut notes = NOTE.to_vec();
+    notes.extend(NOTE);
+    let manifest = accepted(&synthetic(&notes));
+    assert_eq!(manifest.tracks()[0].events().len(), 2);
+    let midi = assemble_bounded_sequence(&manifest).unwrap();
+    assert_eq!(midi.windows(3).filter(|w| *w == [0x93, 60, 127]).count(), 2);
+    assert_eq!(midi.windows(3).filter(|w| w[..2] == [0x83, 60]).count(), 2);
 }
 #[test]
 fn unsupported_conductor_prelude_refuses() {

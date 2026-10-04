@@ -534,7 +534,30 @@ pub fn serialize_musical_track_with_ordering(
     events: &[ScheduledEvent],
     ordering: MusicalTrackOrdering,
 ) -> Result<SerializedTrack, SmfSerializeError> {
-    serialize_musical_track_payload(None, events, ordering)
+    serialize_musical_track_payload(None, events, ordering, &[])
+}
+
+/// Retained source representation of a decoded Note, keyed by its even attack
+/// ordinal. Generated releases retain the adapter's corresponding odd ordinal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoteSourceProvenance {
+    pub start_ordinal: u64,
+    pub source_range: std::ops::Range<usize>,
+}
+
+/// Source-order serialization with retained decoded Note provenance. This is
+/// not export authority. Without affirmative evidence, duplicate starts refuse.
+pub fn serialize_named_musical_track_with_note_provenance(
+    name: &[u8],
+    events: &[ScheduledEvent],
+    provenance: &[NoteSourceProvenance],
+) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_musical_track_payload(
+        Some(name),
+        events,
+        MusicalTrackOrdering::SourceOrder,
+        provenance,
+    )
 }
 
 /// Named counterpart of [`serialize_musical_track_with_ordering`].
@@ -543,13 +566,14 @@ pub fn serialize_named_musical_track_with_ordering(
     events: &[ScheduledEvent],
     ordering: MusicalTrackOrdering,
 ) -> Result<SerializedTrack, SmfSerializeError> {
-    serialize_musical_track_payload(Some(name), events, ordering)
+    serialize_musical_track_payload(Some(name), events, ordering, &[])
 }
 
 fn serialize_musical_track_payload(
     name: Option<&[u8]>,
     events: &[ScheduledEvent],
     ordering: MusicalTrackOrdering,
+    provenance: &[NoteSourceProvenance],
 ) -> Result<SerializedTrack, SmfSerializeError> {
     let mut ordered = events.to_vec();
     match ordering {
@@ -563,7 +587,7 @@ fn serialize_musical_track_payload(
         MusicalTrackOrdering::SourceOrder => {
             // Stable sort preserves the adapter's intra-Patch message sequence.
             ordered.sort_by_key(|event| (event.absolute_tick, event.stable_ordinal));
-            validate_source_order(&ordered)?;
+            validate_source_order(&ordered, provenance)?;
         }
     }
 
@@ -612,7 +636,74 @@ fn valid_patch_group(group: &[ScheduledEvent]) -> bool {
         })
 }
 
-fn validate_source_order(events: &[ScheduledEvent]) -> Result<(), SmfSerializeError> {
+fn equivalent_duplicate(
+    a: &ScheduledEvent,
+    b: &ScheduledEvent,
+    events: &std::collections::BTreeMap<u64, Vec<&ScheduledEvent>>,
+    provenance: &[NoteSourceProvenance],
+) -> bool {
+    if a.absolute_tick != b.absolute_tick
+        || a.message != b.message
+        || a.stable_ordinal % 2 != 0
+        || b.stable_ordinal % 2 != 0
+        || a.stable_ordinal >= b.stable_ordinal
+    {
+        return false;
+    }
+    let unique_event = |ordinal| match events.get(&ordinal).map(Vec::as_slice) {
+        Some([event]) => Some(*event),
+        _ => None,
+    };
+    if unique_event(a.stable_ordinal) != Some(a) || unique_event(b.stable_ordinal) != Some(b) {
+        return false;
+    }
+    let unique_span = |ordinal| {
+        let mut spans = provenance.iter().filter(|p| p.start_ordinal == ordinal);
+        let span = &spans.next()?.source_range;
+        (spans.next().is_none() && span.start < span.end).then_some(span)
+    };
+    let (Some(sa), Some(sb)) = (unique_span(a.stable_ordinal), unique_span(b.stable_ordinal))
+    else {
+        return false;
+    };
+    // The established case has adjacent, distinct, nonoverlapping source
+    // representations in the same order as its unique retained ordinals.
+    if sa.end != sb.start {
+        return false;
+    }
+    let (Some(oa), Some(ob)) = (
+        a.stable_ordinal.checked_add(1),
+        b.stable_ordinal.checked_add(1),
+    ) else {
+        return false;
+    };
+    let (Some(ea), Some(eb)) = (unique_event(oa), unique_event(ob)) else {
+        return false;
+    };
+    // Equal starts and equal release ticks prove equal durations exactly.
+    // Positive duration keeps each pair out of current-tick ending hazards.
+    if ea.absolute_tick <= a.absolute_tick
+        || ea.absolute_tick != eb.absolute_tick
+        || ea.message != eb.message
+    {
+        return false;
+    }
+    matches!((&a.message, &ea.message),
+        (ChannelMessage::NoteOn { channel: c, key: k, .. },
+         ChannelMessage::NoteOff { channel: d, key: l, .. }) if c == d && k == l)
+}
+
+fn validate_source_order(
+    events: &[ScheduledEvent],
+    provenance: &[NoteSourceProvenance],
+) -> Result<(), SmfSerializeError> {
+    let mut by_ordinal = std::collections::BTreeMap::<u64, Vec<&ScheduledEvent>>::new();
+    for event in events {
+        by_ordinal
+            .entry(event.stable_ordinal)
+            .or_default()
+            .push(event);
+    }
     let mut start = 0;
     while start < events.len() {
         let first = &events[start];
@@ -634,7 +725,7 @@ fn validate_source_order(events: &[ScheduledEvent]) -> Result<(), SmfSerializeEr
     // Only starts at the current tick matter for the retrigger hazard. A
     // zero-duration Note may end after its own start, using the adapter's
     // even/odd ordinal pair. An unrelated end after a start is refused.
-    let mut starts = std::collections::BTreeMap::new();
+    let mut starts = std::collections::BTreeMap::<(u8, u8), (&ScheduledEvent, bool)>::new();
     let mut tick = None;
     for event in events {
         if tick != Some(event.absolute_tick) {
@@ -647,19 +738,27 @@ fn validate_source_order(events: &[ScheduledEvent]) -> Result<(), SmfSerializeEr
                 key,
                 attack_velocity,
             } if attack_velocity.get() > 0 => {
-                if starts
-                    .insert((channel.get(), key.get()), event.stable_ordinal)
-                    .is_some()
-                {
-                    return Err(SmfSerializeError::AmbiguousSourceOrder {
-                        tick: event.absolute_tick,
-                        stable_ordinal: event.stable_ordinal,
-                    });
+                let key = (channel.get(), key.get());
+                if let Some((previous, duplicate)) = starts.get(&key) {
+                    // Exactly two equivalent starts are supported; a third
+                    // cannot enter through this bounded exception.
+                    if *duplicate || !equivalent_duplicate(previous, event, &by_ordinal, provenance)
+                    {
+                        return Err(SmfSerializeError::AmbiguousSourceOrder {
+                            tick: event.absolute_tick,
+                            stable_ordinal: event.stable_ordinal,
+                        });
+                    }
+                    starts.insert(key, (event, true));
+                } else {
+                    starts.insert(key, (event, false));
                 }
             }
             ChannelMessage::NoteOff { channel, key, .. } => {
-                if let Some(on) = starts.remove(&(channel.get(), key.get())) {
-                    if on % 2 != 0 || on.checked_add(1) != Some(event.stable_ordinal) {
+                if let Some((on, _)) = starts.remove(&(channel.get(), key.get())) {
+                    if on.stable_ordinal % 2 != 0
+                        || on.stable_ordinal.checked_add(1) != Some(event.stable_ordinal)
+                    {
                         return Err(SmfSerializeError::UnsafeNoteOffOrder {
                             tick: event.absolute_tick,
                             channel: channel.get(),

@@ -17,7 +17,7 @@ use crate::{
     multitrack_export::{MultitrackExportReport, MultitrackExportResult, MusicalTrackExportReport},
     saved_mute::{collect_saved_mute_evidence, SavedMuteEvidence, SavedMuteState},
     sequence_container::{parse_project_166, FramedRecord, TrackAssociations},
-    smf::{self, MidiChannel, MusicalTrackOrdering},
+    smf::{self, MidiChannel},
     tempo::{decode_bounded_initial_tempo, InitialTempoBounds, InitialTempoEvent},
 };
 
@@ -380,10 +380,10 @@ pub(crate) fn assemble_bounded_sequence_with_report(
             untranslated_metadata: adapted.untranslated_metadata,
         });
         tracks.push(
-            smf::serialize_named_musical_track_with_ordering(
+            smf::serialize_named_musical_track_with_note_provenance(
                 &name,
                 &adapted.scheduled_events,
-                MusicalTrackOrdering::SourceOrder,
+                &adapted.note_provenance,
             )
             .map_err(|e| refusal("source ordering", e))?,
         );

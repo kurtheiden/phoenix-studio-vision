@@ -423,3 +423,179 @@ fn authenticated_sequence_r_track_1_complete_channel_stream() {
 fn authenticated_sequence_r_track_2_complete_channel_stream() {
     reconcile(3, 126, 62);
 }
+
+fn duplicate_fixture() -> phoenix::midi_export::ExportTrackResult {
+    let mut a = note(10, 2, 60, 20);
+    a.source_range = Some(100..108);
+    let mut b = note(10, 3, 60, 20);
+    b.source_range = Some(108..114);
+    adapt_track(
+        &[a, b],
+        Some(ChannelAssignment {
+            channel: MidiChannel::new(4).unwrap(),
+            provenance: ChannelAssignmentProvenance::Synthetic,
+        }),
+        TimingPolicy::Identity480,
+        PatchPolicy::StrictKnownOnly,
+    )
+    .unwrap()
+}
+fn duplicate_result(
+    a: &phoenix::midi_export::ExportTrackResult,
+) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_named_musical_track_with_note_provenance(
+        b"synthetic",
+        &a.scheduled_events,
+        &a.note_provenance,
+    )
+}
+#[test]
+fn equivalent_duplicates_preserve_both_attacks_and_releases_with_source_order() {
+    let mut a = duplicate_fixture();
+    assert_eq!(
+        a.note_provenance,
+        vec![
+            NoteSourceProvenance {
+                start_ordinal: 4,
+                source_range: 100..108
+            },
+            NoteSourceProvenance {
+                start_ordinal: 6,
+                source_range: 108..114
+            },
+        ]
+    );
+    let expected = duplicate_result(&a).unwrap();
+    let messages = track(&expected.as_bytes()[8..]).messages;
+    assert_eq!(bytes_at(&messages, 10), vec![vec![0x93, 60, 127]; 2]);
+    assert_eq!(bytes_at(&messages, 30), vec![vec![0x83, 60, 64]; 2]);
+    assert_eq!(messages.len(), 4);
+    // Input order is irrelevant; unique retained ordinals determine order.
+    a.scheduled_events.reverse();
+    assert_eq!(duplicate_result(&a).unwrap(), expected);
+    // The old API has no source geometry and must remain fail-closed.
+    assert!(serialize_named_musical_track_with_ordering(
+        b"synthetic",
+        &a.scheduled_events,
+        MusicalTrackOrdering::SourceOrder
+    )
+    .is_err());
+}
+#[test]
+fn non_equivalent_duplicate_values_and_end_parentage_refuse() {
+    for mutation in 0..6 {
+        let mut a = duplicate_fixture();
+        match mutation {
+            0 => {
+                a.scheduled_events[2].message = ChannelMessage::NoteOn {
+                    channel: MidiChannel::new(4).unwrap(),
+                    key: MidiDataByte::new(60).unwrap(),
+                    attack_velocity: MidiDataByte::new(126).unwrap(),
+                }
+            }
+            1 => {
+                a.scheduled_events[3].message = ChannelMessage::NoteOff {
+                    channel: MidiChannel::new(4).unwrap(),
+                    key: MidiDataByte::new(60).unwrap(),
+                    release_velocity: MidiDataByte::new(63).unwrap(),
+                }
+            }
+            2 => a.scheduled_events[3].absolute_tick += 1,
+            3 => {
+                a.scheduled_events.remove(3);
+            }
+            4 => a.scheduled_events[3].stable_ordinal = 9,
+            5 => {
+                let end = a.scheduled_events[3].clone();
+                a.scheduled_events.push(end);
+            }
+            _ => unreachable!(),
+        }
+        assert!(duplicate_result(&a).is_err(), "mutation {mutation}");
+    }
+}
+#[test]
+fn absent_ambiguous_overlapping_and_reversed_source_provenance_refuse() {
+    for mutation in 0..7 {
+        let mut a = duplicate_fixture();
+        match mutation {
+            0 => a.note_provenance.clear(),
+            1 => {
+                a.note_provenance.pop();
+            }
+            2 => a.note_provenance[1].source_range = 107..114,
+            3 => a.note_provenance[1].source_range = 99..100,
+            4 => a.note_provenance[1].source_range = 108..108,
+            5 => {
+                a.note_provenance.push(a.note_provenance[0].clone());
+            }
+            6 => a.scheduled_events[2].stable_ordinal = 4,
+            _ => unreachable!(),
+        }
+        assert!(duplicate_result(&a).is_err(), "mutation {mutation}");
+    }
+}
+#[test]
+fn independent_duplicate_pairs_with_unrelated_events_preserve_every_message() {
+    let mut a = duplicate_fixture();
+    let original = a.scheduled_events.clone();
+    for mut event in original {
+        event.absolute_tick += 100;
+        event.stable_ordinal += 4;
+        a.scheduled_events.push(event);
+    }
+    a.note_provenance.extend([
+        NoteSourceProvenance {
+            start_ordinal: 8,
+            source_range: 120..128,
+        },
+        NoteSourceProvenance {
+            start_ordinal: 10,
+            source_range: 128..134,
+        },
+    ]);
+    a.scheduled_events.push(ScheduledEvent {
+        absolute_tick: 10,
+        stable_ordinal: 12,
+        message: ChannelMessage::ControlChange {
+            channel: MidiChannel::new(7).unwrap(),
+            controller: MidiDataByte::new(1).unwrap(),
+            value: MidiDataByte::new(99).unwrap(),
+        },
+    });
+    let result = duplicate_result(&a).unwrap();
+    let m = track(&result.as_bytes()[8..]).messages;
+    assert_eq!(m.len(), 9);
+    assert_eq!(
+        bytes_at(&m, 10),
+        vec![vec![0x93, 60, 127], vec![0x93, 60, 127], vec![0xb6, 1, 99]]
+    );
+    assert_eq!(bytes_at(&m, 30), vec![vec![0x83, 60, 64]; 2]);
+    assert_eq!(bytes_at(&m, 110), vec![vec![0x93, 60, 127]; 2]);
+    assert_eq!(bytes_at(&m, 130), vec![vec![0x83, 60, 64]; 2]);
+}
+#[test]
+fn third_coincident_attack_refuses_and_distinct_channels_use_existing_semantics() {
+    let mut a = duplicate_fixture();
+    let mut third = a.scheduled_events[2].clone();
+    third.stable_ordinal = 8;
+    let mut end = a.scheduled_events[3].clone();
+    end.stable_ordinal = 9;
+    a.scheduled_events.extend([third, end]);
+    a.note_provenance.push(NoteSourceProvenance {
+        start_ordinal: 8,
+        source_range: 114..120,
+    });
+    assert!(duplicate_result(&a).is_err());
+    let mut a = duplicate_fixture();
+    for event in &mut a.scheduled_events[2..] {
+        match &mut event.message {
+            ChannelMessage::NoteOn { channel, .. } | ChannelMessage::NoteOff { channel, .. } => {
+                *channel = MidiChannel::new(5).unwrap()
+            }
+            _ => unreachable!(),
+        }
+    }
+    a.note_provenance.clear();
+    assert!(duplicate_result(&a).is_ok());
+}
