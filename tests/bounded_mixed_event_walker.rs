@@ -1327,7 +1327,7 @@ fn terminal_two_patch_cores_preserve_timing_and_provenance() {
 }
 
 #[test]
-fn terminal_pair_rejects_truncation_extra_bytes_and_recovery() {
+fn patch_chain_rejects_truncation_unauthorized_successors_and_recovery() {
     let core = synthetic_patch_note(3)[..11].to_vec();
     let mut pair = core.clone();
     pair.extend(&core);
@@ -1339,8 +1339,7 @@ fn terminal_pair_rejects_truncation_extra_bytes_and_recovery() {
     for tail in [
         vec![0],
         vec![0, 0xf0, 0],
-        core.clone(),
-        vec![0, 0x90, 60, 64, 32, 1],
+        vec![0, 60, 64, 32, 1], // Patch cannot establish compact Note state.
         vec![0xff, 0xff, 0xfc, 0x1f, 0xff, 0x2f, 0],
     ] {
         let mut b = pair.clone();
@@ -1392,6 +1391,228 @@ fn terminal_pair_rejects_truncation_extra_bytes_and_recovery() {
         .consumed_range,
         0..pair.len()
     );
+}
+
+fn source_patch_core(delta: &[u8], name: &[u8], slot: u8, program: u8) -> Vec<u8> {
+    let mut payload = vec![slot, 0, program | 0x80, 8, program, name.len() as u8];
+    payload.extend(name);
+    payload.extend(if name.is_empty() {
+        &[0, 4, 0xff, 0, 0xff][..]
+    } else {
+        &[3, b'I', b'4', b'2', 4, 0xff, 0x50, 0xff][..]
+    });
+    payload.push(program);
+    let mut bytes = delta.to_vec();
+    bytes.extend([0xff, 0x7c, payload.len() as u8]);
+    bytes.extend(payload);
+    bytes
+}
+
+#[test]
+fn source_patch_chains_preserve_named_and_unnamed_payloads_and_timing() {
+    for name in [&b"Unseen Patch"[..], &b""[..]] {
+        for count in [3, 5, 27] {
+            let mut bytes = vec![0xaa];
+            let mut ranges = Vec::new();
+            for slot in 0..count {
+                let start = bytes.len();
+                bytes.extend(source_patch_core(&[0x81, 0], name, slot, slot + 1));
+                ranges.push(start..bytes.len());
+            }
+            let end = bytes.len();
+            bytes.extend([0xff, 0x2f, 0]); // enclosing tail must not be read
+            let w = walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds {
+                    event_range: 1..end,
+                },
+                MixedEventTimingBasis {
+                    previous_event_position: 100,
+                },
+            )
+            .unwrap();
+            assert_eq!(w.consumed_range, 1..end);
+            assert_eq!(w.logical_event_count(), usize::from(count));
+            for (i, range) in ranges.iter().enumerate() {
+                let MixedEventItem::Patch(p) = &w.items[i] else {
+                    panic!("Patch")
+                };
+                assert_eq!(p.position, 100 + (i as u32 + 1) * 128);
+                assert_eq!(p.patch.representation_range, *range);
+                assert_eq!(p.patch.position.range, range.start..range.start + 2);
+                assert_eq!(p.patch.position.bytes, [0x81, 0]);
+                assert_eq!(p.patch.name.bytes, name);
+                assert_eq!(
+                    p.patch.pre_name_context.bytes,
+                    [i as u8, 0, (i as u8 + 1) | 0x80, 8, i as u8 + 1]
+                );
+                assert_eq!(
+                    p.patch.post_name_context.bytes,
+                    if name.is_empty() {
+                        &[0, 4, 0xff, 0, 0xff][..]
+                    } else {
+                        &[3, b'I', b'4', b'2', 4, 0xff, 0x50, 0xff][..]
+                    }
+                );
+                assert_eq!(p.patch.program_change.offset, range.end - 1);
+                assert_eq!(p.patch.program_change.value, i as u8 + 1);
+                assert_eq!(p.patch.payload_range, range.start + 5..range.end);
+                assert_eq!(
+                    bytes[p.patch.payload_range.clone()],
+                    source_patch_core(&[0x81, 0], name, i as u8, i as u8 + 1)[5..]
+                );
+            }
+            assert!(walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds {
+                    event_range: 1..end - 1
+                },
+                Default::default()
+            )
+            .is_err());
+            assert!(walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds {
+                    event_range: 1..end
+                },
+                MixedEventTimingBasis {
+                    previous_event_position: u32::MAX - 128
+                }
+            )
+            .is_err());
+        }
+    }
+}
+
+#[test]
+fn source_patch_chains_keep_existing_note_and_controller_successors() {
+    for successor in [synthetic_patch_note(7), synthetic_patch_controller_note()] {
+        let mut bytes = source_patch_core(&[3], b"First", 0, 12);
+        let first_end = bytes.len();
+        bytes.extend(source_patch_core(&[5], b"Second", 1, 25));
+        let second_end = bytes.len();
+        bytes.extend(&successor);
+        let w = walk(&bytes).unwrap();
+        assert_eq!(w.consumed_range, 0..bytes.len());
+        for (i, range, position) in [(0, 0..first_end, 3), (1, first_end..second_end, 8)] {
+            assert!(
+                matches!(&w.items[i], MixedEventItem::Patch(p) if p.position == position && p.patch.representation_range == range)
+            );
+        }
+        let old = walk(&successor).unwrap();
+        assert_eq!(w.logical_event_count(), old.logical_event_count() + 2);
+        match (&w.items[2], &old.items[0]) {
+            (MixedEventItem::PatchToNote(new), MixedEventItem::PatchToNote(old)) => {
+                assert_eq!(new.patch_position, old.patch_position + 8);
+                assert_eq!(new.first_note_position, old.first_note_position + 8);
+                assert_eq!(
+                    new.patch.program_change.value,
+                    old.patch.program_change.value
+                );
+            }
+            (MixedEventItem::Patch(new), MixedEventItem::Patch(old)) => {
+                assert_eq!(new.position, old.position + 8)
+            }
+            _ => panic!("existing successor representation changed"),
+        }
+    }
+}
+
+#[test]
+fn source_patch_to_midi_controller_preserves_channels_compact_state_and_context() {
+    for channel in 0..16 {
+        let mut bytes = source_patch_core(&[0x83, 0x60], b"Unseen Patch", 0, 41);
+        let core_end = bytes.len();
+        bytes.extend([20, 0xb0 | channel, 91, 97, 3, 93, 18]);
+        let context_start = bytes.len();
+        bytes.extend([
+            2, 0xff, 0x60, 7, 0x57, 0x7f, 0, 0x51, 0x51, 0xba, 0x6f, 5, 0x90, 51, 53, 64, 1,
+        ]);
+        let w = walk(&bytes).unwrap();
+        assert_eq!(family_counts(&w), [1, 1, 2, 0, 0]);
+        assert_eq!(w.consumed_range, 0..bytes.len());
+        assert!(
+            matches!(&w.items[0], MixedEventItem::Patch(p) if p.position == 480 && p.patch.representation_range == (0..core_end))
+        );
+        for (i, position, range, explicit) in [
+            (1, 500, core_end..core_end + 4, true),
+            (2, 503, core_end + 4..context_start, false),
+        ] {
+            let MixedEventItem::Event(e) = &w.items[i] else {
+                panic!("Controller")
+            };
+            let MixedEventKind::MidiController(c) = &e.event else {
+                panic!("Controller")
+            };
+            assert_eq!(e.position, position);
+            assert_eq!(c.channel, channel + 1);
+            assert_eq!(c.representation_range, range);
+            assert_eq!(c.status.offset, core_end + 1);
+            assert_eq!(c.explicit_status, explicit);
+        }
+        let MixedEventItem::Event(e) = &w.items[3] else {
+            panic!("Note")
+        };
+        let MixedEventKind::ContextMediatedNote(n) = &e.event else {
+            panic!("context Note")
+        };
+        assert_eq!(e.position, 510);
+        assert_eq!(n.representation_range, context_start..bytes.len());
+        assert_eq!(
+            n.context.payload.bytes,
+            [0x57, 0x7f, 0, 0x51, 0x51, 0xba, 0x6f]
+        );
+    }
+}
+
+#[test]
+fn source_patch_successors_refuse_malformed_truncated_and_unauthorized_forms() {
+    let core = source_patch_core(&[3], b"First", 0, 12);
+    let second = source_patch_core(&[5], b"Second", 1, 25);
+    let third = source_patch_core(&[7], b"Third", 2, 41);
+    let mut chain = core.clone();
+    chain.extend(&second);
+    let second_end = chain.len();
+    chain.extend(&third);
+    for end in 1..chain.len() {
+        if end != core.len() && end != second_end {
+            assert!(walk(&chain[..end]).is_err(), "truncation {end}");
+        }
+    }
+    for (offset, value) in [
+        (core.len() + 2, 0x7d),
+        (core.len() + 3, 255),
+        (core.len() + 9, 255),
+        (core.len() + 10, 0x80),
+    ] {
+        let mut bytes = chain.clone();
+        bytes[offset] = value;
+        bytes.extend(&chain); // never scan to a later valid Patch
+        assert!(walk(&bytes).is_err());
+    }
+    for suffix in [
+        vec![0],
+        vec![0x81, 0x81, 0x81, 0x81, 0],
+        vec![0, 0xb0],
+        vec![0, 0xb0, 7],
+        vec![0, 0xb0, 0x80, 64],
+        vec![0, 0xb0, 7, 0x80],
+        vec![0, 0xb0, 7, 64, 0, 10],
+        vec![0, 0xb0, 7, 64, 0, 10, 0x80],
+        vec![0, 7, 64],
+        vec![0, 0x91, 60, 64, 32, 1],
+        vec![0, 0xc0, 41],
+        vec![0, 0xff, 0x61, 1, 0, 0, 0x90, 60, 64, 32, 1],
+        vec![0, 0xff, 0x60, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0xb0, 7, 64],
+    ] {
+        let mut bytes = chain.clone();
+        bytes.extend(suffix);
+        assert!(walk(&bytes).is_err());
+    }
+    let mut bytes = vec![0, 0xb3, 7, 64];
+    bytes.extend(&core);
+    bytes.extend([0, 10, 64]); // preceding Controller state cannot leak through Patch
+    assert!(walk(&bytes).is_err());
 }
 
 #[test]

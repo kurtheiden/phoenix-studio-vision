@@ -686,40 +686,26 @@ fn decode_patch_transition(
             .get(transition_cursor..end)
             .filter(|_| end <= event_end)
     });
-    if following_tag == Some(&[0xff, 0x7c]) {
-        // Exactly two cores, not a recursive or open-ended Patch chain.
-        let second = decode_bounded_patch_core(
-            bytes,
-            PatchCoreBounds {
-                position_start: payload_end,
-                end: event_end,
-            },
+    if following_tag == Some(&[0xff, 0x7c])
+        || matches!(
+            bytes
+                .get(transition_cursor)
+                .filter(|_| transition_cursor < event_end),
+            Some(0xb0..=0xbf)
         )
-        .map_err(|source| MixedEventWalkError::MalformedPatch {
-            cursor: payload_end,
-            source,
-        })?;
-        if second.representation_range.end != event_end {
-            return Err(MixedEventWalkError::PatchContextMismatch {
-                cursor,
-                offset: second.representation_range.end,
-                observed: bytes.get(second.representation_range.end).copied(),
-            });
-        }
-        let second_position = add_position(patch_position, second.position.value, payload_end)?;
+    {
+        // A length-delimited core can precede another explicit Patch or MIDI
+        // Controller. Leave its successor's delta and payload to the common
+        // walker: advancement is bounded, timing is added exactly once, and
+        // no compact state is inherited across the Patch. The entire walk
+        // still refuses transactionally if any successor is malformed.
         return Ok(PatchDispatch {
-            items: vec![
-                MixedEventItem::Patch(Box::new(PositionedPatch {
-                    position: patch_position,
-                    patch: core,
-                })),
-                MixedEventItem::Patch(Box::new(PositionedPatch {
-                    position: second_position,
-                    patch: second,
-                })),
-            ],
-            next: event_end,
-            next_position: second_position,
+            items: vec![MixedEventItem::Patch(Box::new(PositionedPatch {
+                position: patch_position,
+                patch: core,
+            }))],
+            next: payload_end,
+            next_position: patch_position,
             next_state: ActiveEventState::None,
         });
     }
