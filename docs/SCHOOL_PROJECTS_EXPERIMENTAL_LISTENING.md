@@ -31,3 +31,26 @@ fader events, complex Patch behavior, complex multitrack synchronization, every
 supported event family, or production export readiness. It does not establish
 equivalence to an authentic Studio Vision MIDI export. No reference MIDI was
 used for this listening exercise.
+
+## Unnamed complete sequence — second human listening pass
+
+Phoenix produced an experimental Format 1 MIDI, 480 PPQN, with a conductor
+track, Track 1, and retained empty Track 2. Track 1 contained 113 recovered
+notes on MIDI channel 2, with 7/8 meter and approximately 82 BPM (731,707
+microseconds per quarter note). No unsupported Program or Bank information
+was invented.
+
+Independent structural readback passed. All 113 note attacks and generated
+releases matched decoded source timing, pitch, velocity, and channel. The
+artifact was 1,098 bytes, SHA-256
+`a4421055e4f6d6915e7b04e196b87590f3689735a768a0d25ca9b62feca00fc2`.
+
+**Human listening result: PASS.** Kurt's exact observation was:
+
+> That seems to play just fine too.
+
+This remains a note-oriented listening observation with one non-empty musical
+track. It does not validate complex multitrack synchronization, Controller
+automation, Patch behavior, Pitch Bend, NRPN, or ff40 fader behavior. It does
+not establish production readiness or equivalence to an authentic Studio
+Vision MIDI export.
