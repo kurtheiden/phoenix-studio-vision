@@ -94,6 +94,11 @@ pub enum DecodedExportEventKind {
         lsb: u8,
         msb: u8,
     },
+    /// Event-specific target resolved by the bounded standalone Multi Patch rule.
+    TargetedProgram {
+        channel: u8,
+        program: u8,
+    },
     Patch {
         program: u8,
         translation: PatchTranslation,
@@ -505,6 +510,24 @@ pub fn adapt_track(
                     },
                 });
                 counts.pitch_bend += 1;
+            }
+            DecodedExportEventKind::TargetedProgram { channel, program } => {
+                let channel = MidiChannel::new(channel).map_err(|source| {
+                    MidiExportError::InvalidMidiValue {
+                        source_ordinal: Some(event.source_ordinal),
+                        source_range: event.source_range.clone(),
+                        source,
+                    }
+                })?;
+                scheduled_events.push(ScheduledEvent {
+                    absolute_tick: event.absolute_position,
+                    stable_ordinal: source_stable_ordinal,
+                    message: crate::smf::ChannelMessage::ProgramChange {
+                        channel,
+                        program: midi_data(event, program)?,
+                    },
+                });
+                counts.program_changes += 1;
             }
             DecodedExportEventKind::Patch {
                 program,
