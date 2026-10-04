@@ -31,7 +31,7 @@ fn family_counts(result: &phoenix::mixed_event::MixedEventWalk<'_>) -> [usize; 5
                 MixedEventKind::Note(_)
                 | MixedEventKind::ContextMediatedNote(_)
                 | MixedEventKind::DoubleContextMediatedNote(_) => counts[0] += 1,
-                MixedEventKind::Controller(_) => counts[2] += 1,
+                MixedEventKind::Controller(_) | MixedEventKind::MidiController(_) => counts[2] += 1,
                 MixedEventKind::ChannelPressure { .. } => counts[3] += 1,
                 MixedEventKind::PitchBend { .. } => counts[4] += 1,
             },
@@ -1487,4 +1487,138 @@ fn authentic_remaining_forms_have_exact_successes_and_failure_frontiers() {
             ),
         ]
     );
+}
+
+#[test]
+fn source_controllers_preserve_channel_timing_ranges_and_neighbors() {
+    for channel in 0..16 {
+        let bytes = [
+            0xaa,
+            0x81,
+            0x00,
+            0xb0 | channel,
+            7,
+            120,
+            3,
+            10,
+            64,
+            2,
+            0x90,
+            60,
+            64,
+            32,
+            1,
+            1,
+            61,
+            65,
+            33,
+            2,
+        ];
+        let w = walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds { event_range: 1..20 },
+            MixedEventTimingBasis {
+                previous_event_position: 100,
+            },
+        )
+        .unwrap();
+        assert_eq!(w.consumed_range, 1..20);
+        assert_eq!(w.logical_event_count(), 4);
+        for (i, range, position, explicit) in [(0, 1..6, 228, true), (1, 6..9, 231, false)] {
+            let MixedEventItem::Event(e) = &w.items[i] else {
+                panic!("Controller")
+            };
+            let MixedEventKind::MidiController(c) = &e.event else {
+                panic!("Controller")
+            };
+            assert_eq!(e.position, position);
+            assert_eq!(c.representation_range, range);
+            assert_eq!(c.channel, channel + 1);
+            assert_eq!(c.status.value, 0xb0 | channel);
+            assert_eq!(c.status.offset, 3);
+            assert_eq!(c.explicit_status, explicit);
+            assert_eq!(
+                (c.controller_number.value, c.controller_value.value),
+                if i == 0 { (7, 120) } else { (10, 64) }
+            );
+        }
+        let MixedEventItem::Event(e) = &w.items[3] else {
+            panic!("Note")
+        };
+        assert_eq!(e.position, 234);
+        assert!(matches!(&e.event, MixedEventKind::Note(n) if n.status.is_none()));
+    }
+}
+
+#[test]
+fn source_controllers_change_channels_and_reset_existing_states() {
+    let b = [
+        0, 0x90, 60, 64, 32, 1, 2, 0xb3, 7, 0, 3, 10, 127, 4, 0xbf, 91, 82, 0, 93, 18, 1, 0xff,
+        0x41, 5, 0, 0, 0, 7, 127,
+    ];
+    let w = walk(&b).unwrap();
+    assert_eq!(family_counts(&w), [1, 0, 5, 0, 0]);
+    for (i, channel, position) in [(1, 4, 2), (2, 4, 5), (3, 16, 9), (4, 16, 9)] {
+        let MixedEventItem::Event(e) = &w.items[i] else {
+            panic!("Controller")
+        };
+        assert_eq!(e.position, position);
+        assert!(matches!(&e.event, MixedEventKind::MidiController(c) if c.channel == channel));
+    }
+    let mut b = b.to_vec();
+    b.extend([0, 7, 64]);
+    assert!(matches!(
+        walk(&b),
+        Err(MixedEventWalkError::DataWithoutActiveState { .. })
+    ));
+}
+
+#[test]
+fn source_controllers_refuse_truncation_invalid_data_and_other_statuses() {
+    for b in [
+        vec![0, 0xb0],
+        vec![0, 0xb0, 7],
+        vec![0, 0xb0, 7, 64, 0],
+        vec![0, 0xb0, 7, 64, 0, 10],
+    ] {
+        assert!(walk(&b).is_err());
+    }
+    for offset in [2, 3, 5, 6] {
+        let mut b = [0, 0xb0, 7, 64, 0, 10, 64];
+        b[offset] = 128;
+        assert!(walk(&b).is_err());
+    }
+    for status in [0x80, 0x91, 0xa0, 0xc0, 0xd1, 0xe1, 0xf0, 0xf7] {
+        assert!(matches!(
+            walk(&[0, status, 7, 64]),
+            Err(MixedEventWalkError::UnsupportedStatus { .. })
+        ));
+    }
+    let b = [1, 0xb0, 7, 64, 0xff];
+    assert_eq!(
+        walk_bounded_mixed_events(
+            &b,
+            MixedEventBounds { event_range: 0..4 },
+            Default::default()
+        )
+        .unwrap()
+        .consumed_range,
+        0..4
+    );
+    assert!(walk_bounded_mixed_events(
+        &b,
+        MixedEventBounds { event_range: 0..3 },
+        Default::default()
+    )
+    .is_err());
+    assert!(matches!(
+        walk_bounded_mixed_events(
+            &b,
+            MixedEventBounds { event_range: 0..4 },
+            MixedEventTimingBasis {
+                previous_event_position: u32::MAX
+            }
+        ),
+        Err(MixedEventWalkError::PositionOverflow { .. })
+    ));
 }

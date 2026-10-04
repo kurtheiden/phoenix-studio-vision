@@ -46,6 +46,7 @@ pub enum ActiveEventState {
     Note,
     ChannelPressure,
     PitchBend,
+    MidiController { status: LocatedByte },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +59,7 @@ pub struct PositionedEvent<'a> {
 pub enum MixedEventKind<'a> {
     Note(BoundedNoteEvent<'a>),
     Controller(BoundedControllerRecord<'a>),
+    MidiController(BoundedMidiController<'a>),
     ChannelPressure {
         entry: ChannelPressureEntry<'a>,
         entry_tag: Option<LocatedByte>,
@@ -68,6 +70,20 @@ pub enum MixedEventKind<'a> {
     },
     ContextMediatedNote(BoundedContextMediatedNoteEntry<'a>),
     DoubleContextMediatedNote(BoundedDoubleContextMediatedNoteEntry<'a>),
+}
+
+/// Controller family in explicit channel-status or compact continuation form.
+/// Channel uses Phoenix's one-based MIDI channel convention; status provenance
+/// remains available even when inherited from an earlier explicit Controller.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedMidiController<'a> {
+    pub representation_range: Range<usize>,
+    pub timing_delta: LocatedVlq<'a>,
+    pub status: LocatedByte,
+    pub explicit_status: bool,
+    pub channel: u8,
+    pub controller_number: LocatedByte,
+    pub controller_value: LocatedByte,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -365,6 +381,15 @@ pub fn walk_bounded_mixed_events(
                         ActiveEventState::ChannelPressure,
                     )
                 }
+                ActiveEventState::MidiController { status } => decode_midi_controller(
+                    bytes,
+                    cursor,
+                    timing_end,
+                    end,
+                    previous_position,
+                    status,
+                    false,
+                )?,
                 ActiveEventState::PitchBend => {
                     let (decoded, next) =
                         decode_pitch_bend_entry_at(bytes, cursor, end, false).map_err(
@@ -396,6 +421,18 @@ pub fn walk_bounded_mixed_events(
                     ActiveEventState::Note,
                 )
             }
+            0xb0..=0xbf => decode_midi_controller(
+                bytes,
+                cursor,
+                timing_end,
+                end,
+                previous_position,
+                LocatedByte {
+                    value: first,
+                    offset: timing_end,
+                },
+                true,
+            )?,
             0xd0 => {
                 let (decoded, next) =
                     decode_channel_pressure_entry_at(bytes, cursor, end, true).map_err(
@@ -445,6 +482,67 @@ pub fn walk_bounded_mixed_events(
         items,
         consumed_range: bounds.event_range,
     })
+}
+
+fn decode_midi_controller(
+    bytes: &[u8],
+    cursor: usize,
+    status_offset: usize,
+    end: usize,
+    previous_position: u32,
+    status: LocatedByte,
+    explicit_status: bool,
+) -> Result<(MixedEventItem<'_>, usize, u32, ActiveEventState), MixedEventWalkError> {
+    let data = status_offset + usize::from(explicit_status);
+    let next = data
+        .checked_add(2)
+        .ok_or(MixedEventWalkError::EventPastBound {
+            cursor,
+            required_end: usize::MAX,
+            event_end: end,
+        })?;
+    if next > end {
+        return Err(MixedEventWalkError::EventPastBound {
+            cursor,
+            required_end: next,
+            event_end: end,
+        });
+    }
+    for (offset, &observed) in bytes.iter().enumerate().take(next).skip(data) {
+        if observed > 0x7f {
+            return Err(MixedEventWalkError::HighBitData {
+                cursor,
+                offset,
+                observed,
+            });
+        }
+    }
+    let timing_delta = located_vlq(bytes, cursor, end, cursor)?;
+    let position = add_position(previous_position, timing_delta.value, cursor)?;
+    let controller = BoundedMidiController {
+        representation_range: cursor..next,
+        timing_delta,
+        status,
+        explicit_status,
+        channel: (status.value & 0x0f) + 1,
+        controller_number: LocatedByte {
+            value: bytes[data],
+            offset: data,
+        },
+        controller_value: LocatedByte {
+            value: bytes[data + 1],
+            offset: data + 1,
+        },
+    };
+    Ok((
+        MixedEventItem::Event(Box::new(PositionedEvent {
+            position,
+            event: MixedEventKind::MidiController(controller),
+        })),
+        next,
+        position,
+        ActiveEventState::MidiController { status },
+    ))
 }
 
 fn dispatch_ff<'a>(

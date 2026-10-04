@@ -392,6 +392,12 @@ pub(crate) fn build_conversion_ready_sequence(
                                 &note.note,
                             )
                         }
+                        MixedEventKind::MidiController(_) => {
+                            return Err(ConversionReadyError::PolicyMismatch(
+                                "source channel Controller requires event-channel export policy"
+                                    .into(),
+                            ));
+                        }
                         MixedEventKind::Controller(controller) => {
                             DecodedExportEvent::from_controller(
                                 positioned.position,
@@ -529,7 +535,9 @@ fn omission_inventory(
                 MixedEventKind::Note(_)
                 | MixedEventKind::ContextMediatedNote(_)
                 | MixedEventKind::DoubleContextMediatedNote(_) => present[1] = true,
-                MixedEventKind::Controller(_) => present[2] = true,
+                MixedEventKind::Controller(_) | MixedEventKind::MidiController(_) => {
+                    present[2] = true
+                }
                 MixedEventKind::ChannelPressure { .. } => present[3] = true,
                 MixedEventKind::PitchBend { .. } => present[4] = true,
             },

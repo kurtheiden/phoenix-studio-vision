@@ -295,3 +295,123 @@ fn prospective_prologue_first_candidate() {
         Err(error) => eprintln!("PROSPECTIVE FIRST CANDIDATE REFUSED: {error:?}"),
     }
 }
+
+#[test]
+#[ignore = "requires explicitly authorized private SCHOOL PROJECTS evidence outside Git"]
+fn authorized_school_event_meter() {
+    use crate::mixed_event::{
+        walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+        MixedEventWalkError,
+    };
+    use crate::sequence_container::TrackRecordPair;
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(std::env::var("PHOENIX_SCHOOL_OBSERVATION_SOURCE").unwrap()).unwrap();
+    assert_eq!(bytes.len(), 343875);
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&bytes)),
+        "bfd4fa1208e2cd884ec51ccfb1131d5c02723d7c90acafc98bd89597e1a20331"
+    );
+    let bridge = associate_project_120(&bytes).unwrap();
+    let mut complete = 0;
+    let mut excluded = 0;
+    let mut families = [0usize; 5];
+    let mut errors = std::collections::BTreeMap::new();
+    let mut full_sequences = 0;
+    for (ci, candidate) in bridge.candidates.iter().enumerate() {
+        let Ok(s) = &candidate.association else {
+            continue;
+        };
+        let mut done = 0;
+        for b in &s.ordinary {
+            let start = b.pair.primary.payload.range.start + 14;
+            let pair = TrackRecordPair {
+                pair_ordinal: b.local_pair_ordinal,
+                primary: b.pair.primary.clone(),
+                secondary: b.pair.secondary.clone(),
+                candidate_event_start: start,
+                event_containing_range: start..b.pair.primary.payload.range.end,
+            };
+            let range = match pair.validated_event_bounds() {
+                Ok(r) => r.event_range,
+                Err(e) => {
+                    excluded += 1;
+                    eprintln!(
+                        "EXCLUDED candidate={} unit={} {e:?}",
+                        ci + 1,
+                        b.slot.ordinal
+                    );
+                    continue;
+                }
+            };
+            match walk_bounded_mixed_events(
+                &bytes,
+                MixedEventBounds {
+                    event_range: range.clone(),
+                },
+                Default::default(),
+            ) {
+                Ok(w) => {
+                    complete += 1;
+                    done += 1;
+                    for item in &w.items {
+                        match item {
+                            MixedEventItem::Patch(_) => families[1] += 1,
+                            MixedEventItem::PatchToNote(_) => {
+                                families[0] += 1;
+                                families[1] += 1;
+                            }
+                            MixedEventItem::Event(e) => {
+                                families[match e.event {
+                                    MixedEventKind::Note(_)
+                                    | MixedEventKind::ContextMediatedNote(_)
+                                    | MixedEventKind::DoubleContextMediatedNote(_) => 0,
+                                    MixedEventKind::Controller(_)
+                                    | MixedEventKind::MidiController(_) => 2,
+                                    MixedEventKind::ChannelPressure { .. } => 3,
+                                    MixedEventKind::PitchBend { .. } => 4,
+                                }] += 1
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let class = format!("{e:?}")
+                        .split_whitespace()
+                        .next()
+                        .unwrap()
+                        .to_string();
+                    *errors.entry(class).or_insert(0usize) += 1;
+                    eprintln!("REFUSAL candidate={} name={:?} unit={} pair={} track={:?} range={:?} {e:?}", ci+1, String::from_utf8_lossy(s.source_name.bytes), b.slot.ordinal,b.local_pair_ordinal,String::from_utf8_lossy(b.slot.label.bytes),range);
+                    if let MixedEventWalkError::UnsupportedStatus { cursor, offset, .. } = e {
+                        eprintln!(
+                            "COHORT bytes={:02x?} preceding={:02x?}",
+                            &bytes[cursor..(offset + 16).min(range.end)],
+                            &bytes[cursor.saturating_sub(16).max(range.start)..cursor]
+                        );
+                        if let Ok(prefix) = walk_bounded_mixed_events(
+                            &bytes,
+                            MixedEventBounds {
+                                event_range: range.start..cursor,
+                            },
+                            Default::default(),
+                        ) {
+                            eprintln!("PREVIOUS {:?}", prefix.items.last());
+                        }
+                    }
+                }
+            }
+        }
+        if done == s.ordinary.len() {
+            full_sequences += 1;
+        }
+        eprintln!(
+            "SEQUENCE candidate={} name={:?} complete={}/{}",
+            ci + 1,
+            String::from_utf8_lossy(s.source_name.bytes),
+            done,
+            s.ordinary.len()
+        );
+    }
+    eprintln!("METER complete={complete}/102 excluded={excluded} errors={errors:?} families(Note,Patch,Controller,Pressure,Bend)={families:?} total={} full_sequences={full_sequences}/8",families.iter().sum::<usize>());
+    assert_eq!(excluded, 1);
+}
