@@ -526,3 +526,202 @@ fn synthetic_numeric_endpoints_and_unmeasurable_bounds() {
         Err(RoutingRefusal::InvalidEventBounds(_))
     ));
 }
+
+fn zero_context_events(payload: &[u8]) -> Vec<u8> {
+    let mut events = vec![5, 0xb2, 1, 2, 2, 0xff, 0x60, payload.len() as u8];
+    events.extend(payload);
+    events.extend([3, 0x90, 63, 80, 32, 7, 1, 64, 70, 32, 2]);
+    events
+}
+const ZERO_CONTEXT: &[u8] = &[0x57, 0, 0, 0x92, 0x92, 1, 2, 3];
+
+#[test]
+fn zero_context_single_note_uses_source_route_and_keeps_timing_and_provenance() {
+    use phoenix::midi_export::{
+        adapt_track, ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent,
+        PatchPolicy, TimingPolicy,
+    };
+    use phoenix::mixed_event::{
+        walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+    };
+    use phoenix::smf::{serialize_channel_message, MidiChannel};
+    for (channel, f) in [(3, true), (12, true), (3, false), (12, false)] {
+        let events = zero_context_events(ZERO_CONTEXT);
+        let mut b = synthetic(3, &events, f);
+        let row = payload(&b, 0x10, 1);
+        b[row + 27] = channel - 1;
+        let route = result(&b).unwrap();
+        assert_eq!(route.midi_channel, channel);
+        assert_eq!(route.validated_contexts.len(), 1);
+        assert_eq!(route.validated_contexts[0].bytes, ZERO_CONTEXT);
+        let start = route.event_range.start;
+        assert_eq!(route.validated_contexts[0].range, start + 8..start + 16);
+        let walk = walk_bounded_mixed_events(
+            &b,
+            MixedEventBounds {
+                event_range: route.event_range.clone(),
+            },
+            Default::default(),
+        )
+        .unwrap();
+        let MixedEventItem::Event(e) = &walk.items[1] else {
+            panic!()
+        };
+        let MixedEventKind::ContextMediatedNote(n) = &e.event else {
+            panic!()
+        };
+        assert_eq!(e.position, 10); // prior5 + leading2 + final3
+        assert_eq!(n.representation_range, start + 4..start + 22);
+        assert_eq!(n.note.duration.value, 7);
+        assert_eq!(n.context.payload.bytes, ZERO_CONTEXT);
+        let MixedEventItem::Event(cc) = &walk.items[0] else {
+            panic!()
+        };
+        let MixedEventKind::MidiController(c) = &cc.event else {
+            panic!()
+        };
+        assert_eq!(c.channel, 3);
+        let MixedEventItem::Event(last) = &walk.items[2] else {
+            panic!()
+        };
+        let MixedEventKind::Note(note) = &last.event else {
+            panic!()
+        };
+        assert_eq!(last.position, 11);
+        let handoff = [
+            DecodedExportEvent::from_midi_controller(cc.position, 0, c),
+            DecodedExportEvent::from_note_body(e.position, 1, &n.note),
+            DecodedExportEvent::from_note(last.position, 2, note),
+        ];
+        let adapted = adapt_track(
+            &handoff,
+            Some(ChannelAssignment {
+                channel: MidiChannel::new(channel).unwrap(),
+                provenance: ChannelAssignmentProvenance::ParsedRouting,
+            }),
+            TimingPolicy::Identity480,
+            PatchPolicy::StrictKnownOnly,
+        )
+        .unwrap();
+        let messages: Vec<_> = adapted
+            .scheduled_events
+            .iter()
+            .map(|s| (s.absolute_tick, serialize_channel_message(&s.message)))
+            .collect();
+        assert!(messages.contains(&(5, vec![0xb2, 1, 2])));
+        assert!(messages.contains(&(10, vec![0x90 + channel - 1, 63, 80])));
+        assert!(messages.contains(&(17, vec![0x80 + channel - 1, 63, 32])));
+        assert!(messages.contains(&(11, vec![0x90 + channel - 1, 64, 70])));
+    }
+}
+
+#[test]
+fn zero_context_preserves_old_forms_and_other_event_families() {
+    let mut events = zero_context_events(ZERO_CONTEXT);
+    events.extend([0, 0xff, 0x60, 7, 0x57, 0x7f, 0, 0x22, 0x22, 1, 2]);
+    events.extend(NOTE);
+    events.extend([0, 0xe0, 0, 64]);
+    events.extend([0, 0xff, 0x41, 5, 0, 1, 0, 7, 64]);
+    events.extend([0, 0xff, 0x7c, 7, 0, 0, 0, 0, 0, 0, 8]);
+    let route = result(&synthetic(3, &events, true)).unwrap();
+    assert_eq!(route.midi_channel, 16);
+    assert_eq!(
+        route
+            .validated_contexts
+            .iter()
+            .map(|c| c.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ContextKind::Ff60,
+            ContextKind::Ff60,
+            ContextKind::Controller,
+            ContextKind::Patch
+        ]
+    );
+    let mut ordinary = zero_context_events(&[0x57, 0x7f, 0, 0x22, 0x22, 1, 2]);
+    ordinary.drain(..4); // historical form does not require preceding MIDI Controller
+    assert!(result(&synthetic(3, &ordinary, true)).is_ok());
+}
+
+#[test]
+fn zero_context_malformed_lengths_prefixes_and_repetition_refuse() {
+    let candidates = [
+        vec![0x57, 0, 0, 0x92, 0x92, 1, 2],
+        vec![0x57, 0, 0, 0x92, 0x92, 1, 2, 3, 4],
+        vec![0x57, 1, 0, 0x92, 0x92, 1, 2, 3],
+        vec![0x57, 0, 0, 0x92, 0x91, 1, 2, 3],
+    ];
+    for context in candidates {
+        assert!(result(&synthetic(3, &zero_context_events(&context), true)).is_err());
+    }
+    let mut events = zero_context_events(ZERO_CONTEXT);
+    events.truncate(14);
+    assert!(matches!(
+        result(&synthetic(3, &events, true)),
+        Err(RoutingRefusal::IncompleteEventWalk(_))
+    ));
+}
+
+#[test]
+fn zero_context_is_not_authorized_for_other_compositions() {
+    let events = zero_context_events(ZERO_CONTEXT);
+    // No Controller, prior ordinary Note, or a second zero context: all refuse.
+    let mut prior_note = NOTE.to_vec();
+    prior_note.extend(&events);
+    let mut repeat = events.clone();
+    repeat.extend(&events[4..]);
+    for candidate in [events[4..].to_vec(), prior_note, repeat] {
+        assert!(matches!(
+            result(&synthetic(3, &candidate, true)),
+            Err(RoutingRefusal::ConflictingContext {
+                kind: ContextKind::Ff60,
+                ..
+            })
+        ));
+    }
+    // Double-context Note: first zero-prefix context still uses the shared guard.
+    let mut double = events[..16].to_vec();
+    double.extend([0, 0xff, 0x60, 7, 0x57, 0x7f, 0, 1, 1, 2, 3]);
+    double.extend(NOTE);
+    assert!(matches!(
+        result(&synthetic(3, &double, true)),
+        Err(RoutingRefusal::IncompleteEventWalk(_))
+    )); // existing double-context grammar requires lengths 6 then 7
+    let mut double = events[..4].to_vec();
+    double.extend([0, 0xff, 0x60, 6, 0x57, 0, 0, 1, 1, 2]);
+    double.extend([0, 0xff, 0x60, 7, 0x57, 0x7f, 0, 1, 1, 2, 3]);
+    double.extend(NOTE);
+    assert!(matches!(
+        result(&synthetic(3, &double, true)),
+        Err(RoutingRefusal::ConflictingContext {
+            kind: ContextKind::Ff60,
+            ..
+        })
+    ));
+    // Initial context/Patch/explicit Note cannot use the new single-Note exception.
+    let mut initial = vec![0, 0xff, 0x60, 8];
+    initial.extend(ZERO_CONTEXT);
+    initial.extend([0, 0xff, 0x7c, 7, 0, 0, 0, 0, 0, 0, 8]);
+    initial.extend(NOTE);
+    assert!(result(&synthetic(3, &initial, true)).is_err());
+}
+
+#[test]
+fn zero_context_never_bypasses_routing_refusals() {
+    let events = zero_context_events(ZERO_CONTEXT);
+    for (tag, index, offset, value) in [
+        (0x10, 1, 25, 2),
+        (0x10, 1, 26, 99),
+        (0x10, 1, 27, 16),
+        (0x2a, 0, 0, 0),
+    ] {
+        let mut b = synthetic(3, &events, true);
+        let p = payload(&b, tag, index);
+        b[p + offset] = value;
+        assert!(result(&b).is_err());
+    }
+    let mut b = synthetic(3, &events, true);
+    let l = label(&b);
+    b[l - 33] = 2;
+    assert_eq!(result(&b), Err(RoutingRefusal::UnsupportedAssociation));
+}

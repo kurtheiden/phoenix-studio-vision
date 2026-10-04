@@ -4,7 +4,7 @@
 //! and export authority. No filename, digest, or compatibility-profile lookup.
 
 use crate::mixed_event::{
-    walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+    walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind, MixedEventWalk,
 };
 use crate::patch::LocatedBytes;
 use crate::routing_evidence::{collect_routing_evidence, RoutingEvidence, RoutingEvidenceError};
@@ -229,7 +229,54 @@ fn resolve(
             "incomplete consumption".into(),
         ));
     }
+    let contexts = validate_bounded_routing_contexts(&walk, i)?;
+    let range = |r: crate::compatibility::ByteRange| r.start() as usize..r.end_exclusive() as usize;
+    Ok(BoundedRoutingResolution {
+        pair_ordinal: binding.pair_ordinal,
+        descriptor_range: descriptor.range.clone(),
+        label_range: label.range.clone(),
+        label_bytes: label.bytes.to_vec(),
+        association_range,
+        association_form,
+        first_slot: [0, i],
+        instrument_candidate: i,
+        table_count: table.len(),
+        type10_record_range: range(selected.framed.record_range),
+        type10_payload_range: range(selected.framed.payload_range),
+        h1_position: usize::from(i),
+        h2_position: matches[0],
+        table_wide_position_agreement: true,
+        selected_25: payload[25],
+        selected_26: payload[26],
+        selected_27: payload[27],
+        type2a_position: device_position,
+        type2a_record_range: range(device.framed.record_range),
+        device_name: device.name_bytes.clone().unwrap_or_default(),
+        midi_channel: payload[27] + 1,
+        event_range: bounds.event_range,
+        consumed_range: walk.consumed_range,
+        validated_contexts: contexts,
+    })
+}
+
+/// Applicability checks on a complete production-decoded event walk. Callers
+/// must already have established same-source ownership, bounds and routing;
+/// this helper does not resolve a channel or confer export/readiness authority.
+pub fn validate_bounded_routing_contexts(
+    walk: &MixedEventWalk<'_>,
+    i: u8,
+) -> Result<Vec<ValidatedContext>, RoutingRefusal> {
+    if i == 0 {
+        return Err(RoutingRefusal::UnsupportedNumericScope);
+    }
+    if walk.consumed_range != walk.event_range {
+        return Err(RoutingRefusal::IncompleteEventWalk(
+            "incomplete consumption".into(),
+        ));
+    }
     let mut contexts = Vec::new();
+    let mut controllers_only_before = true;
+    let mut saw_controller = false;
     for item in &walk.items {
         match item {
             MixedEventItem::Patch(p) => guard(
@@ -260,7 +307,26 @@ fn resolve(
                     guard(&mut contexts, ContextKind::Controller, &c.context, i)?
                 }
                 MixedEventKind::ContextMediatedNote(c) => {
-                    guard(&mut contexts, ContextKind::Ff60, &c.context.payload, i)?
+                    let payload = c.context.payload.bytes;
+                    // This exception applies only after source MIDI Controllers,
+                    // before any Note/context, with one eight-byte context and
+                    // an explicit Note. Other compositions use the strict guard.
+                    let zero_context = controllers_only_before
+                        && saw_controller
+                        && c.context.payload_length.value == 8
+                        && payload.len() == 8
+                        && payload.starts_with(&[0x57, 0, 0])
+                        && payload[3] == payload[4]
+                        && c.note.status.map(|s| s.value) == Some(0x90);
+                    if zero_context {
+                        contexts.push(ValidatedContext {
+                            kind: ContextKind::Ff60,
+                            range: c.context.payload.range.clone(),
+                            bytes: payload.to_vec(),
+                        });
+                    } else {
+                        guard(&mut contexts, ContextKind::Ff60, &c.context.payload, i)?;
+                    }
                 }
                 MixedEventKind::DoubleContextMediatedNote(c) => {
                     guard(
@@ -281,34 +347,12 @@ fn resolve(
                 | MixedEventKind::PitchBend { .. } => {}
             },
         }
+        let is_controller = matches!(item,
+            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::MidiController(_)));
+        controllers_only_before &= is_controller;
+        saw_controller |= is_controller;
     }
-    let range = |r: crate::compatibility::ByteRange| r.start() as usize..r.end_exclusive() as usize;
-    Ok(BoundedRoutingResolution {
-        pair_ordinal: binding.pair_ordinal,
-        descriptor_range: descriptor.range.clone(),
-        label_range: label.range.clone(),
-        label_bytes: label.bytes.to_vec(),
-        association_range,
-        association_form,
-        first_slot: [0, i],
-        instrument_candidate: i,
-        table_count: table.len(),
-        type10_record_range: range(selected.framed.record_range),
-        type10_payload_range: range(selected.framed.payload_range),
-        h1_position: usize::from(i),
-        h2_position: matches[0],
-        table_wide_position_agreement: true,
-        selected_25: payload[25],
-        selected_26: payload[26],
-        selected_27: payload[27],
-        type2a_position: device_position,
-        type2a_record_range: range(device.framed.record_range),
-        device_name: device.name_bytes.clone().unwrap_or_default(),
-        midi_channel: payload[27] + 1,
-        event_range: bounds.event_range,
-        consumed_range: walk.consumed_range,
-        validated_contexts: contexts,
-    })
+    Ok(contexts)
 }
 
 fn guard(
