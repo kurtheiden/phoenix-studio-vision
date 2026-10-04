@@ -14,6 +14,7 @@ fn fixture(labels: &[&[u8]], pairs: usize, marker: [u8; 2]) -> Vec<u8> {
     for (i, label) in labels.iter().enumerate() {
         let at = 8 + 121 + 120 * i;
         bytes[at..at + label.len()].copy_from_slice(label);
+        bytes[at - 39..at - 31].copy_from_slice(&[0x80, 0, 4, 0, 0, 4, 1, 0]);
     }
     record(&mut bytes, 7, &[0; 10]);
     for i in 0..pairs {
@@ -271,9 +272,46 @@ fn authorized_school_recovery_reach() {
     }
     eprintln!("{}", bridge.diagnostic_summary());
     assert_eq!(bridge.candidates.len(), 15);
-    assert_eq!(accepted, 8);
-    assert_eq!(associated, 103);
-    assert_eq!(matched, 102);
+    let h = bridge.candidates[7].association.as_ref().unwrap();
+    assert_eq!(
+        h.no_event_data
+            .iter()
+            .map(|t| t.slot.ordinal)
+            .collect::<Vec<_>>(),
+        vec![9, 10, 11, 12]
+    );
+    assert_eq!(
+        h.ordinary
+            .iter()
+            .map(|b| (b.slot.ordinal, b.local_pair_ordinal))
+            .collect::<Vec<_>>(),
+        vec![
+            (2, 2),
+            (3, 3),
+            (4, 4),
+            (5, 5),
+            (6, 6),
+            (7, 7),
+            (8, 8),
+            (13, 9)
+        ]
+    );
+    let m = bridge.candidates[12].association.as_ref().unwrap();
+    assert!(m.ordinary.is_empty());
+    assert_eq!(m.no_event_data.len(), 1);
+    assert_eq!(m.no_event_data[0].slot.ordinal, 2);
+    assert!(m.no_event_data[0].slot.label.bytes.is_empty());
+    assert!(matches!(
+        bridge.candidates[2].association,
+        Err(AssociationRefusal::UnsupportedTrailer)
+    ));
+    assert!(matches!(
+        bridge.candidates[3].association,
+        Err(AssociationRefusal::UnsupportedTrailer)
+    ));
+    assert_eq!(accepted, 12);
+    assert_eq!(associated, 129);
+    assert_eq!(matched, 128);
 }
 
 #[test]
@@ -414,4 +452,106 @@ fn authorized_school_event_meter() {
     }
     eprintln!("METER complete={complete}/102 excluded={excluded} errors={errors:?} families(Note,Patch,Controller,Pressure,Bend)={families:?} total={} full_sequences={full_sequences}/8",families.iter().sum::<usize>());
     assert_eq!(excluded, 1);
+}
+
+fn zero_state(bytes: &mut [u8], ordinary_ordinal: usize) {
+    let label = 8 + 121 + 120 * (ordinary_ordinal + 2);
+    bytes[label - 39..label - 31].copy_from_slice(&[0, 0, 4, 0, 0, 4, 0, 0]);
+}
+
+#[test]
+fn no_data_tracks_are_retained_and_do_not_shift_consuming_pair_order() {
+    let mut bytes = ordinary_fixture(&[b"First", b"Unused", b"Last"], 4);
+    zero_state(&mut bytes, 1);
+    let bridge = associate_project_120(&bytes).unwrap();
+    let sequence = bridge.candidates[0].association.as_ref().unwrap();
+    assert_eq!(sequence.ordinary.len(), 2);
+    assert_eq!(sequence.no_event_data.len(), 1);
+    assert_eq!(sequence.ordinary[0].slot.ordinal, 2);
+    assert_eq!(sequence.ordinary[0].local_pair_ordinal, 2);
+    assert_eq!(sequence.ordinary[1].slot.ordinal, 4);
+    assert_eq!(sequence.ordinary[1].local_pair_ordinal, 3);
+    let retained = &sequence.no_event_data[0];
+    assert_eq!(retained.slot.ordinal, 3);
+    assert_eq!(retained.slot.label.bytes, b"Unused");
+    assert_eq!(retained.state_context.bytes, [0, 0, 4, 0, 0, 4, 0, 0]);
+    assert_eq!(
+        &bytes[retained.state_context.range.clone()],
+        retained.state_context.bytes
+    );
+    assert_eq!(sequence.leading_special[0].slot.ordinal, 0);
+    assert_eq!(sequence.leading_special[1].slot.ordinal, 1);
+    assert!(parse_project_166(&bytes).is_err());
+    assert!(bridge
+        .diagnostic_details()
+        .iter()
+        .any(|d| d.contains("retained zero-event track")));
+}
+
+#[test]
+fn consecutive_and_all_no_data_tracks_remain_in_the_model() {
+    for remaining in [false, true] {
+        let mut bytes = ordinary_fixture(
+            &[b"", b"Unused", b"Remaining"],
+            if remaining { 3 } else { 2 },
+        );
+        zero_state(&mut bytes, 0);
+        zero_state(&mut bytes, 1);
+        if !remaining {
+            zero_state(&mut bytes, 2);
+        }
+        let bridge = associate_project_120(&bytes).unwrap();
+        let sequence = bridge.candidates[0].association.as_ref().unwrap();
+        assert_eq!(sequence.no_event_data.len(), if remaining { 2 } else { 3 });
+        assert_eq!(sequence.ordinary.len(), usize::from(remaining));
+        assert_eq!(sequence.no_event_data[0].slot.ordinal, 2);
+        assert!(sequence.no_event_data[0].slot.label.bytes.is_empty());
+        if remaining {
+            assert_eq!(sequence.ordinary[0].local_pair_ordinal, 2);
+        }
+    }
+}
+
+#[test]
+fn adjusted_cardinality_refuses_both_shortage_and_surplus() {
+    for pairs in [2, 4, 5] {
+        let mut bytes = ordinary_fixture(&[b"Unused", b"Present"], pairs);
+        zero_state(&mut bytes, 0);
+        assert_eq!(
+            associate_project_120(&bytes).unwrap().candidates[0]
+                .association
+                .as_ref()
+                .unwrap_err(),
+            &AssociationRefusal::Cardinality { slots: 3, pairs }
+        );
+    }
+}
+
+#[test]
+fn isolated_zero_byte_and_nearby_contexts_do_not_authorize_omission() {
+    let original = ordinary_fixture(&[b"Unused"], 2);
+    for changed in 1..8 {
+        let mut bytes = original.clone();
+        zero_state(&mut bytes, 0);
+        bytes[8 + 121 + 240 - 39 + changed] ^= 1;
+        assert!(matches!(
+            associate_project_120(&bytes).unwrap().candidates[0].association,
+            Err(AssociationRefusal::Cardinality { slots: 3, pairs: 2 })
+        ));
+    }
+}
+
+#[test]
+fn zero_state_specials_still_require_their_own_pairs() {
+    let mut bytes = ordinary_fixture(&[b"Unused"], 2);
+    zero_state(&mut bytes, 0);
+    for ordinal in 0..2 {
+        let label = 8 + 121 + 120 * ordinal;
+        bytes[label - 39..label - 31].copy_from_slice(&[0, 0, 4, 0, 0, 4, 0, 0]);
+    }
+    let bridge = associate_project_120(&bytes).unwrap();
+    let sequence = bridge.candidates[0].association.as_ref().unwrap();
+    assert_eq!(sequence.no_event_data.len(), 1);
+    assert_eq!(sequence.leading_special[0].slot.label.bytes, b"Meter Track");
+    assert_eq!(sequence.leading_special[1].slot.label.bytes, b"Tempo Track");
 }

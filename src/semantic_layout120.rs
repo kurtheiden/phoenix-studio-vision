@@ -69,6 +69,14 @@ pub(crate) struct OrdinaryBinding<'a> {
     pub existing_bounds_probe: Result<(), TrackEventBoundsError>,
 }
 
+/// Legitimate ordinary metadata slot with structurally established absent event data.
+/// This does not mean that all event-empty tracks have this state.
+#[derive(Debug)]
+pub(crate) struct NoEventDataTrack<'a> {
+    pub slot: Source120Slot<'a>,
+    pub state_context: LocatedBytes<'a>,
+}
+
 #[derive(Debug)]
 pub(crate) struct Source120SequenceAssociation<'a> {
     pub candidate_record_index: usize,
@@ -76,6 +84,8 @@ pub(crate) struct Source120SequenceAssociation<'a> {
     pub source_name: LocatedBytes<'a>,
     pub leading_special: [LeadingSpecialBinding<'a>; 2],
     pub ordinary: Vec<OrdinaryBinding<'a>>,
+    /// Retained zero-event tracks; merge by slot.ordinal to recover source order.
+    pub no_event_data: Vec<NoEventDataTrack<'a>>,
 }
 
 #[derive(Debug)]
@@ -110,6 +120,13 @@ impl Source120Bridge<'_> {
                             special.pair.primary.record_range, special.pair.secondary.record_range
                         ));
                     }
+                    for track in &sequence.no_event_data {
+                        details.push(format!(
+                            "Ordinary unit {}: view {:?}, label {:?}, ZERO-STATE context {:?} {:?}; retained zero-event track without a pair (no export authority)",
+                            track.slot.ordinal, track.slot.view_range, track.slot.label.range,
+                            track.state_context.range, track.state_context.bytes
+                        ));
+                    }
                     for item in &sequence.ordinary {
                         details.push(format!(
                             "Ordinary unit {}: view {:?}, label {:?}, local pair {} {:?}/{:?}; existing-bounds probe {:?} (no source event authority)",
@@ -129,10 +146,12 @@ impl Source120Bridge<'_> {
         let mut tracks = 0;
         let mut matched = 0;
         let mut unsupported = 0;
+        let mut no_event_data = 0;
         for candidate in &self.candidates {
             if let Ok(sequence) = &candidate.association {
                 sequences += 1;
                 tracks += sequence.ordinary.len();
+                no_event_data += sequence.no_event_data.len();
                 for item in &sequence.ordinary {
                     if item.existing_bounds_probe.is_ok() {
                         matched += 1;
@@ -142,7 +161,7 @@ impl Source120Bridge<'_> {
                 }
             }
         }
-        format!("Incomplete source-layout semantic bridge: {sequences} sequence associations, {tracks} ordinary pair bindings; existing event-bound probes matched {matched}, refused {unsupported}; {} candidate associations refused. Source event/conductor authority, readiness and export capability remain unestablished.", self.candidates.len() - sequences)
+        format!("Incomplete source-layout semantic bridge: {sequences} sequence associations, {tracks} ordinary pair bindings, {no_event_data} retained zero-event tracks without pairs; existing event-bound probes matched {matched}, refused {unsupported}; {} candidate associations refused. Source event/conductor authority, readiness and export capability remain unestablished.", self.candidates.len() - sequences)
     }
 }
 
@@ -228,12 +247,6 @@ fn associate_candidate<'a>(
         cursor = cursor.checked_add(2).ok_or_else(bounds)?;
     };
     let count = usize::from(candidate.count.value);
-    if pairs.len() != count {
-        return Err(AssociationRefusal::Cardinality {
-            slots: count,
-            pairs: pairs.len(),
-        });
-    }
     let start = candidate.candidate_range.start;
     let mut slots = Vec::new();
     for ordinal in 0..count {
@@ -266,20 +279,55 @@ fn associate_candidate<'a>(
     if slots[0].label.bytes != b"Meter Track" || slots[1].label.bytes != b"Tempo Track" {
         return Err(AssociationRefusal::SpecialPositions);
     }
-    let mut bound = slots.into_iter().zip(pairs);
-    let (slot0, pair0) = bound.next().ok_or_else(bounds)?;
-    let (slot1, pair1) = bound.next().ok_or_else(bounds)?;
-    let ordinary = bound
-        .map(|(slot, pair)| {
+    // EXP039: exact observed ordinary ZERO-STATE composition only. Names and
+    // Instrument assignments are not presence predicates; specials never skip.
+    let mut states = Vec::new();
+    for slot in slots.iter().skip(2) {
+        let state_start = slot.label.range.start.checked_sub(39).ok_or_else(bounds)?;
+        let state_end = state_start.checked_add(8).ok_or_else(bounds)?;
+        if state_start < start || state_end > candidate.candidate_range.end {
+            return Err(AssociationRefusal::Bounds);
+        }
+        let context = bytes.get(state_start..state_end).ok_or_else(bounds)?;
+        states.push(
+            (context == [0, 0, 4, 0, 0, 4, 0, 0]).then_some(LocatedBytes {
+                bytes: context,
+                range: state_start..state_end,
+            }),
+        );
+    }
+    let consuming_count = count - states.iter().filter(|state| state.is_some()).count();
+    if pairs.len() != consuming_count {
+        return Err(AssociationRefusal::Cardinality {
+            slots: consuming_count,
+            pairs: pairs.len(),
+        });
+    }
+    let mut slots = slots.into_iter();
+    let mut pairs = pairs.into_iter().enumerate();
+    let slot0 = slots.next().ok_or_else(bounds)?;
+    let slot1 = slots.next().ok_or_else(bounds)?;
+    let (_, pair0) = pairs.next().ok_or_else(bounds)?;
+    let (_, pair1) = pairs.next().ok_or_else(bounds)?;
+    let mut ordinary = Vec::new();
+    let mut no_event_data = Vec::new();
+    for (slot, state) in slots.zip(states) {
+        if let Some(state_context) = state {
+            no_event_data.push(NoEventDataTrack {
+                slot,
+                state_context,
+            });
+        } else {
+            let (local_pair_ordinal, pair) = pairs.next().ok_or_else(bounds)?;
             let existing_bounds_probe = pair.probe_existing_bounds();
-            OrdinaryBinding {
-                local_pair_ordinal: slot.ordinal,
+            ordinary.push(OrdinaryBinding {
+                local_pair_ordinal,
                 slot,
                 pair,
                 existing_bounds_probe,
-            }
-        })
-        .collect();
+            });
+        }
+    }
     Ok(Source120SequenceAssociation {
         candidate_record_index: candidate.record_index,
         sequence_range: start..terminal.record_range.end,
@@ -295,6 +343,7 @@ fn associate_candidate<'a>(
             },
         ],
         ordinary,
+        no_event_data,
     })
 }
 
