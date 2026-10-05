@@ -1011,13 +1011,30 @@ fn decode_double_context_mediated_note<'a>(
     let second_context_start = inter_context_timing.range.end;
     let (second_context, after_second_context) =
         decode_ff60_context(bytes, second_context_start, event_end, cursor)?;
-    if second_context.payload_length.value != 7 {
+    if !matches!(second_context.payload_length.value, 7 | 8) {
         return Err(MixedEventWalkError::ContextLengthMismatch {
             cursor,
             offset: second_context.payload_length.offset,
             expected: 7,
             observed: second_context.payload_length.value,
         });
+    }
+
+    // The evidenced 6-to-8 composition requires both established routing-context
+    // prefixes. Keep the earlier 6-to-7 decoder contract unchanged; channel
+    // ownership is still resolved independently by the routing layer.
+    if second_context.payload_length.value == 8 {
+        for context in [&first_context, &second_context] {
+            for (index, expected) in [0x57, 0x7f, 0x00].into_iter().enumerate() {
+                if context.payload.bytes[index] != expected {
+                    return Err(MixedEventWalkError::PatchContextMismatch {
+                        cursor,
+                        offset: context.payload.range.start + index,
+                        observed: Some(context.payload.bytes[index]),
+                    });
+                }
+            }
+        }
     }
 
     let final_timing = located_vlq(bytes, after_second_context, event_end, cursor)?;

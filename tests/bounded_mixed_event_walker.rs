@@ -305,7 +305,7 @@ fn synthetic_double_context(first_length: u8, second_length: u8) -> Vec<u8> {
 }
 
 #[test]
-fn double_context_requires_exact_six_then_seven_lengths() {
+fn double_context_rejects_unsupported_context_lengths() {
     for (first, second, expected, observed) in [(5, 7, 6, 5), (6, 6, 7, 6)] {
         assert!(matches!(
             walk(&synthetic_double_context(first, second)),
@@ -1841,5 +1841,124 @@ fn source_controllers_refuse_truncation_invalid_data_and_other_statuses() {
             }
         ),
         Err(MixedEventWalkError::PositionOverflow { .. })
+    ));
+}
+
+fn six_to_eight_context_note() -> Vec<u8> {
+    vec![
+        2, 0xff, 0x60, 6, 0x57, 0x7f, 0, 0x82, 0x91, 0x42, 3, 0xff, 0x60, 8, 0x57, 0x7f, 0, 0x32,
+        0x32, 0x81, 0xa2, 0x11, 4, 0x90, 60, 65, 33, 0x81, 1,
+    ]
+}
+
+#[test]
+fn six_to_eight_context_note_preserves_timing_properties_and_absolute_provenance() {
+    let representation = six_to_eight_context_note();
+    let mut bytes = vec![0xaa, 0xbb];
+    bytes.extend(&representation);
+    let result = walk_bounded_mixed_events(
+        &bytes,
+        MixedEventBounds {
+            event_range: 2..bytes.len(),
+        },
+        MixedEventTimingBasis {
+            previous_event_position: 100,
+        },
+    )
+    .unwrap();
+    assert_eq!(result.consumed_range, 2..31);
+    assert_eq!(result.logical_event_count(), 1);
+    let MixedEventItem::Event(e) = &result.items[0] else {
+        panic!()
+    };
+    let MixedEventKind::DoubleContextMediatedNote(n) = &e.event else {
+        panic!()
+    };
+    assert_eq!(e.position, 109);
+    assert_eq!(n.representation_range, 2..31);
+    assert_eq!(
+        [
+            n.leading_timing.value,
+            n.inter_context_timing.value,
+            n.final_timing.value
+        ],
+        [2, 3, 4]
+    );
+    assert_eq!(n.leading_timing.range, 2..3);
+    assert_eq!(n.inter_context_timing.range, 12..13);
+    assert_eq!(n.final_timing.range, 24..25);
+    assert_eq!(n.first_context.range, 3..12);
+    assert_eq!(n.first_context.payload.range, 6..12);
+    assert_eq!(n.first_context.payload.bytes, &representation[4..10]);
+    assert_eq!(n.second_context.range, 13..24);
+    assert_eq!(n.second_context.payload.range, 16..24);
+    assert_eq!(n.second_context.payload.bytes, &representation[14..22]);
+    assert_eq!(n.note.representation_range, 25..31);
+    assert_eq!(
+        (
+            n.note.pitch.value,
+            n.note.attack_velocity.value,
+            n.note.release_velocity.value,
+            n.note.duration.value
+        ),
+        (60, 65, 33, 129)
+    );
+}
+
+#[test]
+fn six_to_eight_context_note_keeps_bounded_refusals() {
+    let valid = six_to_eight_context_note();
+    for end in 1..valid.len() {
+        assert!(walk(&valid[..end]).is_err(), "truncated at {end}");
+    }
+    for (offset, value) in [
+        (3, 7),
+        (13, 9),
+        (13, 6),
+        (4, 0),
+        (5, 0),
+        (14, 0),
+        (15, 0),
+        (12, 0x61),
+        (23, 0x91),
+        (24, 0x80),
+        (25, 0x80),
+        (26, 0x80),
+    ] {
+        let mut bytes = valid.clone();
+        bytes[offset] = value;
+        assert!(walk(&bytes).is_err(), "mutation at {offset}");
+    }
+    for timing in [0..1, 10..11, 22..23] {
+        let mut bytes = valid.clone();
+        bytes.splice(timing, [0x81, 0x81, 0x81, 0x81]);
+        assert!(walk(&bytes).is_err());
+    }
+    let mut extra = valid.clone();
+    extra.splice(23..23, [0xff, 0x60, 6, 0x57, 0x7f, 0, 1, 2, 3, 0]);
+    assert!(walk(&extra).is_err());
+    let mut unknown_suffix = valid.clone();
+    unknown_suffix.extend([0, 0xf0]);
+    assert!(walk(&unknown_suffix).is_err());
+    assert!(matches!(
+        walk_bounded_mixed_events(
+            &valid,
+            MixedEventBounds {
+                event_range: 0..valid.len()
+            },
+            MixedEventTimingBasis {
+                previous_event_position: u32::MAX
+            }
+        ),
+        Err(MixedEventWalkError::PositionOverflow { .. })
+    ));
+    // The different first-context-seven composition is still outside the rule.
+    assert!(matches!(
+        walk(&synthetic_double_context(7, 7)),
+        Err(MixedEventWalkError::ContextLengthMismatch {
+            expected: 6,
+            observed: 7,
+            ..
+        })
     ));
 }

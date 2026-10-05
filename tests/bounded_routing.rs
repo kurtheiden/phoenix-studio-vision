@@ -725,3 +725,152 @@ fn zero_context_never_bypasses_routing_refusals() {
     b[l - 33] = 2;
     assert_eq!(result(&b), Err(RoutingRefusal::UnsupportedAssociation));
 }
+
+fn double_context_events(second_length: u8) -> Vec<u8> {
+    let mut events = vec![
+        2,
+        0xff,
+        0x60,
+        6,
+        0x57,
+        0x7f,
+        0,
+        0x83,
+        0x82,
+        1,
+        3,
+        0xff,
+        0x60,
+        second_length,
+    ];
+    events.extend([0x57, 0x7f, 0, 0x41, 0x41]);
+    events.extend(std::iter::repeat(0x81).take(usize::from(second_length) - 5));
+    events.extend([4, 0x90, 60, 65, 33, 0x81, 1, 0, 61, 70, 34, 3]);
+    events
+}
+
+#[test]
+fn double_context_six_to_seven_or_eight_keeps_resolved_channels_and_source_order() {
+    use phoenix::midi_export::{
+        adapt_track, ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent,
+        PatchPolicy, TimingPolicy,
+    };
+    use phoenix::mixed_event::{
+        walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+    };
+    use phoenix::smf::{serialize_named_musical_track_with_note_provenance, MidiChannel};
+    for second_length in [7, 8] {
+        for (channel, f) in [(5, true), (12, false)] {
+            let events = double_context_events(second_length);
+            let mut b = synthetic(3, &events, f);
+            let row = payload(&b, 0x10, 1);
+            b[row + 27] = channel - 1;
+            let route = result(&b).unwrap();
+            assert_eq!(route.midi_channel, channel);
+            assert_eq!(route.validated_contexts.len(), 2);
+            assert_eq!(route.validated_contexts[0].bytes, events[4..10]);
+            assert_eq!(
+                route.validated_contexts[1].bytes,
+                events[14..14 + usize::from(second_length)]
+            );
+            assert_eq!(
+                route.validated_contexts[0].range,
+                route.event_range.start + 4..route.event_range.start + 10
+            );
+            let w = walk_bounded_mixed_events(
+                &b,
+                MixedEventBounds {
+                    event_range: route.event_range.clone(),
+                },
+                Default::default(),
+            )
+            .unwrap();
+            let MixedEventItem::Event(first) = &w.items[0] else {
+                panic!()
+            };
+            let MixedEventKind::DoubleContextMediatedNote(n) = &first.event else {
+                panic!()
+            };
+            let MixedEventItem::Event(second) = &w.items[1] else {
+                panic!()
+            };
+            let MixedEventKind::Note(next) = &second.event else {
+                panic!()
+            };
+            assert_eq!((first.position, second.position), (9, 9));
+            let handoff = [
+                DecodedExportEvent::from_note_body(first.position, 0, &n.note),
+                DecodedExportEvent::from_note(second.position, 1, next),
+            ];
+            let adapted = adapt_track(
+                &handoff,
+                Some(ChannelAssignment {
+                    channel: MidiChannel::new(route.midi_channel).unwrap(),
+                    provenance: ChannelAssignmentProvenance::ParsedRouting,
+                }),
+                TimingPolicy::Identity480,
+                PatchPolicy::StrictKnownOnly,
+            )
+            .unwrap();
+            let serialized = serialize_named_musical_track_with_note_provenance(
+                b"Track",
+                &adapted.scheduled_events,
+                &adapted.note_provenance,
+            )
+            .unwrap();
+            // Equal-tick attacks retain source order; release velocity and duration
+            // remain source-derived and use the independently resolved channel.
+            assert!(serialized.as_bytes().ends_with(&[
+                9,
+                0x90 + channel - 1,
+                60,
+                65,
+                0,
+                0x90 + channel - 1,
+                61,
+                70,
+                3,
+                0x80 + channel - 1,
+                61,
+                34,
+                126,
+                0x80 + channel - 1,
+                60,
+                33,
+                0,
+                0xff,
+                0x2f,
+                0
+            ]));
+        }
+    }
+}
+
+#[test]
+fn six_to_eight_keeps_routing_ownership_and_coverage_refusals() {
+    let events = double_context_events(8);
+    let mut b = synthetic(3, &events, true);
+    let l = label(&b);
+    b[l - 31] = 0;
+    assert_eq!(result(&b), Err(RoutingRefusal::UnsupportedNumericScope));
+    let mut b = synthetic(3, &events, true);
+    let row = payload(&b, 0x10, 1);
+    b[row + 27] = 16;
+    assert_eq!(result(&b), Err(RoutingRefusal::InvalidChannel));
+    let mut b = synthetic(3, &events, true);
+    let row = payload(&b, 0x10, 0);
+    b[row + 25] = 1;
+    assert!(result(&b).is_err());
+    let mut b = synthetic(3, &events, true);
+    let p = payload(&b, 0x29, 2);
+    b.drain(p - 5..p);
+    let p = payload(&b, 2, 2);
+    b.drain(p - 5..p + 14 + events.len() + 7);
+    assert_eq!(result(&b), Err(RoutingRefusal::AmbiguousOwnership));
+    let mut incomplete = events.clone();
+    incomplete.extend([0, 0xf0]);
+    assert!(matches!(
+        result(&synthetic(3, &incomplete, true)),
+        Err(RoutingRefusal::IncompleteEventWalk(_))
+    ));
+}

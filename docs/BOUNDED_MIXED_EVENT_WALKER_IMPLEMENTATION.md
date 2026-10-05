@@ -5,9 +5,10 @@ walker for event regions supplied under the authenticated 166-byte descriptor
 profile. It supports only Note, Patch, ordinary Controller, Channel Pressure,
 Pitch Bend, the established direct/one-`ff 60` Patch transition, the established
 non-Patch single-`ff 60` Note-entry form, and the authenticated fixed
-double-context form whose opaque payload lengths are exactly `6` then `7`. It
-also supports the authenticated Bells form in which a length-bounded Patch core
-is followed by exactly one ordinary Controller and one direct explicit Note.
+double-context form with opaque payload lengths `6` then `7`, plus the bounded
+`6` then `8` variant described below. It also supports the authenticated Bells
+form in which a length-bounded Patch core is followed by exactly one ordinary
+Controller and one direct explicit Note.
 
 It does not discover track bounds, parse the seven-byte track tail, support the
 older 120-byte profile, scan for event signatures, recover malformed input, or
@@ -89,10 +90,11 @@ high-bit data, and cursor non-progress. The API returns the complete walk or
 
 No branch searches for a later status/tag, probes another decoder, backtracks,
 or resynchronizes. Tests place an unsupported `ff` branch at the current cursor
-and a valid-looking Note later; the original tag offset is returned. The sole
-supported repeated form is exactly length `6`, timing, length `7`, timing, and
-a direct explicit Note. All other repeated `ff 60` syntax is rejected at the
-current record rather than recovered.
+and a valid-looking Note later; the original tag offset is returned. Supported
+repeated forms have exactly length `6`, timing, length `7` or the evidenced
+length `8`, timing, and a direct explicit Note. The new `6`-then-`8` variant
+additionally requires both context payloads to start `57 7f 00`. All other
+repeated `ff 60` syntax is rejected at the current record rather than recovered.
 The new branch likewise rejects `ff 60` after Controller, multiple Controllers,
 malformed current records, and valid-looking later signatures without scanning
 or resynchronization.
@@ -170,3 +172,63 @@ compatibility/readiness, and general routing remain separate unresolved work.
 
 Resolve Bells Patch translation and inclusion policy only through separate
 evidence-gated work; do not broaden the mixed-event grammar.
+
+# Bounded 6-to-8 double-context Note extension
+
+The existing general double-context path now supports a first context of exactly
+six bytes followed by a second context of exactly eight bytes. For this new
+variant, both length-framed `ff 60` payloads must start `57 7f 00`; their remaining
+bytes stay opaque. The immediate successor must be the existing explicit `90`
+Note body. Existing `6`-then-`7` acceptance and timing remain unchanged.
+
+The evidence review at `7cf6ba27e29b8b7efe0ca0ed947a00b17a43fca4` found one
+matching refused instance in authenticated SCHOOL PROJECTS. The same Track
+already contained an accepted `6`-then-`7` double-context entry with identical
+first payload, intervening/final deltas and Note properties, and an accepted
+single eight-byte context. Complete sequential accounting establishes 259 Notes
+plus ten contexts against the raw count of 269. Existing authenticated Bells
+Track 6 evidence independently supports the reused three-delta timing arithmetic;
+all 182 attacks/releases, including three supported double-context Notes, match
+its native reference. This is structural evidence for the bounded extension,
+not a claim of native Wind ensemble playback equivalence.
+
+The implementation reuses checked addition of the leading, intervening and
+final delta VLQs. It preserves both contexts, tags, declared lengths, exact
+source bytes/ranges and all timing components in `DoubleContextMediatedNote`.
+Pitch, attack/release velocities and duration come from the existing Note body.
+No context semantics, musical events or channel values are invented. Channel
+resolution still requires complete same-source ownership and the existing
+Instrument/table/device/context guards; decoding alone does not authorize export.
+
+Malformed/truncated framing, unsupported lengths, wrong prefixes for the new
+variant, extra contexts, missing or alternate-family immediate successors,
+invalid Note properties/duration, invalid timing/overflow, incomplete subsequent
+coverage, unresolved ownership/routing and unsafe source order remain refused.
+The first-context-seven shape currently refused in SCHOOL #15 is explicitly
+outside this rule. No project name, ordinal, hash, source offset, Track name or
+opaque-payload suffix is an acceptance predicate.
+
+The current complete bounded SCHOOL pipeline passes source #10 Wind ensemble:
+all 19 ordinary Tracks retained, 17 complete event-bearing Tracks and two paired
+empty regions; 1,178 logical events (1,166 Notes, one source Controller, eleven
+Patches). Clarinet's entire event region consumes exactly as 259 Notes and ten
+retained contexts. Its new Note has tick 112,501, pitch 69, attack velocity 88,
+release velocity 64, duration 80 and resolved channel 5. Conductor, routing,
+Patch/bank translation, source order, sequence terminal and serialization pass.
+
+Independent Format-1/480-PPQN SMF readback verifies all 1,166 attacks/releases,
+six Control Changes (one source Controller plus five Patch CC0 messages), eleven
+Program Changes, conductor events, channels/timing/order and Track/EOT bounds.
+Output is 10,862 bytes, SHA-256
+`0c6bd6e3b9c9ab272dcee6fe9d6479062495ca23db7eb5916ead5325fcb665b6`.
+SCHOOL exportability increases from seven to eight of fifteen. The prior seven
+verified artifacts remain byte-identical; all other refusal inventories remain
+unchanged, including #15's different context form. The verified listening artifact is
+`/Users/kurtheiden/Documents/Phoenix Research/Experimental MIDI Recovery/SCHOOL PROJECTS/SCHOOL - Wind ensemble.mid`.
+Human listening of this new artifact has not yet been recorded.
+
+Focused tests cover both supported lengths, independent F/Z channels, timing,
+Note properties, absolute context provenance and equal-tick source order, plus
+malformed/truncated contexts/Notes, wrong prefixes/lengths, extra layers,
+unsupported suffixes, timing errors/overflow, unresolved/ambiguous routing,
+ownership shortage and the excluded first-context-seven form.
