@@ -130,3 +130,44 @@ uncertainty may be reported diagnostically rather than automatically blocking
 recovery. Uncertainty that overlaps or could plausibly contain musical event
 data remains fail-closed. This result does not justify broader relaxation of
 recovery checks beyond that evidence.
+
+
+## Sequence H — complete start-to-finish listening validation
+
+**Human listening result: PASS.** At recovery checkpoint
+`15697e452d949ef46efc9cbcfd62036045cb108b`, the owner's exact observation was:
+
+> Well it plays from start to finish. It's very sloppy but I don't remember this
+> piece and it's entirely possible, I'd even say likely, that I was just sloppily
+> writing down musical ideas when I wrote this. I would not say there are any
+> errors in the export.
+
+Complete start-to-finish playback passed, and the owner identified no export
+errors by listening. Musical/performance sloppiness was observed; the owner
+believes it likely reflects the original performance/compositional material
+rather than a Phoenix export defect. This is the owner's interpretation, not
+independent proof of source quality or historical authorship. Historical timbre
+reconstruction is not established, and exact equivalence to original Studio
+Vision playback is not claimed.
+
+Validated artifact:
+`/Users/kurtheiden/Documents/Phoenix Research/Experimental MIDI Recovery/SCHOOL PROJECTS/SCHOOL - Sequence H.mid`.
+Size 2,857 bytes; SHA-256
+`b7b0d39da264919f273e36886eae4913a5ff86dc8d6122a9576ca96c31935cc5`.
+The authenticated SCHOOL PROJECTS source remains 343,875 bytes, SHA-256
+`bfd4fa1208e2cd884ec51ccfb1131d5c02723d7c90acafc98bd89597e1a20331`.
+
+Mechanical validation preceded listening: Format 1, 480 PPQN, conductor plus
+all 12 ordinary Tracks, with eight completely decoded event-bearing Tracks and
+four legitimate no-event-data Tracks retained. The recovery contains 284 logical
+events (280 Notes and four Patches), including saved-muted material. Fourteen
+decoded contexts account for the raw count difference without inventing musical
+events. All attacks/releases, bank/Program messages, timing, channels, source
+order and MIDI boundaries match the established source handoff. The four CC0/
+Program pairs also match the untouched native Sequence H export; no CC32 is
+synthesized. Repeated-fe terminal bytes remain uninterpreted non-event diagnostics.
+See [the focused terminal verification record](NON_EVENT_TERMINAL_DIAGNOSTIC.md).
+
+This validates practical musical recovery for this Sequence within the measured
+scope. It does not establish universal Patch/bank semantics, original Instrument
+sounds, exact historical hardware settings or meanings of terminal bytes.
