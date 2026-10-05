@@ -23,6 +23,9 @@ pub struct TerminalDiagnostic {
     pub source_bytes: Vec<u8>,
 }
 impl TerminalDiagnostic {
+    pub fn classification(&self) -> &'static str {
+        "UNINTERPRETED NON-EVENT TERMINAL MATERIAL"
+    }
     pub fn message(&self) -> &'static str {
         "Uninterpreted terminal material remains outside recovered MIDI event data."
     }
@@ -31,8 +34,10 @@ impl TerminalDiagnostic {
 /// Assess the evidenced sequence/type07/paired-record/type00 neighborhood.
 /// `recovered_records` must be the complete conductor and ordinary paired-record
 /// ranges in source order, supplied only after their musical gates pass.
-/// Nonempty all-ff terminals retain existing behavior. An ff-filled terminal
-/// with one internal fe and trailing ff is accepted with retained provenance.
+/// Nonempty all-ff terminals retain existing behavior. Diagnostic forms are
+/// ff+ fe ff*, or exactly two zero bytes followed by ff+ fe ff+.
+/// The fe may terminate only the unprefixed form. These are whole-payload
+/// predicates, not permission to ignore an arbitrary post-event suffix.
 /// This does not assign any semantic meaning to those bytes.
 pub fn assess_terminal_coverage(
     bytes: &[u8],
@@ -84,13 +89,18 @@ pub fn assess_terminal_coverage(
     if !payload.is_empty() && payload.iter().all(|v| *v == 0xff) {
         return Ok(None);
     }
-    let deviations: Vec<_> = payload
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| **v != 0xff)
-        .collect();
-    if !matches!(deviations.as_slice(), [(i, v)] if **v == 0xfe && *i > 0 && *i + 1 < payload.len())
-    {
+    let (prefixed, body) = match payload.strip_prefix(&[0, 0]) {
+        Some(body) => (true, body),
+        None => (false, payload),
+    };
+    let deviation = body.iter().position(|v| *v != 0xff);
+    let supported = deviation.is_some_and(|i| {
+        i > 0
+            && body[i] == 0xfe
+            && (!prefixed || i + 1 < body.len())
+            && body[i + 1..].iter().all(|v| *v == 0xff)
+    });
+    if !supported {
         return Err(TerminalRefusal::UnsupportedMaterial);
     }
     Ok(Some(TerminalDiagnostic {
