@@ -3,6 +3,7 @@
 pub mod analysis;
 pub mod app_contract;
 pub mod app_service;
+pub mod authority120;
 pub mod bounded_conductor;
 pub mod bounded_multi_patch;
 pub mod bounded_patch_translation;
