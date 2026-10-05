@@ -171,3 +171,56 @@ See [the focused terminal verification record](NON_EVENT_TERMINAL_DIAGNOSTIC.md)
 This validates practical musical recovery for this Sequence within the measured
 scope. It does not establish universal Patch/bank semantics, original Instrument
 sounds, exact historical hardware settings or meanings of terminal bytes.
+
+## Wind ensemble (#10) — listening and owner native-export comparison
+
+**Human listening result: PASS.** At recovery checkpoint
+`25d9b2dd2eb232897c449d7464ad535e6861f290`, the Phoenix MIDI opened successfully,
+played from beginning to end and ended without failures. The owner initially
+reported badly out-of-key musical parts, particularly Track 1, Track 2 and
+Clarinet. This prompted a saved-mute correlation rather than an assumption that
+Phoenix had introduced a musical error.
+
+The bounded source-state correlation found ordinary Tracks 1 and 2 saved
+mute-ON; their 18 and six Notes were intentionally retained in the complete
+recovery MIDI. Clarinet is ordinary Track 5 (source metadata slot 6), or SMF
+Track 6 when the conductor is counted. It is saved mute-OFF, with all 259 Notes
+present. Its newly supported 6-to-8 double-context Note remains mechanically
+correct: tick 112,501, pitch 69, attack velocity 88, release velocity 64,
+duration 80 and channel 5. Saved state alone therefore only partially explained
+the initial listening concern; it did not prove a historical key change or why
+any Track had been muted.
+
+The owner then listened to Studio Vision's own MIDI export of the same Sequence
+and concluded:
+
+> Confirmed. It was just a shoddy piece of writing on my part. Maybe I was drunk.
+
+The owner comparison confirms that Studio Vision's own export exhibits the
+questionable musical writing. Within this listening comparison, the questioned
+musical material is source material rather than an error introduced by Phoenix;
+no Phoenix export error was identified. The final sentence is preserved only as
+a humorous owner quotation, not as a technical or provenance claim. The native
+comparison is an owner listening observation, not an independently measured
+byte-equivalence result. Historical timbre reconstruction is not established,
+and exact byte equivalence to Studio Vision's MIDI is not implied.
+
+Validated Phoenix artifact:
+`/Users/kurtheiden/Documents/Phoenix Research/Experimental MIDI Recovery/SCHOOL PROJECTS/SCHOOL - Wind ensemble.mid`.
+Size 10,862 bytes; SHA-256
+`0c6bd6e3b9c9ab272dcee6fe9d6479062495ca23db7eb5916ead5325fcb665b6`.
+Authentic SCHOOL PROJECTS remains 343,875 bytes; SHA-256
+`bfd4fa1208e2cd884ec51ccfb1131d5c02723d7c90acafc98bd89597e1a20331`.
+
+Independent mechanical readback validates Format 1, 480 PPQN, conductor plus
+all 19 ordinary Tracks, and the complete source handoff: 1,178 logical events
+(1,166 Notes, one source Controller and eleven Patches), including the established
+bank-message expansions. Clarinet's raw count of 269 is fully accounted for by
+259 Notes and ten retained contexts. All attacks/releases, timing, channels,
+Programs/banks, source order and Track/EOT boundaries pass. See
+[the focused implementation record](BOUNDED_MIXED_EVENT_WALKER_IMPLEMENTATION.md).
+
+This validation illustrates the distinction between **complete recovery**, which
+can include saved-muted historical material, and **saved playback state**, which
+would suppress saved-muted Tracks. Current preservation behavior is unchanged;
+no UI or export-policy change is implemented or authorized by this record.
