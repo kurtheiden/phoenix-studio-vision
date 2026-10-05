@@ -1,4 +1,4 @@
-//! Complete compact initial conductor coverage, without readiness/export authority.
+//! Complete bounded initial conductor coverage, without readiness/export authority.
 //!
 //! Callers establish same-source sequence ownership of the four supplied record
 //! ranges. No scanning, sequence discovery, opaque-context translation or defaults.
@@ -29,13 +29,21 @@ pub struct InitialKey {
     pub minor: bool,
 }
 
+/// Bounded non-event envelope bytes, retained without assigning semantics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConductorEnvelopeContext {
+    pub source_range: Range<usize>,
+    pub source_bytes: Vec<u8>,
+}
+
 #[derive(Clone, Debug)]
 pub struct CompactConductor {
     tempo: InitialTempoEvent,
     meter: InitialMeterEvent,
-    key: InitialKey,
+    key: Option<InitialKey>,
     records: [Range<usize>; 4],
     opaque_context: [Vec<u8>; 2],
+    envelope_context: Vec<ConductorEnvelopeContext>,
 }
 impl CompactConductor {
     pub fn tempo(&self) -> &InitialTempoEvent {
@@ -44,14 +52,18 @@ impl CompactConductor {
     pub fn meter(&self) -> &InitialMeterEvent {
         &self.meter
     }
-    pub fn key(&self) -> &InitialKey {
-        &self.key
+    /// No Key event is synthesized for the Meter-only initial form.
+    pub fn key(&self) -> Option<&InitialKey> {
+        self.key.as_ref()
     }
     pub fn record_ranges(&self) -> &[Range<usize>; 4] {
         &self.records
     }
     pub fn opaque_context(&self) -> &[Vec<u8>; 2] {
         &self.opaque_context
+    }
+    pub fn envelope_context(&self) -> &[ConductorEnvelopeContext] {
+        &self.envelope_context
     }
     pub fn adapt(&self, name: &[u8]) -> Result<ConductorResult, ConductorRefusal> {
         let m = &self.meter;
@@ -99,23 +111,78 @@ pub fn decode_compact_conductor(
     }
     let meter = records[0];
     let tempo = records[2];
-    check_pair(meter.payload.bytes, records[1].payload.bytes, 2, 14, 20, 8)?;
-    check_pair(tempo.payload.bytes, records[3].payload.bytes, 1, 7, 14, 7)?;
     let p = meter.payload.bytes;
-    if p[14..18] != [0, 0xff, 0x59, 2] {
-        return Err(ConductorRefusal::Key);
-    }
-    let accidentals = p[18] as i8;
-    if !(-7..=7).contains(&accidentals) || p[19] > 1 {
-        return Err(ConductorRefusal::Key);
-    }
+    // Two complete layouts, selected by exact payload extent, never by scanning
+    // for a recognizable event or by accepting a prefix of a larger map.
+    let with_key = match p.len() {
+        35 => true,
+        38 => false,
+        _ => return Err(ConductorRefusal::Envelope),
+    };
+    let meter_start = if with_key { 20 } else { 14 };
+    let meter_event_bytes = if with_key { 14 } else { 8 };
+    check_pair(
+        p,
+        records[1].payload.bytes,
+        if with_key { 2 } else { 1 },
+        meter_event_bytes,
+        meter_start,
+        8,
+        !with_key,
+    )?;
+    check_pair(
+        tempo.payload.bytes,
+        records[3].payload.bytes,
+        1,
+        7,
+        14,
+        7,
+        !with_key,
+    )?;
     let ms = meter.payload.range.start;
     let ts = tempo.payload.range.start;
+    let key = if with_key {
+        if p[14..18] != [0, 0xff, 0x59, 2] {
+            return Err(ConductorRefusal::Key);
+        }
+        let accidentals = p[18] as i8;
+        if !(-7..=7).contains(&accidentals) || p[19] > 1 {
+            return Err(ConductorRefusal::Key);
+        }
+        Some(InitialKey {
+            source_range: ms + 14..ms + 20,
+            accidentals,
+            minor: p[19] == 1,
+        })
+    } else {
+        None
+    };
+    let mut envelope_context = Vec::new();
+    for (primary, secondary, event_bytes) in [
+        (records[0], records[1], meter_event_bytes),
+        (records[2], records[3], 7),
+    ] {
+        let start = primary.payload.range.start;
+        let secondary_start = secondary.payload.range.start;
+        for range in [
+            start + 1..start + 2,
+            start + 10..start + 14,
+            secondary_start + 19..secondary_start + 20,
+            start + 14 + event_bytes + 7..primary.payload.range.end,
+        ] {
+            if !range.is_empty() {
+                envelope_context.push(ConductorEnvelopeContext {
+                    source_bytes: bytes[range.clone()].to_vec(),
+                    source_range: range,
+                });
+            }
+        }
+    }
     let result = CompactConductor {
         meter: decode_bounded_initial_meter(
             bytes,
             InitialMeterBounds {
-                event_range: ms + 20..ms + 28,
+                event_range: ms + meter_start..ms + meter_start + 8,
             },
         )
         .map_err(|_| ConductorRefusal::Event)?,
@@ -126,13 +193,10 @@ pub fn decode_compact_conductor(
             },
         )
         .map_err(|_| ConductorRefusal::Event)?,
-        key: InitialKey {
-            source_range: ms + 14..ms + 20,
-            accidentals,
-            minor: p[19] == 1,
-        },
+        key,
         records: ranges,
         opaque_context: [p[10..14].to_vec(), tempo.payload.bytes[10..14].to_vec()],
+        envelope_context,
     };
     result.adapt(b"")?;
     Ok(result)
@@ -144,12 +208,17 @@ fn check_pair(
     event_bytes: usize,
     final_start: usize,
     final_len: usize,
+    padded: bool,
 ) -> Result<(), ConductorRefusal> {
-    if p.len() != 14 + event_bytes + 7
-        || p[..2] != [0, 1]
+    let tail_start = 14 + event_bytes;
+    let tail_end = tail_start + 7;
+    if p.len() != if padded { 38 } else { tail_end }
+        || p[0] != 0
+        || !(p[1] == 1 || (!padded && count == 2 && p[1] == 3))
         || p[2..6] != count.to_be_bytes()
         || p[6..10] != [0; 4]
-        || p[14 + event_bytes..] != [0x87, 0xff, 0xff, 0x7f, 0xff, 0x2f, 0]
+        || p[tail_start..tail_end] != [0x87, 0xff, 0xff, 0x7f, 0xff, 0x2f, 0]
+        || p[tail_end..].iter().any(|b| *b != 0)
     {
         return Err(ConductorRefusal::Envelope);
     }
@@ -161,7 +230,10 @@ fn check_pair(
     expected.extend(((event_bytes + 4) as u32).to_be_bytes());
     expected.extend([0, 0xff, 0xff, 0xff, 0x2f, 0xff, 0, 0, 0, 0]);
     expected.extend(copy);
-    if s != expected {
+    // One bounded context byte between the fixed 2f marker and four zero bytes
+    // varies independently of the complete event/value copy. It is not an
+    // event region, length, count, position or a default MIDI value.
+    if s.len() != expected.len() || s[..19] != expected[..19] || s[20..] != expected[20..] {
         return Err(ConductorRefusal::Envelope);
     }
     Ok(())
