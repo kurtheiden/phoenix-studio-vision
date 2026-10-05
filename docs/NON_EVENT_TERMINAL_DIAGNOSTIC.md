@@ -20,7 +20,8 @@ terminal-content veto with a reusable production coverage check. It requires:
 - nonempty all-ff terminal content; diagnostic forms are `ff+ fe ff*` or
   exactly two leading zero bytes followed by `ff+ fe ff+`. The notation means
   one or more `ff` before a single `fe`, then zero or more `ff` for the unprefixed
-  form, or one or more trailing `ff` for the two-zero-prefixed form.
+  form, or one or more trailing `ff` for the two-zero-prefixed form. The additional
+  unprefixed repeated-marker grammar is `ff+ (fe ff+){2,}`, described below.
 
 The diagnostic forms yield `TerminalDiagnostic`, retaining record/payload ranges,
 exact source bytes and the classification **UNINTERPRETED NON-EVENT TERMINAL
@@ -110,7 +111,7 @@ terminal-family predicate are all required.
 
 The narrow extension admits a final `fe` in the existing unprefixed family and
 the exact two-zero prefix only in the demonstrated internal-`fe` family with
-trailing `ff`. It does not admit one/three leading zeros, all-zero data,
+trailing `ff`. That extension did not admit one/three leading zeros, all-zero data,
 two-zero-prefixed all-ff content, a prefixed final `fe`, multiple deviations,
 event statuses/tags or arbitrary unknown suffixes. These bytes remain
 uninterpreted non-event terminal material, not claimed padding. All bytes and
@@ -156,3 +157,87 @@ along with formatting, all-target/all-feature Clippy with warnings denied and
 diff checks. The authentic source, existing listening files and unrelated
 owner/Xcode state remain unchanged. No production readiness or publication
 authorization is added by this coverage diagnostic.
+
+
+## Repeated isolated non-event terminal markers
+
+The bounded classifier now also accepts the unprefixed whole-payload grammar
+`ff+ (fe ff+){2,}`: a nonempty leading ff run, at least two isolated fe bytes,
+and a nonempty ff run after each fe, including the final one. This is a structural
+extension, independent of project/Sequence identity, ordinals, offsets, hashes or
+Track/Patch names. It assigns no historical semantics to either byte.
+Existing all-ff, single-fe and exact two-zero-prefixed single-fe forms are unchanged.
+The previous single-fe unprefixed form may still end in fe; the repeated form may
+not. Multiple fe in the prefixed form remain unsupported.
+
+Evidence review `/tmp/phoenix-sequence-h-terminal-blocker-review.txt` established
+exhaustive musical coverage before classifying the new material. The diagnostic
+remains **UNINTERPRETED NON-EVENT TERMINAL MATERIAL** with the existing message,
+record/payload ranges and complete exact source bytes. It is never synthesized
+into MIDI or silently removed from recovery evidence.
+
+The existing source framing and ordered/exhaustive conductor/ordinary pair coverage
+checks are unchanged. Complete correspondence, event decoding, count reconciliation,
+routing and all other musical gates remain caller prerequisites: this coverage
+component checks framed record completeness, not musical semantics. Incomplete
+recovery cannot be authorized by a byte-pattern match. The complete recovery
+assessment invokes the terminal check only after all musical gates pass.
+
+Refusals include leading fe, adjacent fe, a repeated body's final fe without ff,
+zero ff before the first fe, unapproved prefixes, other byte values and mixed
+possibly musical terminal material. Existing malformed/framing/ownership/placement,
+extra unrecovered event-data pair, overlapping/incomplete/reordered coverage and
+ordinary Track terminal-bound refusals remain unchanged. Unsupported event forms,
+decoder refusals and unresolved declared-count deficits must fail the preceding
+musical assessment; the terminal classifier is not a fallback around them.
+This does not accept arbitrary ff/fe strings or general unknown trailing data.
+
+### Complete Sequence H export verification
+
+Authenticated SCHOOL PROJECTS remains 343,875 bytes, SHA-256
+`bfd4fa1208e2cd884ec51ccfb1131d5c02723d7c90acafc98bd89597e1a20331`.
+All 12 ordinary Tracks are retained: eight fully consumed event-bearing Tracks
+and four legitimate no-event-data Tracks. Recovered logical events total 284:
+280 Notes and four Patches, with zero source Controllers/Bends/Pressure. The raw
+ordinary count fields total 298; every per-Track difference is exactly accounted
+for by its already-decoded contexts, 14 in total (not 14 extra musical events).
+There is no residual count deficit or unconsumed event-bearing region. The initial
+Meter and Tempo are completely decoded; no source Key event is invented.
+
+The separate type00 record [248314,248347), payload [248319,248347), retains
+`fffffffffffffffffffffffffffffffffffffffefffefffefffeffff` diagnostically after
+all ten conductor/ordinary type02/type29 pairs. It overlaps no event range and
+no bounded subrange matches the supported event grammar. Semantics remain unknown.
+
+The complete current bounded recovery/export pipeline now passes correspondence,
+ordinary bounds and decoding, routing, Controller/Pitch Bend requirements, standalone
+Multi Patch bank translation, source order, conductor, terminal and Format1 assembly.
+Sequence H is now experimentally exportable, with no next export blocker found.
+
+Persistent listening artifact: `SCHOOL - Sequence H.mid` in the owner's Experimental
+MIDI Recovery/SCHOOL PROJECTS directory; 2,857 bytes, SHA-256
+`b7b0d39da264919f273e36886eae4913a5ff86dc8d6122a9576ca96c31935cc5`.
+Exclusive file creation preserves existing artifacts. Independent readback of the
+actual file passes Format1, 480 PPQN, 13 Tracks, conductor metadata, all 280 attacks
+and 280 releases, four CC0 and four Programs, ticks/channels/data/source order,
+Track names and EOT/chunk/file boundaries. Saved-muted material is preserved.
+
+The four initializations continue to match the owner-attested untouched native
+Sequence H MIDI: ticks 0/0/0/480, channels 2/3/1/4, CC0 81/81/81/80 and Programs
+7/13/23/31. CC0 precedes Program and no CC32 is present. This compares Patch
+semantics, not full-file byte equality with Studio Vision's saved-mute output scope.
+No owner listening result is claimed.
+
+DANCING, Nothing FINAL, NOTHING.MID, unnamed #9, Tuba thing and Sequence M remain
+byte-identical and independently mechanically valid; prior terminal diagnostics
+retain exact bytes/ranges/messages. Other SCHOOL failures remain unchanged,
+including ordinary kickin'dance Track 8 and broader conductor cases. SCHOOL's
+current complete experimental exports increase from six to seven of fifteen.
+
+Fourteen focused terminal tests pass, covering repeated two/four-marker positives,
+exact diagnostic provenance, no synthesized events, prior supported forms,
+lookalikes/prefix/suffix refusals, event content, overlapping/incomplete coverage,
+extra unrecovered pairs and malformed/ambiguous framing/placement. Full cargo tests,
+formatting, strict all-target/all-feature Clippy and whitespace checks pass.
+Detailed audit and artifact identities:
+`/tmp/phoenix-repeated-fe-terminal-blocker-removal.txt`.

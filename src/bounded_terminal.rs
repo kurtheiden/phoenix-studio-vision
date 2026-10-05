@@ -34,9 +34,12 @@ impl TerminalDiagnostic {
 /// Assess the evidenced sequence/type07/paired-record/type00 neighborhood.
 /// `recovered_records` must be the complete conductor and ordinary paired-record
 /// ranges in source order, supplied only after their musical gates pass.
+/// Complete event decoding and resolved count/ownership coverage are caller
+/// prerequisites; a byte-family match never substitutes for those gates.
 /// Nonempty all-ff terminals retain existing behavior. Diagnostic forms are
-/// ff+ fe ff*, or exactly two zero bytes followed by ff+ fe ff+.
-/// The fe may terminate only the unprefixed form. These are whole-payload
+/// ff+ fe ff*, exactly two zero bytes followed by ff+ fe ff+, or the unprefixed
+/// repeated form ff+ (fe ff+){2,}. Only the previous single-fe unprefixed form
+/// may terminate with fe. These are whole-payload
 /// predicates, not permission to ignore an arbitrary post-event suffix.
 /// This does not assign any semantic meaning to those bytes.
 pub fn assess_terminal_coverage(
@@ -94,13 +97,21 @@ pub fn assess_terminal_coverage(
         None => (false, payload),
     };
     let deviation = body.iter().position(|v| *v != 0xff);
-    let supported = deviation.is_some_and(|i| {
+    let single = deviation.is_some_and(|i| {
         i > 0
             && body[i] == 0xfe
             && (!prefixed || i + 1 < body.len())
             && body[i + 1..].iter().all(|v| *v == 0xff)
     });
-    if !supported {
+    // Each repeated marker must be isolated between nonempty ff runs. This
+    // extension is unprefixed only, with no default or semantics for either byte.
+    let repeated = !prefixed
+        && payload.first() == Some(&0xff)
+        && payload.last() == Some(&0xff)
+        && payload.iter().filter(|v| **v == 0xfe).count() >= 2
+        && payload.iter().all(|v| matches!(v, 0xff | 0xfe))
+        && !payload.windows(2).any(|pair| pair == [0xfe, 0xfe]);
+    if !single && !repeated {
         return Err(TerminalRefusal::UnsupportedMaterial);
     }
     Ok(Some(TerminalDiagnostic {

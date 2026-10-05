@@ -52,6 +52,7 @@ fn all_ff_and_diagnostic_do_not_change_midi_or_counts() {
     for t in [
         &[255, 255, 255, 255, 255][..],
         &[255, 255, 254, 255, 255][..],
+        &[255, 254, 255, 254, 255][..],
     ] {
         let (b, seq, ranges) = fixture(t);
         let diagnostic = assess_terminal_coverage(&b, seq, &ranges).unwrap();
@@ -66,7 +67,7 @@ fn all_ff_and_diagnostic_do_not_change_midi_or_counts() {
         );
         assert_eq!(events.len(), 1);
     }
-    assert_eq!(outputs[0], outputs[1]);
+    assert!(outputs.iter().all(|output| output == &outputs[0]));
 }
 #[test]
 fn incomplete_overlapping_or_ambiguous_coverage_refuses() {
@@ -161,7 +162,11 @@ fn prefixed_and_final_fe_variants_retain_exact_non_event_provenance() {
 
 #[test]
 fn new_terminal_variants_require_complete_non_overlapping_pair_coverage() {
-    for payload in [&[0, 0, 255, 254, 255][..], &[255, 255, 254][..]] {
+    for payload in [
+        &[0, 0, 255, 254, 255][..],
+        &[255, 255, 254][..],
+        &[255, 254, 255, 254, 255][..],
+    ] {
         let (b, seq, ranges) = fixture(payload);
         let terminal_start = ranges.last().unwrap().end;
         for mutation in 0..5 {
@@ -233,7 +238,11 @@ fn supported_event_material_inside_terminal_is_never_diagnostic() {
         vec![0, 255, 0x40, 1, 0],
     ];
     for event in events {
-        for original in [vec![255, 254], vec![0, 0, 255, 254, 255]] {
+        for original in [
+            vec![255, 254],
+            vec![0, 0, 255, 254, 255],
+            vec![255, 254, 255, 254, 255],
+        ] {
             // Try both placement before the family and inside its ff body.
             for position in [0, original.len() - 1] {
                 let mut payload = original.clone();
@@ -250,7 +259,11 @@ fn supported_event_material_inside_terminal_is_never_diagnostic() {
 
 #[test]
 fn new_forms_refuse_bad_framing_placement_and_unrecovered_extra_pairs() {
-    for payload in [&[0, 0, 255, 254, 255][..], &[255, 255, 254][..]] {
+    for payload in [
+        &[0, 0, 255, 254, 255][..],
+        &[255, 255, 254][..],
+        &[255, 254, 255, 254, 255][..],
+    ] {
         let (b, seq, ranges) = fixture(payload);
         let terminal_start = ranges.last().unwrap().end;
         for n in terminal_start..b.len() {
@@ -314,4 +327,53 @@ fn ordinary_track_zero_terminal_remains_refused_independently() {
         pair.validated_event_bounds(),
         Err(TrackEventBoundsError::InvalidTerminalGrammar { .. })
     ));
+}
+
+#[test]
+fn repeated_isolated_markers_retain_whole_diagnostic_and_exact_provenance() {
+    let mut four = vec![255; 19];
+    for _ in 0..4 {
+        four.extend([254, 255]);
+    }
+    four.push(255);
+    for payload in [
+        vec![255, 254, 255, 254, 255],
+        vec![255, 255, 254, 255, 255, 255, 254, 255, 255],
+        four,
+    ] {
+        let (bytes, sequence, coverage) = fixture(&payload);
+        let d = assess_terminal_coverage(&bytes, sequence.clone(), &coverage)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            d.classification(),
+            "UNINTERPRETED NON-EVENT TERMINAL MATERIAL"
+        );
+        assert_eq!(d.source_bytes, payload);
+        assert_eq!(d.payload_range, sequence.end - payload.len()..sequence.end);
+        assert_eq!(d.record_range, d.payload_range.start - 5..sequence.end);
+        assert_eq!(&bytes[d.payload_range.clone()], d.source_bytes);
+        assert_eq!(coverage.last().unwrap().end, d.record_range.start);
+    }
+}
+#[test]
+fn repeated_marker_lookalikes_and_unapproved_prefixes_refuse() {
+    for payload in [
+        vec![254, 255, 254, 255],
+        vec![255, 254, 254, 255],
+        vec![255, 254, 255, 254],
+        vec![255, 254, 255, 254, 254, 255],
+        vec![255, 254, 255, 0, 254, 255],
+        vec![255, 254, 255, 253, 254, 255],
+        vec![0, 255, 254, 255, 254, 255],
+        vec![0, 0, 255, 254, 255, 254, 255],
+        vec![0, 0, 0, 1, 255, 254, 255, 254, 255],
+    ] {
+        let (bytes, sequence, coverage) = fixture(&payload);
+        assert_eq!(
+            assess_terminal_coverage(&bytes, sequence, &coverage),
+            Err(TerminalRefusal::UnsupportedMaterial),
+            "{payload:?}"
+        );
+    }
 }
