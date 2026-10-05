@@ -90,3 +90,43 @@ Saved mute is historical project state, not permission to discard data. Future
 export should offer **Include All** (recommended/default) or **Exclude Muted**,
 and identify saved-muted tracks in the Recovery Report regardless of the choice.
 This is a product requirement, not an implemented prompt or authorization change.
+
+## DANCING.MID — complete-song human listening validation
+
+**Human listening result: PASS.** The owner loaded
+`/tmp/phoenix-school-experimental-DANCING.mid` into Logic and mapped replacement
+instruments well enough to play the complete song successfully from beginning
+to end. The owner recognized the composition as a cover of Bruce Springsteen's
+"Dancing in the Dark."
+
+The owner is approximately 80% certain they did not create this project,
+although aspects of its structure resemble their historical working style.
+Authorship and provenance remain uncertain. The owner does not intend to spend
+additional effort reconstructing this particular project; this listening record
+closes the current recovery-validation cycle.
+
+At implementation checkpoint `44ea8d715990ff55c3d4298448299f42a89ceb52`, Phoenix
+recovered and serialized a substantial Sequence after non-event terminal
+uncertainty was changed from an export blocker to a diagnostic. The experimental
+recovery contained 10 ordinary Tracks: 1 legitimate no-event-data Track and
+9 complete event-bearing Tracks. It contained 7,845 logical events: 6,954 Notes,
+37 Controllers, 8 Patch events, and 846 Pitch Bend events. Routing, Patch
+handling, conductor recovery, and source-order handling passed. Mechanical MIDI
+verification passed before owner listening; see
+[the terminal diagnostic verification record](NON_EVENT_TERMINAL_DIAGNOSTIC.md).
+Owner listening then confirmed that the recovered composition was musically
+usable from beginning to end after assigning replacement instruments.
+
+This validates practical recovery of the musical performance. It does not
+validate authorship, original instrument/timbre recreation, exact historical
+hardware configuration, exact Studio Vision playback, or semantics of the
+non-event terminal material.
+
+The practical lesson supports **MUSICAL RECOVERY FIRST, FORENSIC COMPLETENESS
+SECOND** within the demonstrated bounds: once established MIDI-relevant data
+is completely recovered and unresolved material is bounded outside the
+event-bearing structures with no credible evidence of musical loss, such
+uncertainty may be reported diagnostically rather than automatically blocking
+recovery. Uncertainty that overlaps or could plausibly contain musical event
+data remains fail-closed. This result does not justify broader relaxation of
+recovery checks beyond that evidence.
