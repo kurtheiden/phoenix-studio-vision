@@ -5,7 +5,7 @@ fn record(b: &mut Vec<u8>, ty: u8, p: &[u8]) {
     b.extend((p.len() as u32).to_be_bytes());
     b.extend(p);
 }
-fn fixture(events: &[u8], raw: u32) -> Vec<u8> {
+pub(crate) fn fixture(events: &[u8], raw: u32) -> Vec<u8> {
     let mut b = synthetic_marker(3, b"Portable", [0xfe, 0xff]);
     b.truncate(8 + 75 + 120 * 3);
     for (i, l) in [b"Meter Track".as_slice(), b"Tempo Track", b"Part"]
@@ -67,7 +67,7 @@ fn fixture(events: &[u8], raw: u32) -> Vec<u8> {
     record(&mut b, 42, &p);
     b
 }
-fn note() -> Vec<u8> {
+pub(crate) fn note() -> Vec<u8> {
     vec![0, 0x90, 60, 100, 64, 0x81, 0x70]
 }
 fn result(b: &[u8]) -> Result<Recovery120<'_>, Recovery120Refusal> {

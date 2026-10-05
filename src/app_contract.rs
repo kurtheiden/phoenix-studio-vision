@@ -338,6 +338,13 @@ pub struct BoundedExportCapability {
     pub display_label: String,
 }
 impl BoundedExportCapability {
+    pub(crate) fn validated120() -> Self {
+        Self {
+            contract_id: "source_layout120_bounded_sequence".into(),
+            contract_revision: 1,
+            display_label: "Validated bounded sequence".into(),
+        }
+    }
     pub(crate) fn validated() -> Self {
         Self {
             contract_id: "descriptor166_bounded_sequence".into(),

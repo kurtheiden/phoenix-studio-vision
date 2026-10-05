@@ -84,7 +84,7 @@ struct BoundedExportCapability: Decodable, Equatable {
     }
 
     var isRecognized: Bool {
-        contractID == "descriptor166_bounded_sequence" && contractRevision == 1
+        (contractID == "descriptor166_bounded_sequence" || contractID == "source_layout120_bounded_sequence") && contractRevision == 1
     }
 }
 

@@ -169,3 +169,12 @@ boundedReceipt["bounded_export_capability"] = boundedRow["bounded_export_capabil
 let boundedExport = try decoder.decode(ExportSequenceResult.self, from: JSONSerialization.data(withJSONObject: boundedReceipt))
 check(boundedExport.compatibilityProfile == nil && boundedExport.boundedExportCapability?.isRecognized == true, "bounded receipt without fake profile")
 print("Step 3 additive bounded capability decode smoke passed")
+boundedRow["bounded_export_capability"] = ["contract_id": "source_layout120_bounded_sequence", "contract_revision": 1, "display_label": "Validated bounded sequence"]
+boundedRow["readiness"] = "ready"
+check((try! decodeRow(boundedRow)).isExportEligible, "120 Ready capability recognized")
+boundedRow["readiness"] = "partially_supported"
+check(!(try! decodeRow(boundedRow)).isExportEligible, "120 blocked readiness refuses")
+boundedRow["readiness"] = "ready"
+boundedRow["bounded_export_capability"] = ["contract_id": "source_layout120_bounded_sequence", "contract_revision": 2, "display_label": "Future"]
+check(!(try! decodeRow(boundedRow)).isExportEligible, "120 future revision refuses")
+print("120 capability decode smoke passed")

@@ -201,7 +201,7 @@ fn original_observer_guards_are_not_relaxed_by_semantic_bridge() {
 }
 
 #[test]
-fn service_diagnostics_cannot_create_sequence_or_export_authority() {
+fn service_association_alone_cannot_create_export_authority() {
     use crate::app_contract::{
         DiagnosticsLevel, InspectProjectRequest, Readiness, CONTRACT_VERSION,
     };
@@ -219,8 +219,13 @@ fn service_diagnostics_cannot_create_sequence_or_export_authority() {
         })
         .unwrap();
     std::fs::remove_file(path).unwrap();
-    assert!(result.sequences.is_empty());
-    assert_eq!(result.project.overall_readiness, Readiness::Unknown);
+    assert_eq!(result.sequences.len(), 1);
+    assert!(result
+        .sequences
+        .iter()
+        .all(|row| row.readiness != Readiness::Ready
+            && row.bounded_export_capability.is_none()
+            && row.export_capability.is_none()));
     assert!(service.profile_evidence(&result.session_id).is_err());
     let diagnostics = service
         .get_diagnostics(&result.session_id, DiagnosticsLevel::Full)

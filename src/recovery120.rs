@@ -334,4 +334,4 @@ fn single_handoff(
 }
 #[cfg(test)]
 #[path = "recovery120_tests.rs"]
-mod tests;
+pub(crate) mod tests;

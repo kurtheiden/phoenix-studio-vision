@@ -67,6 +67,12 @@ struct SequenceAssessment {
 
 #[derive(Clone)]
 enum InspectedExportAuthority {
+    Layout120 {
+        ordinal: u32,
+        range: std::ops::Range<usize>,
+        name: Vec<u8>,
+        midi_sha256: String,
+    },
     ExactProfile {
         capability: ProfileCapability,
         resolved_policy: ResolvedProfilePolicy,
@@ -395,48 +401,120 @@ impl AppService {
             .as_ref()
             .err()
             .is_some_and(|error| error.is_layout_conflict());
-        let (project, sequences, warnings, mut diagnostics, structure) =
-            match parse_project_166(&bytes) {
-                Ok(_) if conflict && finder_recognized => self.build_profile_failure(
+        let mut assessments120 = HashMap::new();
+        let (project, sequences, warnings, mut diagnostics, structure) = match parse_project_166(
+            &bytes,
+        ) {
+            Ok(_) if conflict && finder_recognized => self.build_profile_failure(
+                &filename,
+                source_size,
+                &finder,
+                "Project discovery refused: ambiguous or mixed structural layouts.".into(),
+                &session_id,
+            ),
+            Ok(_) if conflict => self.build_unrecognized_result(
+                &filename,
+                source_size,
+                &finder,
+                "Project discovery refused: ambiguous or mixed structural layouts.".into(),
+                &session_id,
+            ),
+            Ok(parsed) => self.build_parsed_result(
+                &filename,
+                source_size,
+                &finder,
+                &bytes,
+                parsed.sequences,
+                &session_id,
+                request.diagnostics_level,
+            ),
+            Err(_) if observations120.is_ok() => {
+                let mut base = self.build_profile_failure(
                     &filename,
                     source_size,
                     &finder,
-                    "Project discovery refused: ambiguous or mixed structural layouts.".into(),
+                    "Bounded 120-layout recovery could not establish application readiness.".into(),
                     &session_id,
-                ),
-                Ok(_) if conflict => self.build_unrecognized_result(
-                    &filename,
-                    source_size,
-                    &finder,
-                    "Project discovery refused: ambiguous or mixed structural layouts.".into(),
-                    &session_id,
-                ),
-                Ok(parsed) => self.build_parsed_result(
-                    &filename,
-                    source_size,
-                    &finder,
-                    &bytes,
-                    parsed.sequences,
-                    &session_id,
-                    request.diagnostics_level,
-                ),
-                Err(error) if finder_recognized => self.build_profile_failure(
-                    &filename,
-                    source_size,
-                    &finder,
-                    format!("166-byte profile rejected: {error}"),
-                    &session_id,
-                ),
-                Err(error) => self.build_unrecognized_result(
-                    &filename,
-                    source_size,
-                    &finder,
-                    format!("no established Studio Vision profile accepted the input: {error}"),
-                    &session_id,
-                ),
-            };
+                );
+                if let Ok(candidates) = crate::recovery120::recover_project120(&bytes) {
+                    base.2.clear();
+                    base.3.technical_errors.clear();
+                    base.0.recognized_studio_vision = true;
+                    base.0.profile_label = Some("Bounded120".into());
+                    base.3.recognized_profile = Some("Bounded120".into());
+                    for candidate in candidates {
+                        let id = SequenceId::new(format!(
+                            "{}-sequence-{:04}",
+                            session_id.as_str(),
+                            candidate.ordinal + 1
+                        ));
+                        let name = String::from_utf8_lossy(candidate.name).into_owned();
+                        let (authority, track_count, detail) = match candidate.result {
+                            Ok(recovery) => {
+                                base.2.extend(layout120_warnings(
+                                    &recovery,
+                                    candidate.ordinal as u32,
+                                ));
+                                base.3.technical_errors.push(format!(
+                                    "120 recovery {}: conductor {:?}; terminal {:?}",
+                                    candidate.ordinal,
+                                    recovery.conductor(),
+                                    recovery.terminal()
+                                ));
+                                (
+                                    Some(InspectedExportAuthority::Layout120 {
+                                        ordinal: candidate.ordinal as u32,
+                                        range: recovery.sequence_range(),
+                                        name: candidate.name.to_vec(),
+                                        midi_sha256: sha256_hex(recovery.midi()),
+                                    }),
+                                    Some(recovery.tracks().len() as u32),
+                                    None,
+                                )
+                            }
+                            Err(refusal) => (None, None, Some(format!("{refusal:?}"))),
+                        };
+                        if let Some(detail) = &detail {
+                            base.3.technical_errors.push(detail.clone());
+                        }
+                        assessments120.insert(
+                            id.clone(),
+                            SequenceAssessment {
+                                authority,
+                                structural_ordinal: candidate.ordinal as u32,
+                                generic_readiness: Readiness::PartiallySupported,
+                                match_state: SequenceMatchState::NoMatch,
+                                capability: None,
+                                resolved_policy: None,
+                                diagnostic_code: detail
+                                    .as_ref()
+                                    .map(|_| "layout120_recovery_refused".into()),
+                                technical_detail: detail,
+                            },
+                        );
+                        base.1.push(SequenceSummary { sequence_id: id, display_name: name, readiness: Readiness::PartiallySupported, readiness_reason: ReadinessReason::new(ReadinessReasonCode::IncompleteSequenceStructure, "Phoenix does not yet support all data required to safely recover this sequence."), musical_track_count: track_count, supported_event_families: Vec::new(), warning_count: 0, export_capability: None, bounded_export_capability: None, diagnostics_available: true });
+                    }
+                    base.0.sequence_count = base.1.len() as u32;
+                }
+                base
+            }
+            Err(error) if finder_recognized => self.build_profile_failure(
+                &filename,
+                source_size,
+                &finder,
+                format!("166-byte profile rejected: {error}"),
+                &session_id,
+            ),
+            Err(error) => self.build_unrecognized_result(
+                &filename,
+                source_size,
+                &finder,
+                format!("no established Studio Vision profile accepted the input: {error}"),
+                &session_id,
+            ),
+        };
         if let Ok(observations) = observations120 {
-            // Diagnostic evidence only: no semantic structure, IDs or capabilities.
+            // Supplementary observer evidence; only recovery120 can grant authority.
             let summary = observations.diagnostic_summary();
             if let Some(status) = &mut diagnostics.structural_status {
                 status.push_str("; ");
@@ -444,8 +522,7 @@ impl AppService {
             }
             diagnostics.technical_errors.push(summary);
             if let Ok(bridge) = crate::semantic_layout120::associate_project_120(&bytes) {
-                // Internal incomplete associations only. Neither the semantic DTO
-                // nor capability-bearing session structure receives source data.
+                // Association evidence alone never grants export authority.
                 diagnostics
                     .technical_errors
                     .push(bridge.diagnostic_summary());
@@ -482,7 +559,7 @@ impl AppService {
                 diagnostics,
                 structure,
                 sequence_ordinals,
-                assessments: HashMap::new(),
+                assessments: assessments120,
             },
         );
         self.assess_session(&session_id);
@@ -866,8 +943,124 @@ impl AppService {
         file_system: &F,
         limits: ExportLimits,
     ) -> Result<ExportSequenceResponse, AppError> {
+        if self
+            .sessions
+            .get(&request.session_id)
+            .and_then(|session| session.assessments.get(&request.sequence_id))
+            .is_some_and(|assessment| {
+                matches!(
+                    assessment.authority,
+                    Some(InspectedExportAuthority::Layout120 { .. })
+                )
+            })
+        {
+            let (bytes, response) = self.prepare_layout120(request)?;
+            return self.commit_export_bytes(request, &bytes, response, file_system, limits);
+        }
         let prepared = self.prepare_export_sequence(request)?;
         self.commit_prepared_export(request, prepared, file_system, limits)
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn prepare_layout120(
+        &self,
+        request: &ExportSequenceRequest,
+    ) -> Result<(Vec<u8>, ExportResponsePreflight), AppError> {
+        let fail = |detail: &str| {
+            self.export_authorization_error(request, "source_revalidation_failed", detail)
+        };
+        if request.contract_version != CONTRACT_VERSION {
+            return Err(fail("Contract version mismatch."));
+        }
+        let session = self
+            .sessions
+            .get(&request.session_id)
+            .ok_or_else(|| fail("Unknown session."))?;
+        let summary = session
+            .response
+            .sequences
+            .iter()
+            .find(|s| s.sequence_id == request.sequence_id)
+            .ok_or_else(|| fail("Unknown sequence."))?;
+        let assessment = session
+            .assessments
+            .get(&request.sequence_id)
+            .ok_or_else(|| fail("No authority."))?;
+        let Some(InspectedExportAuthority::Layout120 {
+            ordinal,
+            range,
+            name,
+            midi_sha256,
+        }) = &assessment.authority
+        else {
+            return Err(fail("No 120 authority."));
+        };
+        if summary.readiness != Readiness::Ready
+            || summary.bounded_export_capability != Some(BoundedExportCapability::validated120())
+            || summary.export_capability.is_some()
+            || session.sequence_ordinals.get(&request.sequence_id) != Some(ordinal)
+            || assessment.structural_ordinal != *ordinal
+        {
+            return Err(fail("Sequence authority mismatch."));
+        }
+        let bytes = fs::read(&session.source_path).map_err(|_| fail("Source unreadable."))?;
+        if bytes.len() != session.source_bytes.len() || sha256_hex(&bytes) != session.source_sha256
+        {
+            return Err(self.export_authorization_error(
+                request,
+                "source_identity_changed",
+                "Source identity changed.",
+            ));
+        }
+        let candidates = crate::recovery120::recover_project120(&bytes)
+            .map_err(|_| fail("Fresh recovery refused."))?;
+        let candidate = candidates
+            .into_iter()
+            .find(|c| c.ordinal == *ordinal as usize)
+            .ok_or_else(|| fail("Sequence missing."))?;
+        let recovery = candidate
+            .result
+            .map_err(|_| fail("Fresh sequence recovery refused."))?;
+        if recovery.sequence_range() != *range
+            || recovery.name() != name
+            || sha256_hex(recovery.midi()) != *midi_sha256
+            || !recovery.mechanically_verified()
+        {
+            return Err(fail("Recovery identity changed."));
+        }
+        let totals = recovery.counts();
+        let count = u32::try_from(recovery.tracks().len())
+            .map_err(|_| fail("Track count exceeds application contract."))?;
+        let total = count
+            .checked_add(1)
+            .ok_or_else(|| fail("Track count overflow."))?;
+        Ok((
+            recovery.midi().to_vec(),
+            ExportResponsePreflight {
+                session_id: request.session_id.clone(),
+                sequence_id: request.sequence_id.clone(),
+                sequence_display_name: summary.display_name.clone(),
+                compatibility_profile: None,
+                bounded_export_capability: Some(BoundedExportCapability::validated120()),
+                musical_track_count: count,
+                total_smf_track_count: total,
+                counts: AppExportCounts {
+                    notes: totals.notes,
+                    generated_note_offs: totals.generated_note_offs,
+                    controllers: totals.controllers,
+                    bank_select_msb: totals.bank_select_msb,
+                    bank_select_lsb: totals.bank_select_lsb,
+                    programs: totals.program_changes,
+                    pressure: totals.channel_pressure,
+                    pitch_bend: totals.pitch_bend,
+                    tempo: totals.tempo,
+                    meter: totals.meter,
+                },
+                warnings: layout120_warnings(&recovery, *ordinal),
+                cleanup_warning_source_order: ordinal.saturating_add(1),
+                untranslated_metadata_count: 0,
+            },
+        ))
     }
 
     #[allow(clippy::result_large_err)]
@@ -878,7 +1071,25 @@ impl AppService {
         file_system: &F,
         limits: ExportLimits,
     ) -> Result<ExportSequenceResponse, AppError> {
-        let mut response = self.preflight_export_response(&prepared)?;
+        let response = self.preflight_export_response(&prepared)?;
+        self.commit_export_bytes(
+            request,
+            &prepared.result.smf_bytes,
+            response,
+            file_system,
+            limits,
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn commit_export_bytes<F: ExportFileSystem>(
+        &self,
+        request: &ExportSequenceRequest,
+        bytes: &[u8],
+        mut response: ExportResponsePreflight,
+        file_system: &F,
+        limits: ExportLimits,
+    ) -> Result<ExportSequenceResponse, AppError> {
         let normalized_stem =
             normalize_export_filename_stem(&request.filename_stem).ok_or_else(|| {
                 self.export_error(
@@ -919,7 +1130,7 @@ impl AppService {
             &destination,
             limits.temp_attempt_count,
         )?;
-        if let Err(error) = temp_file.write_all(&prepared.result.smf_bytes) {
+        if let Err(error) = temp_file.write_all(bytes) {
             drop(temp_file);
             return Err(self.export_error_with_temp_cleanup(
                 request,
@@ -1254,7 +1465,7 @@ impl AppService {
                 selection,
                 contract_revision,
             }) => (selection, *contract_revision),
-            None => {
+            Some(InspectedExportAuthority::Layout120 { .. }) | None => {
                 return Err(fail(
                     "sequence_not_export_capable",
                     "No inspected export authority exists.",
@@ -2195,6 +2406,19 @@ fn assess_export_precedence(
 }
 
 fn project_sequence_readiness(summary: &mut SequenceSummary, assessment: &SequenceAssessment) {
+    if matches!(
+        assessment.authority,
+        Some(InspectedExportAuthority::Layout120 { .. })
+    ) {
+        summary.readiness = Readiness::Ready;
+        summary.readiness_reason = ReadinessReason::new(
+            ReadinessReasonCode::ValidatedBoundedSequence,
+            "This sequence can be safely recovered as MIDI.",
+        );
+        summary.export_capability = None;
+        summary.bounded_export_capability = Some(BoundedExportCapability::validated120());
+        return;
+    }
     if let Some(InspectedExportAuthority::Bounded {
         contract_revision: 1,
         ..
@@ -2725,7 +2949,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn raw120_observations_cannot_mint_semantic_structure_or_export_authority() {
+    fn raw120_observations_alone_cannot_mint_export_authority() {
         let mut malformed = crate::observed_layout120::tests::synthetic(3, b"Unrelated");
         malformed[8 + 21] = 0;
         let semantic =
@@ -2760,13 +2984,15 @@ pub(crate) mod tests {
                         diagnostics_level: DiagnosticsLevel::Full,
                     })
                     .unwrap();
-                assert!(response.sequences.is_empty());
-                assert_eq!(response.project.overall_readiness, Readiness::Unknown);
-                assert!(response.project.profile_label.is_none());
+                assert!(response
+                    .sequences
+                    .iter()
+                    .all(|row| row.readiness != Readiness::Ready
+                        && row.bounded_export_capability.is_none()
+                        && row.export_capability.is_none()));
                 let session = &service.sessions[&response.session_id];
                 assert!(session.structure.is_none());
-                assert!(session.assessments.is_empty());
-                assert!(session.sequence_ordinals.is_empty());
+                assert!(session.assessments.values().all(|a| a.authority.is_none()));
                 assert!(session.diagnostics.compatibility_profile.is_none());
                 let expected_observation =
                     crate::observed_layout120::observe_project_120(&bytes).is_ok();
@@ -2779,7 +3005,7 @@ pub(crate) mod tests {
                         .contains("Bounded structural observation:"),
                     expected_observation
                 );
-                assert!(session.diagnostics.recognized_profile.is_none());
+                assert!(session.diagnostics.export_report.is_none());
                 assert!(service.profile_evidence(&response.session_id).is_err());
                 let request = export_request(
                     response.session_id,
@@ -4406,4 +4632,15 @@ pub(crate) mod tests {
             Readiness::Unknown
         );
     }
+}
+
+#[cfg(test)]
+#[path = "app_service120_tests.rs"]
+mod layout120_tests;
+
+fn layout120_warnings(
+    recovery: &crate::recovery120::Recovery120<'_>,
+    ordinal: u32,
+) -> Vec<Warning> {
+    recovery.terminal().map(|terminal| Warning { code: "non_event_terminal".into(), message: "Additional non-musical project information was retained in the recovery diagnostics.".into(), technical_detail: Some(format!("{terminal:?}")), scope: WarningScope::Sequence, severity: WarningSeverity::Caution, diagnostic_ref: Some(format!("sequence-{ordinal}")), source_order: ordinal }).into_iter().collect()
 }
