@@ -99,6 +99,12 @@ pub enum DecodedExportEventKind {
         channel: u8,
         program: u8,
     },
+    /// Evidence-classified Patch with its own resolved Instrument channel.
+    TargetedPatch {
+        channel: u8,
+        program: u8,
+        translation: PatchTranslation,
+    },
     Patch {
         program: u8,
         translation: PatchTranslation,
@@ -407,7 +413,15 @@ pub fn adapt_track(
             });
         }
         let source_stable_ordinal = source_ordinal(event.source_ordinal)?;
-        let channel = channel_assignment.channel;
+        let channel = match event.kind {
+            DecodedExportEventKind::TargetedPatch { channel, .. } => MidiChannel::new(channel)
+                .map_err(|source| MidiExportError::InvalidMidiValue {
+                    source_ordinal: Some(event.source_ordinal),
+                    source_range: event.source_range.clone(),
+                    source,
+                })?,
+            _ => channel_assignment.channel,
+        };
         match event.kind {
             DecodedExportEventKind::Note {
                 pitch,
@@ -540,6 +554,11 @@ pub fn adapt_track(
             DecodedExportEventKind::Patch {
                 program,
                 translation,
+            }
+            | DecodedExportEventKind::TargetedPatch {
+                program,
+                translation,
+                ..
             } => {
                 if patch_policy != PatchPolicy::StrictKnownOnly {
                     return Err(MidiExportError::UnsupportedPatchTranslation {

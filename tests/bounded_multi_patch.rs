@@ -218,7 +218,7 @@ fn unsupported_translation_truncation_and_non_patch_tracks_refuse() {
             f.association.clone(),
             f.events.start..f.events.end - 1
         ),
-        Err(MultiPatchRefusal::EventWalk)
+        Err(MultiPatchRefusal::BoundsOrOwnership)
     );
     let mut f = fixture(3);
     f.bytes[f.events.start + 2] = 0x40;
@@ -226,6 +226,7 @@ fn unsupported_translation_truncation_and_non_patch_tracks_refuse() {
     let mut f = fixture(3);
     let mut payload = vec![0; 14];
     payload.extend([0, 0x90, 60, 64, 32, 1]);
+    payload.extend([255, 255, 255, 127, 255, 47, 0]);
     let p = record(&mut f.bytes, 2, &payload);
     f.events = p + 14..p + 20;
     assert_eq!(decode(&f), Err(MultiPatchRefusal::UnsupportedEvent));
@@ -304,4 +305,162 @@ fn association_cannot_cross_a_sequence_boundary() {
     let p = record(&mut f.bytes, 2, &payload);
     f.events = p + 14..p + payload.len();
     assert_eq!(decode(&f), Err(MultiPatchRefusal::BoundsOrOwnership));
+}
+
+fn bank_patch(delta: u8, selector: u8, p: u8, i: bool) -> Vec<u8> {
+    let name = b"Unseen preset";
+    let label: &[u8] = if i { b"I91" } else { b"A2" };
+    let mut core = vec![
+        selector,
+        0,
+        if i { p | 0x80 } else { p },
+        if i { 8 } else { 0xf8 },
+        p,
+        name.len() as u8,
+    ];
+    core.extend(name);
+    core.push(label.len() as u8);
+    core.extend(label);
+    core.extend([4, 255, if i { 80 } else { 81 }, 255, p]);
+    let mut event = vec![delta, 255, 0x7c, core.len() as u8];
+    event.extend(core);
+    event
+}
+fn bank_fixture() -> Fixture {
+    let mut f = fixture(3);
+    f.bytes.truncate(f.events.start - 19);
+    let mut payload = vec![0; 14];
+    payload.extend(bank_patch(5, 0, 9, false));
+    payload.extend(bank_patch(0, 1, 83, true));
+    payload.extend(bank_patch(3, 0, 120, false));
+    let end = payload.len();
+    payload.extend([255, 255, 255, 127, 255, 47, 0]);
+    let start = record(&mut f.bytes, 2, &payload);
+    f.events = start + 14..start + end;
+    f
+}
+#[test]
+fn standalone_banks_use_each_target_and_tick_without_lsb_and_preserve_source_order() {
+    let f = bank_fixture();
+    let track = decode(&f).unwrap();
+    assert_eq!(
+        track.patches()[0].translation,
+        PatchTranslation::ConfirmedBankSelectMsb { msb: 81 }
+    );
+    assert_eq!(
+        track.patches()[1].translation,
+        PatchTranslation::ConfirmedBankSelectMsb { msb: 80 }
+    );
+    let adapted = track.adapt().unwrap();
+    assert_eq!(adapted.counts.bank_select_msb, 3);
+    assert_eq!(adapted.counts.bank_select_lsb, 0);
+    assert_eq!(adapted.counts.program_changes, 3);
+    let expected = vec![
+        (5, vec![0xb2, 0, 81]),
+        (5, vec![0xc2, 9]),
+        (5, vec![0xb5, 0, 80]),
+        (5, vec![0xc5, 83]),
+        (8, vec![0xb2, 0, 81]),
+        (8, vec![0xc2, 120]),
+    ];
+    assert_eq!(
+        adapted
+            .scheduled_events
+            .iter()
+            .map(|e| (e.absolute_tick, serialize_channel_message(&e.message)))
+            .collect::<Vec<_>>(),
+        expected
+    );
+    let serialized = serialize_named_musical_track_with_ordering(
+        b"Unseen track",
+        &adapted.scheduled_events,
+        MusicalTrackOrdering::SourceOrder,
+    )
+    .unwrap();
+    let bytes = serialized.as_bytes();
+    // Consecutive messages survive the serializer, including simultaneous targets.
+    let ordered = [
+        5, 0xb2, 0, 81, 0, 0xc2, 9, 0, 0xb5, 0, 80, 0, 0xc5, 83, 3, 0xb2, 0, 81, 0, 0xc2, 120,
+    ];
+    assert!(bytes.windows(ordered.len()).any(|w| w == ordered));
+    assert_eq!(track.export_events()[1].source_ordinal, 1);
+    assert_eq!(
+        track.export_events()[1].source_range,
+        Some(track.patches()[1].representation_range.clone())
+    );
+}
+#[test]
+fn bank_lookalikes_other_tails_wrappers_and_invalid_programs_refuse() {
+    let original = bank_fixture();
+    let patches = decode(&original).unwrap();
+    let a = &patches.patches()[0];
+    let i = &patches.patches()[1];
+    for (offset, value) in [
+        (a.representation_range.end - 2, 0), // specified LSB not evidenced here
+        (a.representation_range.end - 3, 80), // A/CC0=80 not demonstrated
+        (a.representation_range.end - 4, 0),
+        (a.representation_range.end - 5, 3),
+        (a.representation_range.start + 7, 8), // A/08 lookalike
+        (a.representation_range.start + 6, 137), // wrong repeated Program
+        (a.representation_range.end - 1, 128),
+        (i.representation_range.end - 3, 81), // I/CC0=81 not demonstrated
+        (i.representation_range.start + 6, 83), // absent high bit
+        (i.representation_range.start + 7, 0),
+        (a.representation_range.end - 7, b'G'), // wrong label wrapper
+    ] {
+        let mut f = bank_fixture();
+        f.bytes[offset] = value;
+        assert!(decode(&f).is_err(), "accepted lookalike offset {offset}");
+    }
+    let mut f = bank_fixture();
+    f.bytes[a.representation_range.start + 3] = 127; // truncated declared payload
+    assert_eq!(decode(&f), Err(MultiPatchRefusal::EventWalk));
+}
+#[test]
+fn bank_targets_and_complete_ownership_remain_required() {
+    for (offset, value, expected) in {
+        let f = bank_fixture();
+        vec![
+            (f.events.start + 4, 2, MultiPatchRefusal::Selector),
+            (f.rows[1] + 26, 99, MultiPatchRefusal::Device),
+            (f.rows[1] + 27, 16, MultiPatchRefusal::Channel),
+            (f.rows[1] + 25, 2, MultiPatchRefusal::RoutingIdentity),
+            (
+                f.association.start + 4,
+                1,
+                MultiPatchRefusal::RoutingIdentity,
+            ),
+        ]
+    } {
+        let mut f = bank_fixture();
+        f.bytes[offset] = value;
+        assert_eq!(decode(&f), Err(expected));
+    }
+    let mut f = bank_fixture();
+    let d = f.bytes[f.device..f.device + 40].to_vec();
+    record(&mut f.bytes, 42, &d);
+    assert_eq!(decode(&f), Err(MultiPatchRefusal::Device));
+    let f = bank_fixture();
+    let prefix_end = decode(&f).unwrap().patches()[0].representation_range.end;
+    assert_eq!(
+        decode_bounded_multi_patch_track(
+            &f.bytes,
+            f.association.clone(),
+            f.events.start..prefix_end
+        ),
+        Err(MultiPatchRefusal::BoundsOrOwnership)
+    );
+    let mut f = bank_fixture();
+    f.bytes[f.events.start + 2] = 0x40;
+    assert_eq!(decode(&f), Err(MultiPatchRefusal::EventWalk));
+    let mut f = bank_fixture();
+    f.bytes.truncate(f.events.start - 19);
+    let mut payload = vec![0; 14];
+    payload.extend(bank_patch(0, 0, 9, false));
+    payload.extend([0, 0x90, 60, 64, 32, 1]);
+    let end = payload.len();
+    payload.extend([255, 255, 255, 127, 255, 47, 0]);
+    let start = record(&mut f.bytes, 2, &payload);
+    f.events = start + 14..start + end;
+    assert_eq!(decode(&f), Err(MultiPatchRefusal::UnsupportedEvent));
 }

@@ -5,7 +5,8 @@
 //! This does not discover tracks, select mute policy, or confer readiness.
 use crate::midi_export::{
     adapt_track, ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent,
-    DecodedExportEventKind, ExportTrackResult, MidiExportError, PatchPolicy, TimingPolicy,
+    DecodedExportEventKind, ExportTrackResult, MidiExportError, PatchPolicy, PatchTranslation,
+    TimingPolicy,
 };
 use crate::mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventItem};
 use crate::sequence_container::parse_root_record_stream;
@@ -45,17 +46,25 @@ pub struct ResolvedMultiPatch {
     pub patch_name: Vec<u8>,
     pub pre_name_context: Vec<u8>,
     pub post_name_context: Vec<u8>,
+    pub translation: PatchTranslation,
 }
 impl ResolvedMultiPatch {
-    /// Program-only classification has already passed the bounded predicates.
+    /// Translation and per-Patch routing have passed the bounded predicates.
     pub fn export_event(&self) -> DecodedExportEvent {
         DecodedExportEvent {
             absolute_position: self.position,
             source_ordinal: self.source_ordinal,
             source_range: Some(self.representation_range.clone()),
-            kind: DecodedExportEventKind::TargetedProgram {
-                channel: self.midi_channel,
-                program: self.program,
+            kind: match self.translation {
+                PatchTranslation::ProgramOnlyConfirmed => DecodedExportEventKind::TargetedProgram {
+                    channel: self.midi_channel,
+                    program: self.program,
+                },
+                translation => DecodedExportEventKind::TargetedPatch {
+                    channel: self.midi_channel,
+                    program: self.program,
+                    translation,
+                },
             },
         }
     }
@@ -79,7 +88,7 @@ impl BoundedMultiPatchTrack {
     }
     /// Uses the common adapter. Its legacy track summary assignment represents
     /// the first resolved target, not a common route or fallback for other events.
-    /// Every TargetedProgram supplies its own independently validated channel.
+    /// Every targeted Patch supplies its own independently validated channel.
     pub fn adapt(&self) -> Result<ExportTrackResult, MidiExportError> {
         let first = &self.patches[0]; // construction requires a nonempty track
         adapt_track(
@@ -95,7 +104,7 @@ impl BoundedMultiPatchTrack {
 }
 
 /// Recover only the established counted 33-byte list with an ff-filled unused
-/// tail, agreeing instrument-row IDs, and complete standalone Program-only cores.
+/// tail, agreeing instrument-row IDs, and complete standalone supported cores.
 /// Caller bounds must already establish which descriptor/list owns this track;
 /// this additional framing check also refuses cross-sequence associations.
 pub fn decode_bounded_multi_patch_track(
@@ -130,7 +139,7 @@ pub fn decode_bounded_multi_patch_track(
             r.record_type.value == 2
                 && r.payload.range.start + 14 == event_range.start
                 && event_range.start < event_range.end
-                && event_range.end <= r.payload.range.end
+                && r.payload.range.end.checked_sub(7) == Some(event_range.end)
         })
         .ok_or(MultiPatchRefusal::BoundsOrOwnership)?;
     if primary <= owner
@@ -204,23 +213,35 @@ pub fn decode_bounded_multi_patch_track(
         if p > 127
             || pre.len() != 5
             || pre[1] != 0
-            || pre[2] != p
             || pre[4] != p
             || post.len() < 7
             || post[0] as usize + 5 != post.len()
-            || post[post.len() - 4..] != [4, 0xff, 0xff, 0xff]
         {
             return Err(MultiPatchRefusal::UnsupportedTranslation);
         }
         let label = &post[1..post.len() - 4];
-        let g = pre[3] == 0xf8 && label == format!("G{p}").as_bytes();
-        let i = pre[3] == 0
+        let tail = &post[post.len() - 4..];
+        let g = pre[2] == p && pre[3] == 0xf8 && label == format!("G{p}").as_bytes();
+        let i = pre[2] == p
+            && pre[3] == 0
             && label.len() == 3
             && label[0] == b'I'
             && label[1..].iter().all(u8::is_ascii_digit);
-        if !g && !i {
+        // Labels remain metadata; they never supply Program or bank values.
+        // Only the demonstrated A/f8 and I/08 bank families are admitted.
+        let numeric_label =
+            (2..=3).contains(&label.len()) && label[1..].iter().all(u8::is_ascii_digit);
+        let a_bank = pre[2] == p && pre[3] == 0xf8 && numeric_label && label[0] == b'A';
+        let i_bank = pre[2] == (p | 0x80) && pre[3] == 0x08 && numeric_label && label[0] == b'I';
+        let translation = if tail == [4, 0xff, 0xff, 0xff] && (g || i) {
+            PatchTranslation::ProgramOnlyConfirmed
+        } else if tail == [4, 0xff, 0x51, 0xff] && a_bank {
+            PatchTranslation::ConfirmedBankSelectMsb { msb: 81 }
+        } else if tail == [4, 0xff, 0x50, 0xff] && i_bank {
+            PatchTranslation::ConfirmedBankSelectMsb { msb: 80 }
+        } else {
             return Err(MultiPatchRefusal::UnsupportedTranslation);
-        }
+        };
         let selector = pre[0];
         let row = *entries
             .get(usize::from(selector))
@@ -256,6 +277,7 @@ pub fn decode_bounded_multi_patch_track(
             patch_name: core.name.bytes.to_vec(),
             pre_name_context: pre.to_vec(),
             post_name_context: post.to_vec(),
+            translation,
         });
     }
     Ok(BoundedMultiPatchTrack { patches })
