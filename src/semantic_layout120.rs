@@ -82,6 +82,8 @@ pub(crate) struct Source120SequenceAssociation<'a> {
     pub candidate_record_index: usize,
     pub sequence_range: Range<usize>,
     pub source_name: LocatedBytes<'a>,
+    /// Exact framed prelude, retained without interpreting its opaque field.
+    pub prelude: FramedRecord<'a>,
     pub leading_special: [LeadingSpecialBinding<'a>; 2],
     pub ordinary: Vec<OrdinaryBinding<'a>>,
     /// Retained zero-event tracks; merge by slot.ordinal to recover source order.
@@ -109,6 +111,11 @@ impl Source120Bridge<'_> {
                     candidate.observation.record_index
                 )),
                 Ok(sequence) => {
+                    details.push(format!(
+                        "Opaque type07 prelude record {:?}, payload {:?}: {:?}; no decoded semantic meaning",
+                        sequence.prelude.record_range, sequence.prelude.payload.range,
+                        sequence.prelude.payload.bytes
+                    ));
                     details.push(format!(
                         "120-layout record {}: incomplete semantic sequence {:?}, source name span {:?}; association basis: bounded ordinal inference",
                         sequence.candidate_record_index, sequence.sequence_range, sequence.source_name.range
@@ -209,6 +216,31 @@ pub(crate) fn associate_project_120(bytes: &[u8]) -> Result<Source120Bridge<'_>,
     Ok(Source120Bridge { candidates })
 }
 
+/// Preserve the original opaque ten-byte payload contract. Longer forms are
+/// limited to the evidenced counted printable field and eight-byte zero suffix.
+fn supported_prelude(record: &FramedRecord<'_>) -> bool {
+    if record.record_type.value != 7 {
+        return false;
+    }
+    if record.record_range.len() == 15 {
+        return true;
+    }
+    let payload = record.payload.bytes;
+    if !matches!(record.record_range.len(), 27 | 35)
+        || payload.len() < 2
+        || payload[0] != 0
+        || !matches!(payload[1], 12 | 20)
+    {
+        return false;
+    }
+    let field_end = 2 + usize::from(payload[1]);
+    payload.len() == field_end + 8
+        && payload[2..field_end]
+            .iter()
+            .all(|byte| (0x20..=0x7e).contains(byte))
+        && payload[field_end..].iter().all(|byte| *byte == 0)
+}
+
 fn associate_candidate<'a>(
     bytes: &'a [u8],
     records: &[FramedRecord<'a>],
@@ -219,7 +251,7 @@ fn associate_candidate<'a>(
         .get(candidate.record_index.checked_add(1).ok_or_else(bounds)?)
         .ok_or_else(bounds)?;
     // Defensive subprofile boundary, not decoded universal type07 semantics.
-    if following.record_range.len() != 15 {
+    if !supported_prelude(following) {
         return Err(AssociationRefusal::UnsupportedTrailer);
     }
     let mut cursor = candidate.record_index.checked_add(2).ok_or_else(bounds)?;
@@ -332,6 +364,7 @@ fn associate_candidate<'a>(
         candidate_record_index: candidate.record_index,
         sequence_range: start..terminal.record_range.end,
         source_name: candidate.observed_name.clone(),
+        prelude: following.clone(),
         leading_special: [
             LeadingSpecialBinding {
                 slot: slot0,

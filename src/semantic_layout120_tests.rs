@@ -555,3 +555,154 @@ fn zero_state_specials_still_require_their_own_pairs() {
     assert_eq!(sequence.leading_special[0].slot.label.bytes, b"Meter Track");
     assert_eq!(sequence.leading_special[1].slot.label.bytes, b"Tempo Track");
 }
+
+fn prelude_fixture(payload: &[u8], pairs: usize) -> Vec<u8> {
+    let mut bytes = ordinary_fixture(&[b"One", b"Two"], pairs);
+    let range = parse_root_record_stream(&bytes).unwrap().records[1]
+        .record_range
+        .clone();
+    let mut replacement = Vec::new();
+    record(&mut replacement, 7, payload);
+    bytes.splice(range, replacement);
+    bytes
+}
+
+fn longer_payload(count: usize) -> Vec<u8> {
+    let mut payload = vec![0, count as u8];
+    payload.extend(vec![b'X'; count]);
+    payload.extend([0; 8]);
+    payload
+}
+
+#[test]
+fn bounded_longer_preludes_retain_opaque_provenance_and_order() {
+    for payload in [vec![0xa5; 10], longer_payload(12), longer_payload(20)] {
+        let bytes = prelude_fixture(&payload, 4);
+        let bridge = associate_project_120(&bytes).unwrap();
+        let sequence = bridge.candidates[0].association.as_ref().unwrap();
+        assert_eq!(sequence.prelude.payload.bytes, payload);
+        assert_eq!(sequence.prelude.record_range.len(), payload.len() + 5);
+        assert_eq!(
+            sequence.prelude.record_range,
+            bridge.candidates[0].observation.following_record_range
+        );
+        assert_eq!(
+            sequence.prelude.payload.range.start,
+            sequence.prelude.record_range.start + 5
+        );
+        assert_eq!(&bytes[sequence.prelude.payload.range.clone()], payload);
+        assert_eq!(
+            sequence.leading_special[0].pair.primary.record_range.start,
+            sequence.prelude.record_range.end
+        );
+        assert_eq!(sequence.ordinary.len(), 2);
+        assert_eq!(sequence.source_name.bytes, b"Example");
+        for (index, track) in sequence.ordinary.iter().enumerate() {
+            assert_eq!(track.local_pair_ordinal, index + 2);
+            assert_eq!(track.slot.ordinal, index + 2);
+        }
+    }
+}
+
+#[test]
+fn longer_preludes_never_relax_exact_consuming_cardinality() {
+    for count in [12, 20] {
+        for pairs in [2, 3, 5] {
+            let bytes = prelude_fixture(&longer_payload(count), pairs);
+            let bridge = associate_project_120(&bytes).unwrap();
+            assert_eq!(
+                bridge.candidates[0].association.as_ref().unwrap_err(),
+                &AssociationRefusal::Cardinality { slots: 4, pairs }
+            );
+        }
+        let mut bytes = prelude_fixture(&longer_payload(count), 3);
+        let label = 8 + 121 + 120 * 2;
+        bytes[label - 39..label - 31].copy_from_slice(&[0, 0, 4, 0, 0, 4, 0, 0]);
+        let bridge = associate_project_120(&bytes).unwrap();
+        let sequence = bridge.candidates[0].association.as_ref().unwrap();
+        assert_eq!(sequence.no_event_data.len(), 1);
+        assert_eq!(sequence.ordinary[0].slot.ordinal, 3);
+        assert_eq!(sequence.ordinary[0].local_pair_ordinal, 2);
+    }
+}
+
+#[test]
+fn longer_prelude_length_count_prefix_field_and_suffix_are_exact() {
+    let mut invalid = vec![
+        longer_payload(11),
+        longer_payload(13),
+        longer_payload(19),
+        longer_payload(21),
+    ];
+    for count in [12, 20] {
+        for (offset, value) in [
+            (0, 1),
+            (1, 11),
+            (2, 0),
+            (2, 0x1f),
+            (2, 0x7f),
+            (2, 0x80),
+            (count + 2, 1),
+            (count + 9, 1),
+        ] {
+            let mut payload = longer_payload(count);
+            payload[offset] = value;
+            invalid.push(payload);
+        }
+    }
+    for payload in invalid {
+        let bytes = prelude_fixture(&payload, 4);
+        let bridge = associate_project_120(&bytes).unwrap();
+        assert_eq!(
+            bridge.candidates[0].association.as_ref().unwrap_err(),
+            &AssociationRefusal::UnsupportedTrailer
+        );
+    }
+}
+
+#[test]
+fn longer_preludes_require_complete_unambiguous_neighborhoods() {
+    let bytes = prelude_fixture(&longer_payload(12), 4);
+    let root = parse_root_record_stream(&bytes).unwrap();
+    for index in [2, 3, root.records.len() - 1] {
+        let mut malformed = bytes.clone();
+        malformed[root.records[index].record_range.start] = 9;
+        let bridge = associate_project_120(&malformed).unwrap();
+        assert_eq!(
+            bridge.candidates[0].association.as_ref().unwrap_err(),
+            &AssociationRefusal::IncompleteNeighborhood
+        );
+    }
+    let mut no_pairs = bytes[..root.records[2].record_range.start].to_vec();
+    record(&mut no_pairs, 0, &[0; 32]);
+    assert_eq!(
+        associate_project_120(&no_pairs).unwrap().candidates[0]
+            .association
+            .as_ref()
+            .unwrap_err(),
+        &AssociationRefusal::Cardinality { slots: 4, pairs: 0 }
+    );
+    for end in [
+        root.records[1].record_range.end - 1,
+        root.records.last().unwrap().record_range.start,
+        bytes.len() - 1,
+    ] {
+        assert!(
+            associate_project_120(&bytes[..end]).is_err()
+                || associate_project_120(&bytes[..end]).unwrap().candidates[0]
+                    .association
+                    .is_err()
+        );
+    }
+    let mut swallowed = bytes[..root.records.last().unwrap().record_range.start].to_vec();
+    swallowed.extend_from_slice(&bytes[8..]);
+    let bridge = associate_project_120(&swallowed).unwrap();
+    assert_eq!(
+        bridge.candidates[0].association.as_ref().unwrap_err(),
+        &AssociationRefusal::IncompleteNeighborhood
+    );
+    assert!(bridge.candidates[1].association.is_ok());
+    let mut missing_adjacent = bytes.clone();
+    missing_adjacent[root.records[1].record_range.start] = 9;
+    assert!(associate_project_120(&missing_adjacent).is_err());
+}

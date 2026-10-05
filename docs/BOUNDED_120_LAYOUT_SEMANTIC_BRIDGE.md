@@ -70,3 +70,59 @@ No ownership experiment, private MIDI reference or specimen MIDI export was
 used. COMIC BOOK remains sealed for later prospective independent validation.
 Public tests use synthetic structures; private checks are ignored by default
 and require explicit environment paths outside Git.
+
+## Bounded longer type07 preludes
+
+The original adjacent type07 contract remains a 15-byte framed record with an
+opaque ten-byte payload; its contents are not newly restricted. The structural
+observer already retains longer adjacent type07 records without interpreting
+them. Semantic association now additionally accepts only record lengths 27 or
+35 (payload lengths 22 or 30), with this exact bounded composition:
+
+```text
+00 N [N printable ASCII bytes] 00 00 00 00 00 00 00 00
+N = 12 or 20
+```
+
+The counted field accepts bytes `20..7e`. Its content, the leading byte and the
+zero suffix remain semantically uninterpreted. No alternate Sequence name,
+Track identity or musical event is inferred from them. The association retains
+the complete framed prelude, exact payload bytes and source ranges, and exposes
+that opaque provenance in diagnostics.
+
+All prior observation, label, ownership, pair-run and bounds checks remain.
+The immediately following uninterrupted type02/type29 pairs must terminate at a
+separately framed type00. Consuming slots must equal pairs exactly, after only
+the established EXP039 zero-state exclusions. Longer framing never authorizes
+missing pairs, omitted consuming slots or shifted correspondence. Unsupported
+lengths, inconsistent counts, altered prefix/suffix, non-printable field bytes,
+truncation, malformed neighborhoods and ambiguous ownership still refuse.
+Downstream event, conductor, routing and terminal gates remain independent.
+
+Evidence: `/tmp/phoenix-longer-type07-prelude-review.txt`, against the authenticated
+343875-byte SCHOOL source (SHA-256
+`bfd4fa1208e2cd884ec51ccfb1131d5c02723d7c90acafc98bd89597e1a20331`).
+The 27/22 form occurs twice and the 35/30 form once. This is a bounded structural
+family, not a universal type07 format. Synthetic tests exercise both sizes,
+opaque provenance, unchanged original payload support, exact field mutations,
+zero-state handling, shortage/surplus and malformed/ambiguous neighborhoods.
+
+Current authentic validation establishes:
+
+- minuet.mid: 15 consuming slots and 15 pairs; correspondence now completes.
+  It remains non-exportable: conductor recovery refuses `Envelope`, and ordinary
+  Track 10 `program chg` independently refuses unsupported status `f0` at source
+  offset 214138. The complete pipeline also exposes `AmbiguousSourceOrder` on
+  ordinary Track 5 `hihat` (tick 39122, stable ordinal 122) and ordinary Track 8
+  `crashes` (tick 91442, stable ordinal 2). None of these blockers is changed here.
+- experimental: longer framing recognized, then `Cardinality { slots: 15,
+  pairs: 14 }`; its independent one-pair shortage remains refused.
+- ultra change: longer framing recognized, then `Cardinality { slots: 15,
+  pairs: 13 }`; its independent two-pair shortage remains refused.
+- All eight previously exportable SCHOOL Sequences remain exportable, and their
+  existing persistent MIDI artifacts pass independent source-handoff mechanical
+  verification and are byte-identical to current serialization. No listening
+  artifact is regenerated. SCHOOL remains eight exportable Sequences out of 15.
+
+No meaning is claimed for the opaque field, and acceptance provides no exemption
+from complete MIDI-relevant recovery.
