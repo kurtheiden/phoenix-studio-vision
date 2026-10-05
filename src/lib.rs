@@ -31,6 +31,8 @@ pub mod opening;
 pub mod patch;
 pub mod pitch_bend;
 mod prologue_inspection;
+mod readback120;
+pub mod recovery120;
 pub mod routing_evidence;
 pub mod saved_mute;
 mod semantic_layout120;
