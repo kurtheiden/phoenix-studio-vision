@@ -8,6 +8,6 @@ struct PhoenixAppApp: App {
         WindowGroup {
             ContentView(model: model)
         }
-        .windowResizability(.contentSize)
+        .defaultSize(width: 780, height: 740)
     }
 }

@@ -4,157 +4,160 @@ struct ContentView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                Text("Phoenix").font(.largeTitle)
-                switch model.state {
-                case .starting:
-                    ProgressView()
-                    Text("Connecting to Phoenix Core…")
-                case .ready(let version):
-                    Text("Phoenix Core connected")
-                    Text("Application contract version \(version)")
-                    projectContent
-                    LatestExportView(model: model)
-                case .failed(let message):
-                    Text("Phoenix Core connection failed").font(.headline)
-                    Text(message).multilineTextAlignment(.center)
+        VStack(alignment: .leading, spacing: 20) {
+            switch model.state {
+            case .starting:
+                startContent {
+                    ProgressView("Starting Phoenix…")
+                }
+            case .ready:
+                projectContent
+                LatestExportView(model: model)
+            case .failed(let message):
+                startContent {
+                    Text("Phoenix could not start").font(.headline)
+                    Text(message).foregroundStyle(.secondary)
                 }
             }
-            .padding(40)
         }
-        .frame(minWidth: 640, minHeight: 440)
+        .padding(24)
+        .frame(minWidth: 640, minHeight: 620, alignment: .topLeading)
+    }
+
+    private func startContent<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 16) {
+            Text("Phoenix").font(.largeTitle.weight(.semibold))
+            content()
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
     private var projectContent: some View {
         switch model.projectState {
         case .idle:
-            Button("Open Project") { model.openProject() }
+            startContent {
+                Text(RecoveryWorkspaceCopy.emptyTitle).font(.title3)
+                Text("Open your project to see which sequences Phoenix can safely recover.")
+                    .foregroundStyle(.secondary)
+                Button(RecoveryWorkspaceCopy.openProject) { model.openProject() }
+                    .buttonStyle(.borderedProminent)
+            }
         case .inspecting:
-            ProgressView()
-            Text("Inspecting project…")
+            startContent {
+                ProgressView("Checking which sequences can be recovered…")
+            }
         case .inspected(let inspection):
             ProjectInspectionView(model: model, inspection: inspection)
                 .id(inspection.sessionID)
         case .failed(let message):
-            Text("Project inspection failed").font(.headline)
-            Text(message).multilineTextAlignment(.center)
-            Button("Try Another File") { model.openProject() }
+            startContent {
+                Text("Could not open this project").font(.headline)
+                Text(message).foregroundStyle(.secondary)
+                Button(RecoveryWorkspaceCopy.openProject) { model.openProject() }
+            }
         }
     }
-
 }
 
 private struct ProjectInspectionView: View {
     @ObservedObject var model: AppModel
     let inspection: ProjectInspection
-
-    @State private var warningsExpanded = false
     @State private var detailsExpanded = false
 
+    private var selectedSequence: SequenceViewData? {
+        inspection.sequences.first { $0.sequenceID == model.selectedSequenceID }
+    }
+
     var body: some View {
-        Text(model.inspectedSourceURL?.lastPathComponent ?? inspection.displayName).font(.headline)
-        if let source = model.inspectedSourceURL {
-            Text(source.path)
-                .font(.caption)
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .help(source.path)
-                .frame(maxWidth: 560, alignment: .leading)
-                .accessibilityLabel("Source path: \(source.path)")
-        }
-        Text(inspection.recognizedStudioVision ? "Studio Vision project recognized" : "File inspected")
-        Label(inspection.overallReadiness.displayName, systemImage: "gauge.with.dots.needle.50percent")
-            .accessibilityLabel("Project readiness: \(inspection.overallReadiness.displayName)")
-        Text(ByteCountFormatter.string(fromByteCount: Int64(inspection.byteSize), countStyle: .file))
-        Text("\(inspection.sequenceCount) sequences · \(inspection.warningCount) warnings")
-        if !inspection.warnings.isEmpty {
-            DisclosureGroup("Warnings (\(inspection.warnings.count))", isExpanded: $warningsExpanded) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(inspection.warnings.enumerated()), id: \.offset) { _, warning in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(warning.message)
-                            Text(warning.severity.displayName)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .accessibilityElement(children: .combine)
-                    }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Phoenix").font(.headline).foregroundStyle(.secondary)
+                    Text(inspection.displayName).font(.title.weight(.semibold))
+                        .lineLimit(2).textSelection(.enabled)
+                    Text(inspection.recognizedStudioVision
+                         ? "Studio Vision project" : "File not recognized as a supported Studio Vision project")
+                        .foregroundStyle(.secondary)
+                    Text(inspection.recoverySummary).font(.callout)
+                        .accessibilityLabel(inspection.recoverySummary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
+                Spacer(minLength: 0)
+                Button("Open Another Project…") { model.openProject() }
+                    .disabled(!model.canOpenProject)
+                    .controlSize(.small)
             }
-        }
-        if inspection.sequences.isEmpty {
-            Text("Phoenix could not identify sequences using its supported project structures.")
-                .foregroundStyle(.secondary)
-        } else {
-            List(Array(inspection.sequences.enumerated()), id: \.element.sequenceID,
-                 selection: $model.selectedSequenceID) { index, sequence in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(index + 1). \(sequence.displayName)")
-                    Text(sequence.readiness.displayName)
-                        .font(.caption)
+
+            Text("Sequences").font(.headline)
+            if inspection.sequences.isEmpty {
+                VStack(spacing: 12) {
+                    Label("No sequences found", systemImage: "music.note.list").font(.headline)
+                    Text("Phoenix could not identify sequences using its currently supported project structures.")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(Array(inspection.sequences.enumerated()), id: \.element.sequenceID,
+                     selection: $model.selectedSequenceID) { index, sequence in
                     HStack(spacing: 12) {
-                        if let tracks = sequence.musicalTrackCount {
-                            Text("\(tracks) tracks")
-                        }
-                        if sequence.warningCount > 0 {
-                            Text("\(sequence.warningCount) warnings")
-                        }
+                        Text("\(index + 1)")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                            .frame(width: 28, alignment: .trailing)
+                        Text(sequence.displayName).font(.body.weight(.medium))
+                            .lineLimit(2)
+                        Spacer(minLength: 12)
+                        Label(sequence.recoveryStatus,
+                              systemImage: sequence.isExportEligible ? "checkmark.circle" : "minus.circle")
+                            .font(.callout)
+                            .foregroundStyle(sequence.isExportEligible ? Color.primary : Color.secondary)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 7)
+                    .tag(sequence.sequenceID)
+                    .help(sequence.recoveryExplanation)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Sequence \(index + 1), \(sequence.displayName), \(sequence.recoveryStatus)")
                 }
-                .padding(.vertical, 3)
-                .tag(sequence.sequenceID)
-                .accessibilityLabel("\(sequence.displayName), \(sequence.readiness.displayName)")
+                .listStyle(.inset)
+                .frame(minHeight: 260)
             }
-            .frame(minHeight: 160)
-        }
-        Text("Only Ready sequences with a validated recovery capability can be exported.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        if let sequence = inspection.sequences.first(where: { $0.sequenceID == model.selectedSequenceID }) {
-            GroupBox("Selected sequence") {
+
+            Divider()
+            HStack(alignment: .center, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(sequence.displayName).font(.headline)
-                    Label(sequence.readiness.displayName, systemImage: "gauge.with.dots.needle.50percent")
-                        .accessibilityLabel("Sequence readiness: \(sequence.readiness.displayName)")
-                    Text(sequence.readinessReason.displayDetail)
-                    HStack(spacing: 12) {
-                        if let tracks = sequence.musicalTrackCount { Text("\(tracks) tracks") }
-                        Text("\(sequence.warningCount) warnings")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    HStack(spacing: 10) {
-                        Button(model.retainedExportDestination == nil
-                            ? "Export MIDI…"
-                            : "Choose Different Folder…") { model.exportSelectedSequence() }
-                            .disabled(!sequence.isExportEligible || model.isExporting)
-                            .accessibilityHint(sequence.isExportEligible
-                                ? "Choose a destination folder and export this sequence"
-                                : "This sequence is not currently eligible for export")
-                        if let destination = model.retainedExportDestination {
-                            Button("Export to Last Folder") {
-                                model.exportSelectedSequenceToRetainedDestination()
-                            }
-                            .disabled(!sequence.isExportEligible || model.isExporting)
-                            .accessibilityHint("Export this sequence to the previously successful destination")
-                            Text(destination.lastPathComponent)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .help(destination.path)
+                    if let sequence = selectedSequence {
+                        Text(sequence.isExportEligible ? "Ready to recover" : "Not yet recoverable")
+                            .font(.headline)
+                        Text(sequence.recoveryExplanation).font(.callout).foregroundStyle(.secondary)
+                        if let tracks = sequence.musicalTrackCount {
+                            Text("\(tracks) tracks").font(.caption).foregroundStyle(.secondary)
                         }
+                    } else {
+                        Text("Select a sequence to recover").font(.headline)
+                        Text("Unavailable sequences remain visible for inspection.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: 8) {
+                    Button(RecoveryWorkspaceCopy.recoverMIDI) { model.exportSelectedSequence() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(selectedSequence?.isExportEligible != true || model.isExporting)
+                        .accessibilityHint("Choose a folder and recover the selected sequence as MIDI")
+                    if let destination = model.retainedExportDestination {
+                        Button("Recover to Last Folder") { model.exportSelectedSequenceToRetainedDestination() }
+                            .disabled(selectedSequence?.isExportEligible != true || model.isExporting)
+                            .controlSize(.small)
+                        Text(destination.lastPathComponent).font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle).help(destination.path)
+                    }
+                }
             }
-        }
-        if inspection.diagnosticsAvailable {
+
+            if inspection.warnings.contains(where: { $0.severity == .dataLossRisk }) {
+                Label("Review the recovery notes in Details.", systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+            }
             DisclosureGroup("Details", isExpanded: Binding(
                 get: { detailsExpanded },
                 set: { expanded in
@@ -162,124 +165,138 @@ private struct ProjectInspectionView: View {
                     if expanded { model.loadDiagnosticsIfNeeded() }
                 }
             )) {
-                diagnosticsContent
-                    .padding(.top, 4)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if !inspection.warnings.isEmpty {
+                            Text("Recovery notes").font(.headline)
+                            ForEach(Array(inspection.warnings.enumerated()), id: \.offset) { _, warning in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(warning.message)
+                                    Text(warning.severity.displayName).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        if let sequence = selectedSequence {
+                            Text("Selected sequence details").font(.headline)
+                            Text(sequence.readinessReason.displayDetail)
+                        }
+                        Text("Project information").font(.headline)
+                        if let source = model.inspectedSourceURL {
+                            Text(source.path).textSelection(.enabled)
+                        }
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: inspection.byteSize), countStyle: .file))
+                        Text("Project support: \(inspection.overallReadiness.displayName)")
+                        if case .ready(let version) = model.state {
+                            Text("Application contract version \(version)")
+                        }
+                        if inspection.diagnosticsAvailable { diagnosticsContent }
+                    }
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
+                }
+                .frame(maxHeight: 160)
             }
         }
-        Button("Open Another Project") { model.openProject() }
     }
 
     @ViewBuilder
     private var diagnosticsContent: some View {
         switch model.diagnosticsState {
         case .notLoaded, .loading:
-            HStack {
-                ProgressView()
-                Text("Loading details")
-            }
-            .accessibilityElement(children: .combine)
+            ProgressView("Loading technical details…")
         case .failed(let message):
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Details unavailable").font(.headline)
-                Text(message).foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
+            Text("Technical details unavailable: \(message)").foregroundStyle(.secondary)
         case .loaded(let summary):
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Phoenix Core \(summary.coreVersion)")
-                if let profile = summary.recognizedProfile {
-                    Text("Recognized profile: \(profile)")
-                }
-                if let status = summary.structuralStatus {
-                    Text("Structural status: \(status)")
-                }
-                if let capability = summary.compatibilityProfile {
-                    Text("Compatibility: \(capability.displayLabel)")
-                }
-                if !summary.unsupportedFamilies.isEmpty {
-                    Text("Unsupported event families: \(summary.unsupportedFamilies.joined(separator: ", "))")
-                }
+            Text("Phoenix Core \(summary.coreVersion)")
+            if let profile = summary.recognizedProfile { Text("Recognized profile: \(profile)") }
+            if let status = summary.structuralStatus { Text("Structural status: \(status)") }
+            if let capability = summary.compatibilityProfile { Text("Compatibility: \(capability.displayLabel)") }
+            if !summary.unsupportedFamilies.isEmpty {
+                Text("Unsupported event families: \(summary.unsupportedFamilies.joined(separator: ", "))")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
-/// Session-level receipt, deliberately outside the current project's selection.
 private struct LatestExportView: View {
     @ObservedObject var model: AppModel
+    @State private var detailsExpanded = false
 
     @ViewBuilder
     var body: some View {
-        GroupBox("Most recent export") {
-            switch model.exportState {
-            case .idle:
-                Text("No sequence exported yet in this app session.")
-                    .foregroundStyle(.secondary)
-            case .exporting(let context):
-                VStack(alignment: .leading, spacing: 5) {
-                    ProgressView()
-                    Text("Exporting MIDI: \(context.sequenceDisplayName)")
-                    sourceContext(context)
-                }
-                .accessibilityElement(children: .combine)
-            case .failed(let context, let message):
+        switch model.exportState {
+        case .idle:
+            EmptyView()
+        case .exporting(let context):
+            HStack {
+                ProgressView()
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("MIDI export failed").font(.headline)
-                    Text(context.sequenceDisplayName)
-                    sourceContext(context)
-                    Text(message).foregroundStyle(.secondary)
+                    Text("Recovering MIDI…").font(.headline)
+                    Text(context.sequenceDisplayName).lineLimit(2)
+                    previousProject(context)
                 }
-                .accessibilityElement(children: .combine)
-            case .succeeded(let context, let result):
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("MIDI exported").font(.headline)
-                    Text(context.sequenceDisplayName)
-                    sourceContext(context)
-                    Text(URL(fileURLWithPath: result.outputPath).lastPathComponent)
-                    Text(result.outputPath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    Text("\(result.musicalTrackCount) musical tracks · \(result.totalSMFTrackCount) SMF tracks")
-                        .font(.caption)
-                    if result.untranslatedMetadataCount > 0 {
-                        Text("\(result.untranslatedMetadataCount) untranslated metadata items")
-                            .font(.caption)
-                    }
-                    ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
-                        Text(warning.message)
-                            .accessibilityLabel("Export warning: \(warning.message)")
-                    }
-                    Button("Reveal in Finder") {
-                        ExportDestinationPanel.revealInFinder(path: result.outputPath)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .accessibilityElement(children: .combine)
+        case .failed(let context, let message):
+            VStack(alignment: .leading, spacing: 5) {
+                Text("MIDI could not be recovered").font(.headline)
+                Text(context.sequenceDisplayName).lineLimit(2)
+                previousProject(context)
+                Text(message).foregroundStyle(.secondary)
+                DisclosureGroup("Recovery attempt details") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Source: \(context.sourceURL.path)")
+                        Text("Destination: \(context.destination.path)")
+                    }
+                    .font(.caption).textSelection(.enabled)
+                }
+            }
+        case .succeeded(let context, let result):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("MIDI recovered").font(.headline)
+                        Text(result.sequenceDisplayName).lineLimit(2)
+                        Text("Saved to \(context.destination.lastPathComponent)")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .help(result.outputPath)
+                        previousProject(context)
+                    }
+                    Spacer()
+                    Button("Reveal in Finder") { ExportDestinationPanel.revealInFinder(path: result.outputPath) }
+                }
+                DisclosureGroup("Recovery result details", isExpanded: $detailsExpanded) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Source: \(context.sourceURL.path)")
+                            Text(result.outputPath).textSelection(.enabled)
+                            Text("\(result.musicalTrackCount) musical tracks · \(result.totalSMFTrackCount) SMF tracks")
+                            if result.untranslatedMetadataCount > 0 {
+                                Text("\(result.untranslatedMetadataCount) untranslated metadata items")
+                            }
+                            ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
+                                Text(warning.message).accessibilityLabel("Recovery note: \(warning.message)")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.caption).frame(maxHeight: 100)
+                }
+                if result.warnings.contains(where: { $0.severity == .dataLossRisk }) {
+                    Label("Review the recovery result notes.", systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                }
+            }
+            .padding(.top, 8)
         }
     }
 
-    private func sourceContext(_ context: AppModel.ExportContext) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if case .inspected(let current) = model.projectState,
-               current.sessionID != context.sessionID {
-                Text("Export from a previously opened project")
-            }
-            Text("Source: \(context.sourceURL.lastPathComponent)")
-            Text(context.sourceURL.path)
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .help(context.sourceURL.path)
-            Text("Destination: \(context.destination.path)")
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .help(context.destination.path)
+    @ViewBuilder
+    private func previousProject(_ context: AppModel.ExportContext) -> some View {
+        if case .inspected(let current) = model.projectState, current.sessionID != context.sessionID {
+            Text("From previously opened project: \(context.sourceURL.lastPathComponent)")
+                .font(.caption).foregroundStyle(.secondary)
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: 560, alignment: .leading)
     }
 }

@@ -178,3 +178,28 @@ boundedRow["readiness"] = "ready"
 boundedRow["bounded_export_capability"] = ["contract_id": "source_layout120_bounded_sequence", "contract_revision": 2, "display_label": "Future"]
 check(!(try! decodeRow(boundedRow)).isExportEligible, "120 future revision refuses")
 print("120 capability decode smoke passed")
+check(RecoveryWorkspaceCopy.openProject == "Open Studio Vision Project…", "UI2A start action")
+check(RecoveryWorkspaceCopy.recoverMIDI == "Recover MIDI…", "UI2A primary action")
+check(!RecoveryWorkspaceCopy.emptyTitle.isEmpty, "UI2A intentional empty state")
+check(inspection.recoverableSequenceCount == 1 && inspection.blockedSequenceCount == 3, "UI2A capability-based counts")
+check(inspection.sequences[0].recoveryStatus == "Ready", "UI2A Ready row")
+check(inspection.sequences[1].recoveryStatus == "Not yet recoverable", "UI2A blocked row")
+check(inspection.sequences[1].recoveryExplanation == "Phoenix does not yet support all of the data required to safely recover this sequence.", "UI2A blocked neutral explanation")
+check(zero.recoverableSequenceCount == 0 && zero.blockedSequenceCount == 0, "UI2A empty Sequence list")
+var schoolPresentation = try JSONSerialization.jsonObject(with: inspectionJSON) as! [String: Any]
+var projectPresentation = schoolPresentation["project"] as! [String: Any]
+projectPresentation["sequence_count"] = 15
+schoolPresentation["project"] = projectPresentation
+let rows = schoolPresentation["sequences"] as! [[String: Any]]
+schoolPresentation["sequences"] = (0..<15).map { index -> [String: Any] in
+    var row = rows[index < 8 ? 0 : 1]
+    row["sequence_id"] = "presentation-\(index)"
+    row["display_name"] = index == 1 ? "" : "Duplicate name"
+    return row
+}
+let school = try decoder.decode(ProjectInspection.self, from: JSONSerialization.data(withJSONObject: schoolPresentation))
+check(school.sequences.count == 15 && school.recoverableSequenceCount == 8 && school.blockedSequenceCount == 7, "UI2A 15/8/7 derivation")
+check(school.recoverySummary == "15 sequences found · 8 recoverable · 7 not yet recoverable", "UI2A summary")
+check(school.sequences[1].displayName.isEmpty && school.sequences[0].displayName == school.sequences[2].displayName, "UI2A empty/duplicate names retained")
+check(school.diagnosticsAvailable, "UI2A Details availability preserved")
+print("UI2A presentation model smoke passed")

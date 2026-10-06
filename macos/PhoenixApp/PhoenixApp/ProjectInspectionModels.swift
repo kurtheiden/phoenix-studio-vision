@@ -300,3 +300,27 @@ struct ExportSequenceRequest: Encodable, Equatable {
         case payload
     }
 }
+
+/// Presentation only; recovery authority remains the existing capability check.
+enum RecoveryWorkspaceCopy {
+    static let openProject = "Open Studio Vision Project…"
+    static let recoverMIDI = "Recover MIDI…"
+    static let emptyTitle = "Recover MIDI from an old Studio Vision project"
+}
+
+extension ProjectInspection {
+    var recoverableSequenceCount: Int { sequences.filter(\.isExportEligible).count }
+    var blockedSequenceCount: Int { sequences.count - recoverableSequenceCount }
+    var recoverySummary: String {
+        "\(sequences.count) sequences found · \(recoverableSequenceCount) recoverable · \(blockedSequenceCount) not yet recoverable"
+    }
+}
+
+extension SequenceViewData {
+    var recoveryStatus: String { isExportEligible ? "Ready" : "Not yet recoverable" }
+    var recoveryExplanation: String {
+        isExportEligible
+            ? "This sequence can be safely recovered as MIDI."
+            : "Phoenix does not yet support all of the data required to safely recover this sequence."
+    }
+}
