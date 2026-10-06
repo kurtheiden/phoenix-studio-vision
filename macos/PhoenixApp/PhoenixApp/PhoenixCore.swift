@@ -225,7 +225,11 @@ actor PhoenixCore: PhoenixCoreServing {
             if error.kind == "transport" {
                 throw PhoenixCoreError.transport(error.message ?? error.code ?? "unknown error")
             }
-            throw PhoenixCoreError.application(error.appError?.displayMessage ?? "unknown error")
+            if let payload = error.appError {
+                throw RecoveryOperationError(category: payload.category, diagnosticCode: payload.diagnosticCode,
+                                             displayMessage: payload.displayMessage, technicalMessage: payload.technicalMessage)
+            }
+            throw PhoenixCoreError.invalidResponse
         }
         guard let result = envelope.result else { throw PhoenixCoreError.invalidResponse }
         return result

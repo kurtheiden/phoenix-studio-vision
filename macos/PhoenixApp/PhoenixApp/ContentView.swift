@@ -12,7 +12,11 @@ struct ContentView: View {
                 }
             case .ready:
                 projectContent
-                LatestExportView(model: model)
+                if let batch = model.batchRecovery {
+                    BatchRecoveryView(model: model, batch: batch)
+                } else {
+                    LatestExportView(model: model)
+                }
             case .failed(let message):
                 startContent {
                     Text("Phoenix could not start").font(.headline)
@@ -89,7 +93,16 @@ private struct ProjectInspectionView: View {
                     .controlSize(.small)
             }
 
-            Text("Sequences").font(.headline)
+            HStack {
+                Text("Sequences").font(.headline)
+                Spacer()
+                Text("\(model.selectedRecoveryCount) selected").foregroundStyle(.secondary)
+                Button("Select All Recoverable") { model.selectAllRecoverable() }
+                    .disabled(model.isExporting || inspection.recoverableSequenceCount == 0)
+                Button("Clear Selection") { model.clearRecoverySelection() }
+                    .disabled(model.isExporting || model.selectedRecoveryCount == 0)
+            }
+            .controlSize(.small)
             if inspection.sequences.isEmpty {
                 VStack(spacing: 12) {
                     Label("No sequences found", systemImage: "music.note.list").font(.headline)
@@ -101,10 +114,17 @@ private struct ProjectInspectionView: View {
                 List(Array(inspection.sequences.enumerated()), id: \.element.sequenceID,
                      selection: $model.selectedSequenceID) { index, sequence in
                     HStack(spacing: 12) {
+                        Toggle("Select for recovery", isOn: Binding(
+                            get: { model.recoverySelection.contains(sequence.sequenceID) },
+                            set: { model.setRecoverySelected(sequence.sequenceID, selected: $0) }
+                        ))
+                        .toggleStyle(.checkbox).labelsHidden()
+                        .disabled(!sequence.isExportEligible || model.isExporting)
+                        .accessibilityLabel("Select \(sequence.presentationName(ordinal: index + 1)) for recovery")
                         Text("\(index + 1)")
                             .monospacedDigit().foregroundStyle(.secondary)
                             .frame(width: 28, alignment: .trailing)
-                        Text(sequence.displayName).font(.body.weight(.medium))
+                        Text(sequence.presentationName(ordinal: index + 1)).font(.body.weight(.medium))
                             .lineLimit(2)
                         Spacer(minLength: 12)
                         Label(sequence.recoveryStatus,
@@ -115,9 +135,10 @@ private struct ProjectInspectionView: View {
                     .padding(.vertical, 7)
                     .tag(sequence.sequenceID)
                     .help(sequence.recoveryExplanation)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Sequence \(index + 1), \(sequence.displayName), \(sequence.recoveryStatus)")
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Sequence \(index + 1), \(sequence.presentationName(ordinal: index + 1)), \(sequence.recoveryStatus)")
                 }
+                .disabled(model.batchRecovery?.isRunning == true)
                 .listStyle(.inset)
                 .frame(minHeight: 260)
             }
@@ -125,28 +146,29 @@ private struct ProjectInspectionView: View {
             Divider()
             HStack(alignment: .center, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
+                    Text(model.selectedRecoveryCount == 0 ? "Select sequences to recover" : "\(model.selectedRecoveryCount) selected")
+                        .font(.headline)
                     if let sequence = selectedSequence {
                         Text(sequence.isExportEligible ? "Ready to recover" : "Not yet recoverable")
-                            .font(.headline)
+                            .font(.callout)
                         Text(sequence.recoveryExplanation).font(.callout).foregroundStyle(.secondary)
                         if let tracks = sequence.musicalTrackCount {
                             Text("\(tracks) tracks").font(.caption).foregroundStyle(.secondary)
                         }
                     } else {
-                        Text("Select a sequence to recover").font(.headline)
-                        Text("Unavailable sequences remain visible for inspection.")
+                        Text("Sequences not yet recoverable remain visible.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 8) {
-                    Button(RecoveryWorkspaceCopy.recoverMIDI) { model.exportSelectedSequence() }
+                    Button(model.recoveryActionTitle) { model.recoverSelectedSequences() }
                         .buttonStyle(.borderedProminent)
-                        .disabled(selectedSequence?.isExportEligible != true || model.isExporting)
-                        .accessibilityHint("Choose a folder and recover the selected sequence as MIDI")
+                        .disabled(!model.canRecoverSelection)
+                        .accessibilityHint("Choose one folder and recover the checked sequences as MIDI")
                     if let destination = model.retainedExportDestination {
-                        Button("Recover to Last Folder") { model.exportSelectedSequenceToRetainedDestination() }
-                            .disabled(selectedSequence?.isExportEligible != true || model.isExporting)
+                        Button("Recover to Last Folder") { model.recoverSelectedSequences(toRetainedDestination: true) }
+                            .disabled(!model.canRecoverSelection)
                             .controlSize(.small)
                         Text(destination.lastPathComponent).font(.caption).foregroundStyle(.secondary)
                             .lineLimit(1).truncationMode(.middle).help(destination.path)
@@ -297,6 +319,76 @@ private struct LatestExportView: View {
         if case .inspected(let current) = model.projectState, current.sessionID != context.sessionID {
             Text("From previously opened project: \(context.sourceURL.lastPathComponent)")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct BatchRecoveryView: View {
+    @ObservedObject var model: AppModel
+    let batch: AppModel.BatchRecovery
+    @State private var detailsExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if batch.isRunning, let index = batch.currentIndex,
+               batch.snapshot.items.indices.contains(index) {
+                HStack {
+                    ProgressView()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Recovering \(index + 1) of \(batch.snapshot.items.count)…").font(.headline)
+                        Text(batch.snapshot.items[index].displayName).lineLimit(2)
+                    }
+                }
+            } else {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(batch.summary).font(.headline)
+                        if batch.failureCount > 0 { Text("\(batch.failureCount) could not be recovered.") }
+                        if batch.notAttemptedCount > 0 { Text("\(batch.notAttemptedCount) not attempted because recovery stopped.") }
+                        Text("Destination: \(batch.snapshot.destination.lastPathComponent)")
+                            .font(.callout).foregroundStyle(.secondary).help(batch.snapshot.destination.path)
+                    }
+                    Spacer()
+                    if batch.successCount > 0 {
+                        Button("Reveal in Finder") { ExportDestinationPanel.revealInFinder(path: batch.snapshot.destination.path) }
+                    }
+                }
+            }
+            if case .inspected(let current) = model.projectState, current.sessionID != batch.snapshot.sessionID {
+                Text("From previously opened project: \(batch.snapshot.sourceURL.lastPathComponent)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if !batch.results.isEmpty {
+                DisclosureGroup("Recovery results", isExpanded: $detailsExpanded) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Source: \(batch.snapshot.sourceURL.path)").font(.caption).textSelection(.enabled)
+                            ForEach(batch.results, id: \.item.sequence.sequenceID) { entry in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    switch entry.outcome {
+                                    case .succeeded(let result):
+                                        Label("\(entry.item.displayName) — recovered", systemImage: "checkmark.circle")
+                                        Text(result.outputPath).font(.caption).textSelection(.enabled)
+                                        ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
+                                            Text(warning.message).font(.caption)
+                                        }
+                                    case .failed(let message, let technicalDetail):
+                                        Label("\(entry.item.displayName) — not recovered", systemImage: "exclamationmark.circle")
+                                        Text(message).font(.callout)
+                                        if let technicalDetail {
+                                            DisclosureGroup("Technical details") { Text(technicalDetail).font(.caption).textSelection(.enabled) }
+                                        }
+                                    case .notAttempted:
+                                        Text("\(entry.item.displayName) — not attempted")
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                }
+            }
         }
     }
 }

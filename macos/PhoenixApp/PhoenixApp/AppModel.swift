@@ -71,8 +71,46 @@ final class AppModel: ObservableObject {
         case failed(ExportContext, message: String)
     }
 
+    struct RecoveryItem: Equatable {
+        let sequence: SequenceViewData
+        let ordinal: Int
+        var displayName: String { sequence.presentationName(ordinal: ordinal) }
+    }
+    struct RecoverySnapshot: Equatable {
+        let id: UUID
+        let sessionID: String
+        let sourceURL: URL
+        let destination: URL
+        let items: [RecoveryItem]
+    }
+    enum RecoveryOutcome: Equatable {
+        case succeeded(ExportSequenceResult)
+        case failed(message: String, technicalDetail: String?)
+        case notAttempted
+    }
+    struct RecoveryResult: Equatable {
+        let item: RecoveryItem
+        let outcome: RecoveryOutcome
+    }
+    struct BatchRecovery: Equatable {
+        let snapshot: RecoverySnapshot
+        var currentIndex: Int?
+        var results: [RecoveryResult]
+        var isRunning: Bool
+        var successCount: Int { results.filter { if case .succeeded = $0.outcome { return true }; return false }.count }
+        var failureCount: Int { results.filter { if case .failed = $0.outcome { return true }; return false }.count }
+        var notAttemptedCount: Int { results.filter { if case .notAttempted = $0.outcome { return true }; return false }.count }
+        var summary: String {
+            if successCount == 0 { return "No sequences were recovered." }
+            return "\(successCount) \(successCount == 1 ? "sequence" : "sequences") recovered."
+        }
+    }
+    @Published private(set) var recoverySelection: Set<String> = []
+    @Published private(set) var batchRecovery: BatchRecovery?
+
     @Published private(set) var state: State = .starting
     @Published private(set) var projectState: ProjectState = .idle
+    /// Row focus for inspection only; it never changes recoverySelection.
     @Published var selectedSequenceID: String?
     @Published private(set) var inspectedSourceURL: URL?
     @Published private(set) var diagnosticsState: DiagnosticsState = .notLoaded
@@ -94,6 +132,7 @@ final class AppModel: ObservableObject {
     }
 
     var isExporting: Bool {
+        if batchRecovery?.isRunning == true { return true }
         if case .exporting = exportState { return true }
         return false
     }
@@ -114,13 +153,14 @@ final class AppModel: ObservableObject {
     }
 
     var canOpenProject: Bool {
-        if case .ready = state { return projectState != .inspecting }
+        if case .ready = state { return projectState != .inspecting && batchRecovery?.isRunning != true }
         return false
     }
 
     func openProject() {
         guard canOpenProject, let url = chooseProject() else { return }
         selectedSequenceID = nil
+        recoverySelection = []
         inspectedSourceURL = nil
         retainedExportDestination = nil
         diagnosticsState = .notLoaded
@@ -158,6 +198,82 @@ final class AppModel: ObservableObject {
                       current.sessionID == sessionID else { return }
                 diagnosticsState = .failed(message: error.localizedDescription)
             }
+        }
+    }
+
+    var selectedRecoveryCount: Int {
+        guard case .inspected(let inspection) = projectState else { return 0 }
+        return inspection.sequences.filter { $0.isExportEligible && recoverySelection.contains($0.sequenceID) }.count
+    }
+    var canRecoverSelection: Bool { selectedRecoveryCount > 0 && !isExporting }
+    var recoveryActionTitle: String {
+        let count = selectedRecoveryCount
+        return count == 0 ? "Recover Sequences…" : "Recover \(count) \(count == 1 ? "Sequence" : "Sequences")…"
+    }
+    func setRecoverySelected(_ id: String, selected: Bool) {
+        guard !isExporting, case .inspected(let inspection) = projectState,
+              inspection.sequences.contains(where: { $0.sequenceID == id && $0.isExportEligible }) else { return }
+        if selected { recoverySelection.insert(id) } else { recoverySelection.remove(id) }
+    }
+    func selectAllRecoverable() {
+        guard !isExporting, case .inspected(let inspection) = projectState else { return }
+        recoverySelection = Set(inspection.sequences.filter(\.isExportEligible).map(\.sequenceID))
+    }
+    func clearRecoverySelection() {
+        guard !isExporting else { return }
+        recoverySelection = []
+    }
+    func recoverSelectedSequences(toRetainedDestination: Bool = false) {
+        guard canRecoverSelection, case .inspected(let inspection) = projectState,
+              let sourceURL = inspectedSourceURL else { return }
+        let items = inspection.sequences.enumerated().compactMap { index, sequence -> RecoveryItem? in
+            guard sequence.isExportEligible && recoverySelection.contains(sequence.sequenceID) else { return nil }
+            return RecoveryItem(sequence: sequence, ordinal: index + 1)
+        }
+        guard !items.isEmpty else { return }
+        let destination: URL
+        if toRetainedDestination {
+            guard let retained = retainedExportDestination else { return }
+            destination = retained
+        } else {
+            guard let chosen = chooseDestination() else { return }
+            destination = chosen
+        }
+        guard !isExporting, case .inspected(let current) = projectState,
+              current.sessionID == inspection.sessionID else { return }
+        let snapshot = RecoverySnapshot(id: UUID(), sessionID: inspection.sessionID,
+                                        sourceURL: sourceURL, destination: destination, items: items)
+        batchRecovery = BatchRecovery(snapshot: snapshot, currentIndex: 0, results: [], isRunning: true)
+        // The actor-backed one-Sequence API retains all Core authorization and
+        // publication gates. No Swift file writer or cached MIDI is involved.
+        Task {
+            var progress = BatchRecovery(snapshot: snapshot, currentIndex: 0, results: [], isRunning: true)
+            for (index, item) in snapshot.items.enumerated() {
+                progress.currentIndex = index
+                batchRecovery = progress
+                do {
+                    let result = try await core.exportSequence(sessionID: snapshot.sessionID,
+                        sequenceID: item.sequence.sequenceID, destinationFolder: snapshot.destination.path,
+                        filenameStem: ExportFilename.stem(for: item.sequence.displayName, ordinal: item.ordinal))
+                    guard result.sessionID == snapshot.sessionID && result.sequenceID == item.sequence.sequenceID else {
+                        throw RecoveryOperationError(category: "invalid_response", diagnosticCode: "receipt_identity_mismatch",
+                            displayMessage: "Phoenix could not confirm this recovery result.", technicalMessage: "Receipt identity differs from the requested Sequence.")
+                    }
+                    progress.results.append(RecoveryResult(item: item, outcome: .succeeded(result)))
+                    retainedExportDestination = snapshot.destination
+                } catch {
+                    let typed = error as? RecoveryOperationError
+                    progress.results.append(RecoveryResult(item: item, outcome: .failed(
+                        message: error.localizedDescription, technicalDetail: typed?.technicalMessage)))
+                    if typed?.permitsNextSequence != true {
+                        progress.results += snapshot.items.dropFirst(index + 1).map { RecoveryResult(item: $0, outcome: .notAttempted) }
+                        break
+                    }
+                }
+            }
+            progress.currentIndex = nil
+            progress.isRunning = false
+            batchRecovery = progress
         }
     }
 

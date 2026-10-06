@@ -324,3 +324,23 @@ extension SequenceViewData {
             : "Phoenix does not yet support all of the data required to safely recover this sequence."
     }
 }
+
+/// Existing application error fields, retained in Swift without a wire change.
+struct RecoveryOperationError: LocalizedError, Equatable {
+    let category: String
+    let diagnosticCode: String
+    let displayMessage: String
+    let technicalMessage: String
+    var errorDescription: String? { displayMessage }
+    // Only these existing publication conflicts are proven local to one filename.
+    var permitsNextSequence: Bool {
+        category == "destination_exists"
+            && ["destination_exists", "destination_name_exhausted"].contains(diagnosticCode)
+    }
+}
+
+extension SequenceViewData {
+    func presentationName(ordinal: Int) -> String {
+        displayName.isEmpty ? "Unnamed sequence \(ordinal)" : displayName
+    }
+}
