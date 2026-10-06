@@ -85,8 +85,22 @@ final class AppModel: ObservableObject {
     }
     enum RecoveryOutcome: Equatable {
         case succeeded(ExportSequenceResult)
-        case failed(message: String, technicalDetail: String?)
+        case failed(RecoveryFailurePresentation)
         case notAttempted
+        var status: String {
+            switch self {
+            case .succeeded: return "Recovered"
+            case .failed: return "Could not recover"
+            case .notAttempted: return "Not attempted"
+            }
+        }
+        var statusSymbol: String {
+            switch self {
+            case .succeeded: return "checkmark.circle"
+            case .failed: return "exclamationmark.circle"
+            case .notAttempted: return "minus.circle"
+            }
+        }
     }
     struct RecoveryResult: Equatable {
         let item: RecoveryItem
@@ -100,6 +114,18 @@ final class AppModel: ObservableObject {
         var successCount: Int { results.filter { if case .succeeded = $0.outcome { return true }; return false }.count }
         var failureCount: Int { results.filter { if case .failed = $0.outcome { return true }; return false }.count }
         var notAttemptedCount: Int { results.filter { if case .notAttempted = $0.outcome { return true }; return false }.count }
+        var isAllSuccessful: Bool {
+            !isRunning && results.count == snapshot.items.count && !results.isEmpty
+                && failureCount == 0 && notAttemptedCount == 0
+        }
+        var failureContext: RecoveryFailurePresentation? {
+            let failures = results.compactMap { result -> RecoveryFailurePresentation? in
+                if case .failed(let failure) = result.outcome { return failure }
+                return nil
+            }
+            // The last failure is the stopping request when later items were not attempted.
+            return notAttemptedCount > 0 ? failures.last : failures.first
+        }
         var summary: String {
             if successCount == 0 { return "No sequences were recovered." }
             return "\(successCount) \(successCount == 1 ? "sequence" : "sequences") recovered."
@@ -264,7 +290,7 @@ final class AppModel: ObservableObject {
                 } catch {
                     let typed = error as? RecoveryOperationError
                     progress.results.append(RecoveryResult(item: item, outcome: .failed(
-                        message: error.localizedDescription, technicalDetail: typed?.technicalMessage)))
+                        RecoveryFailurePresentation(error: error))))
                     if typed?.permitsNextSequence != true {
                         progress.results += snapshot.items.dropFirst(index + 1).map { RecoveryResult(item: $0, outcome: .notAttempted) }
                         break

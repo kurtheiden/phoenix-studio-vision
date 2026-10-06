@@ -344,3 +344,42 @@ extension SequenceViewData {
         displayName.isEmpty ? "Unnamed sequence \(ordinal)" : displayName
     }
 }
+
+/// Result copy only. Batch continuation still uses the original Core error.
+struct RecoveryFailurePresentation: Equatable {
+    enum Kind: Equatable { case filenameConflict, sourceChanged, unconfirmed, other }
+    let kind: Kind
+    let message: String
+    let nextStep: String
+    let technicalDetail: String
+
+    init(error: any Error) {
+        if let core = error as? RecoveryOperationError {
+            technicalDetail = "\(core.displayMessage)\nCategory: \(core.category)\nDiagnostic: \(core.diagnosticCode)\n\(core.technicalMessage)"
+            if core.permitsNextSequence {
+                kind = .filenameConflict
+                message = core.diagnosticCode == "destination_name_exhausted"
+                    ? "Phoenix could not find an unused MIDI filename in the destination folder."
+                    : "A MIDI file with this name already exists in the destination folder."
+                nextStep = "Choose another destination folder to recover the affected sequence."
+            } else if core.category == "export_validation_failed" && core.diagnosticCode == "source_identity_changed" {
+                kind = .sourceChanged
+                message = "The Studio Vision project changed during recovery, so Phoenix stopped."
+                nextStep = "Open the project again before recovering more sequences."
+            } else if core.category == "invalid_response" && core.diagnosticCode == "receipt_identity_mismatch" {
+                kind = .unconfirmed
+                message = "Phoenix could not confirm this recovery result."
+                nextStep = "Check the destination folder before trying again."
+            } else {
+                kind = .other
+                message = "Phoenix could not safely complete recovery."
+                nextStep = "Review Recovery results for details."
+            }
+        } else {
+            kind = .other
+            message = "Phoenix could not safely complete recovery."
+            nextStep = "Review Recovery results for details."
+            technicalDetail = error.localizedDescription
+        }
+    }
+}

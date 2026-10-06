@@ -14,6 +14,7 @@ struct ContentView: View {
                 projectContent
                 if let batch = model.batchRecovery {
                     BatchRecoveryView(model: model, batch: batch)
+                        .id(batch.snapshot.id)
                 } else {
                     LatestExportView(model: model)
                 }
@@ -329,7 +330,10 @@ private struct BatchRecoveryView: View {
     @State private var detailsExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Most recent recovery · \(batch.snapshot.sourceURL.lastPathComponent)")
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle).help(batch.snapshot.sourceURL.path)
             if batch.isRunning, let index = batch.currentIndex,
                batch.snapshot.items.indices.contains(index) {
                 HStack {
@@ -339,55 +343,87 @@ private struct BatchRecoveryView: View {
                         Text(batch.snapshot.items[index].displayName).lineLimit(2)
                     }
                 }
+                .accessibilityElement(children: .combine)
             } else {
-                HStack {
+                HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(batch.summary).font(.headline)
+                        Label(batch.summary, systemImage: batch.isAllSuccessful ? "checkmark.circle" : "exclamationmark.circle")
+                            .font(.headline)
                         if batch.failureCount > 0 { Text("\(batch.failureCount) could not be recovered.") }
                         if batch.notAttemptedCount > 0 { Text("\(batch.notAttemptedCount) not attempted because recovery stopped.") }
                         Text("Destination: \(batch.snapshot.destination.lastPathComponent)")
-                            .font(.callout).foregroundStyle(.secondary).help(batch.snapshot.destination.path)
+                            .font(.callout).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle).help(batch.snapshot.destination.path)
+                            .accessibilityLabel("Recovery destination: \(batch.snapshot.destination.path)")
                     }
-                    Spacer()
+                    Spacer(minLength: 0)
                     if batch.successCount > 0 {
                         Button("Reveal in Finder") { ExportDestinationPanel.revealInFinder(path: batch.snapshot.destination.path) }
                     }
                 }
+                if let failure = batch.failureContext {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(failure.message).font(.callout)
+                        Text(failure.nextStep).font(.callout).foregroundStyle(.secondary)
+                    }
+                }
             }
             if case .inspected(let current) = model.projectState, current.sessionID != batch.snapshot.sessionID {
-                Text("From previously opened project: \(batch.snapshot.sourceURL.lastPathComponent)")
+                Text("From a previously opened project")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !batch.results.isEmpty {
                 DisclosureGroup("Recovery results", isExpanded: $detailsExpanded) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Source: \(batch.snapshot.sourceURL.path)").font(.caption).textSelection(.enabled)
                             ForEach(batch.results, id: \.item.sequence.sequenceID) { entry in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    switch entry.outcome {
-                                    case .succeeded(let result):
-                                        Label("\(entry.item.displayName) — recovered", systemImage: "checkmark.circle")
-                                        Text(result.outputPath).font(.caption).textSelection(.enabled)
-                                        ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
-                                            Text(warning.message).font(.caption)
-                                        }
-                                    case .failed(let message, let technicalDetail):
-                                        Label("\(entry.item.displayName) — not recovered", systemImage: "exclamationmark.circle")
-                                        Text(message).font(.callout)
-                                        if let technicalDetail {
-                                            DisclosureGroup("Technical details") { Text(technicalDetail).font(.caption).textSelection(.enabled) }
-                                        }
-                                    case .notAttempted:
-                                        Text("\(entry.item.displayName) — not attempted")
-                                    }
+                                resultRow(entry)
+                            }
+                            DisclosureGroup("Operation details") {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Source: \(batch.snapshot.sourceURL.path)")
+                                    Text("Destination: \(batch.snapshot.destination.path)")
                                 }
+                                .font(.caption).textSelection(.enabled)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
                     }
-                    .frame(maxHeight: 140)
+                    .frame(maxHeight: 160)
                 }
+            }
+        }
+    }
+
+    private func resultRow(_ entry: AppModel.RecoveryResult) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(entry.item.displayName).font(.callout.weight(.medium)).lineLimit(2)
+                Spacer(minLength: 0)
+                Label(entry.outcome.status, systemImage: entry.outcome.statusSymbol).font(.callout)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Sequence \(entry.item.ordinal), \(entry.item.displayName), \(entry.outcome.status)")
+            switch entry.outcome {
+            case .succeeded(let result):
+                Text(URL(fileURLWithPath: result.outputPath).lastPathComponent)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle).help(result.outputPath)
+                ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
+                    Text(warning.message).font(.caption)
+                }
+                DisclosureGroup("File details") {
+                    Text(result.outputPath).font(.caption).textSelection(.enabled)
+                }
+            case .failed(let failure):
+                Text(failure.message).font(.callout).foregroundStyle(.secondary)
+                DisclosureGroup("Technical details") {
+                    Text(failure.technicalDetail).font(.caption).textSelection(.enabled)
+                }
+            case .notAttempted:
+                Text("Recovery stopped before this sequence was attempted.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

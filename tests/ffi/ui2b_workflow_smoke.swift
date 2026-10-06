@@ -148,6 +148,10 @@ actor ProbeCore: PhoenixCoreServing {
         await until { model.batchRecovery?.isRunning == false }
         check(model.batchRecovery?.successCount == 2 && model.batchRecovery?.failureCount == 1 && model.batchRecovery?.notAttemptedCount == 0,"Accurate partial result")
         check(model.batchRecovery?.summary == "2 sequences recovered.","No false three-success summary")
+        check(model.batchRecovery?.isAllSuccessful == false,"Partial recovery not all-success")
+        check(model.batchRecovery?.results.map(\.outcome.status) == ["Recovered","Could not recover","Recovered"],"Concise partial row statuses")
+        check(model.batchRecovery?.failureContext?.message == "A MIDI file with this name already exists in the destination folder.","Musician-facing conflict context")
+        check(model.batchRecovery?.failureContext?.technicalDetail.contains("destination_exists") == true,"Conflict diagnostics retained secondarily")
         check(await core.maxActive() == 1,"Strictly sequential Core calls")
         let calls = await core.allCalls()
         check(calls.map(\.destination) == ["/recovered","/recovered","/recovered"] && pickers.destinationPrompts == 2,"One chosen destination per started batch")
@@ -165,6 +169,8 @@ actor ProbeCore: PhoenixCoreServing {
         try await core.finish()
         await until { model.batchRecovery?.isRunning == false }
         check(model.batchRecovery?.summary == "1 sequence recovered." && pickers.destinationPrompts == previousPrompts,"Single success existing API/destination")
+        check(model.batchRecovery?.isAllSuccessful == true && model.batchRecovery?.results.map(\.outcome.status) == ["Recovered"],"One success presentation")
+        check(model.batchRecovery?.snapshot.destination == pickers.destination && model.batchRecovery?.failureContext == nil,"Success destination/no failure context")
 
         // Fatal, unknown, and receipt mismatch stop all remaining requests.
         for kind in 0..<4 {
@@ -183,8 +189,25 @@ actor ProbeCore: PhoenixCoreServing {
             check(await fatalCore.callCount() == (kind == 3 ? 2 : 1),"Unsafe failure stops subsequent requests")
             check(fatalModel.batchRecovery?.successCount == (kind == 3 ? 1 : 0) && fatalModel.batchRecovery?.failureCount == 1 && fatalModel.batchRecovery?.notAttemptedCount == (kind == 3 ? 6 : 7),"Stopped outcomes complete")
             check(fatalModel.batchRecovery?.summary == (kind == 3 ? "1 sequence recovered." : "No sequences were recovered."),"Honest stopped/partial failure")
+            check(fatalModel.batchRecovery?.isAllSuccessful == false,"Stopped recovery never all-success")
+            if kind == 0 || kind == 3 {
+                check(fatalModel.batchRecovery?.failureContext?.message == "The Studio Vision project changed during recovery, so Phoenix stopped.","Source invalidation copy")
+                check(fatalModel.batchRecovery?.failureContext?.nextStep == "Open the project again before recovering more sequences.","Safe source next step")
+            }
+            let statuses = fatalModel.batchRecovery?.results.map(\.outcome.status) ?? []
+            check(statuses.filter { $0 == "Could not recover" }.count == 1 && statuses.filter { $0 == "Not attempted" }.count == (kind == 3 ? 6 : 7),"Failed/not attempted distinct")
+            if kind == 3 { check(statuses.first == "Recovered","Earlier success stays recovered") }
+            if kind == 1 {
+                check(fatalModel.batchRecovery?.failureContext?.message == "Phoenix could not safely complete recovery.","Unknown error not invented")
+                check(fatalModel.batchRecovery?.failureContext?.technicalDetail == "Unclassified error","Unknown diagnostics retained")
+            }
+
         }
         check(!RecoveryOperationError(category:"output_io_failed",diagnosticCode:"destination_exists",displayMessage:"",technicalMessage:"").permitsNextSequence,"Category/code pair required for continuation")
+        let lookalike = RecoveryFailurePresentation(error:RecoveryOperationError(category:"output_io_failed",diagnosticCode:"source_identity_changed",displayMessage:"opaque",technicalMessage:"detail"))
+        check(lookalike.kind == .other,"Do not claim source change from wrong category")
+        let exhausted = RecoveryFailurePresentation(error:RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"occupied",technicalMessage:"detail"))
+        check(exhausted.message == "Phoenix could not find an unused MIDI filename in the destination folder.","Unique-name exhaustion accurate copy")
         check(RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"",technicalMessage:"").permitsNextSequence,"Existing unique-name exhaustion local")
         check(RecoveryWorkspaceCopy.emptyTitle == "Recover MIDI from an old Studio Vision project","UI2A start preserved")
         model.openProject()
@@ -211,6 +234,8 @@ actor ProbeCore: PhoenixCoreServing {
         await until { real.batchRecovery?.isRunning == false }
         guard let batch = real.batchRecovery else { fatalError("No actual batch receipt") }
         check(batch.successCount == 8 && batch.failureCount == 0 && batch.notAttemptedCount == 0,"Actual eight-Sequence batch success")
+        check(batch.isAllSuccessful && batch.summary == "8 sequences recovered." && batch.results.allSatisfy { $0.outcome.status == "Recovered" },"All-success presentation actual eight")
+        check(batch.snapshot.destination == directory,"Actual completion destination")
         let names = [1:"DANCING",2:"NOTHING",5:"Nothing FINAL",8:"Sequence H",9:"Unnamed Sequence 09",10:"Wind ensemble",12:"Tuba thing",13:"Sequence M"]
         let artifacts = URL(fileURLWithPath:"/Users/kurtheiden/Documents/Phoenix Research/Experimental MIDI Recovery/SCHOOL PROJECTS")
         for entry in batch.results {
