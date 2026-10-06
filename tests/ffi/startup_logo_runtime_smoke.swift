@@ -10,7 +10,7 @@ import SwiftUI
               let bitmap = NSBitmapImageRep(data: try Data(contentsOf: resource)) else {
             fatalError("Built application startup-logo lookup/decode failed")
         }
-        precondition(bitmap.pixelsWide == 652 && bitmap.pixelsHigh == 642 && bitmap.hasAlpha)
+        precondition(bitmap.pixelsWide == 1024 && bitmap.pixelsHigh == 1024 && bitmap.hasAlpha)
         var transparent = false
         for y in 0..<bitmap.pixelsHigh {
             for x in 0..<bitmap.pixelsWide {
@@ -31,6 +31,6 @@ import SwiftUI
             }
         }
         precondition(visible, "Startup image rendered an empty frame")
-        print("Built-app startup logo lookup/decode/render PASS: 652 x 642, alpha and visible pixels")
+        print("Built-app startup logo lookup/decode/render PASS: 1024 x 1024, alpha and visible pixels")
     }
 }
