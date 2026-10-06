@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 enum Readiness: String, Decodable, Equatable {
     case ready
@@ -413,4 +414,14 @@ enum RecoveryDetailsPresentation {
 
 enum PhoenixStartupPresentation {
     static let logoResource = "PhoenixStartupLogo"
+
+    /// Load the loose bundled PNG explicitly; named SwiftUI lookup is not sufficient here.
+    static func loadImage(bundle: Bundle = .main) -> NSImage? {
+        guard let url = bundle.url(forResource: logoResource, withExtension: "png"),
+              let image = NSImage(contentsOf: url), image.isValid else {
+            assertionFailure("Required bundled Phoenix startup logo could not be loaded")
+            return nil
+        }
+        return image
+    }
 }

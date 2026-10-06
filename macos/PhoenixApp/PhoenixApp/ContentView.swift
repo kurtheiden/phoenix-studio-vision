@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
+    private let startupLogo = PhoenixStartupPresentation.loadImage()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -25,8 +26,8 @@ struct ContentView: View {
 
     private func startContent<Content: View>(showLogo: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 16) {
-            if showLogo {
-                Image(PhoenixStartupPresentation.logoResource)
+            if showLogo, let startupLogo {
+                Image(nsImage: startupLogo)
                     .resizable().scaledToFit()
                     .frame(maxWidth: 220, maxHeight: 220)
                     .accessibilityHidden(true)
