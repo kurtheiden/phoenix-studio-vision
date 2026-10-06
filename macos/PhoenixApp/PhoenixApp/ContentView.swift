@@ -32,7 +32,9 @@ struct ContentView: View {
                     .frame(maxWidth: 220, maxHeight: 220)
                     .accessibilityHidden(true)
             }
-            Text("Phoenix").font(.largeTitle.weight(.semibold))
+            if !showLogo {
+                Text("Phoenix").font(.largeTitle.weight(.semibold))
+            }
             content()
         }
         .multilineTextAlignment(.center)
