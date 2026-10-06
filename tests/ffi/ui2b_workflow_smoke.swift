@@ -209,6 +209,10 @@ actor ProbeCore: PhoenixCoreServing {
         let exhausted = RecoveryFailurePresentation(error:RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"occupied",technicalMessage:"detail"))
         check(exhausted.message == "Phoenix could not find an unused MIDI filename in the destination folder.","Unique-name exhaustion accurate copy")
         check(RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"",technicalMessage:"").permitsNextSequence,"Existing unique-name exhaustion local")
+        check(!RecoveryResultsLayout.usesSplit(hasResults:false, expanded:false),"No empty result workspace")
+        check(!RecoveryResultsLayout.usesSplit(hasResults:false, expanded:true),"No split without results")
+        check(!RecoveryResultsLayout.usesSplit(hasResults:true, expanded:false),"Collapsed results compact")
+        check(RecoveryResultsLayout.usesSplit(hasResults:true, expanded:true),"Expanded results independent workspace")
         check(RecoveryWorkspaceCopy.emptyTitle == "Recover MIDI from an old Studio Vision project","UI2A start preserved")
         model.openProject()
         await until { await core.openCount() == 2 }

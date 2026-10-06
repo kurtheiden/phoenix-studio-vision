@@ -383,3 +383,10 @@ struct RecoveryFailurePresentation: Equatable {
         }
     }
 }
+
+/// Presentation only: collapsed or absent results keep the Sequence-first layout.
+enum RecoveryResultsLayout {
+    static func usesSplit(hasResults: Bool, expanded: Bool) -> Bool {
+        hasResults && expanded
+    }
+}

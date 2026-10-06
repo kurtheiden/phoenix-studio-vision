@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
+    @State private var resultsExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -11,12 +12,20 @@ struct ContentView: View {
                     ProgressView("Starting Phoenix…")
                 }
             case .ready:
-                projectContent
-                if let batch = model.batchRecovery {
-                    BatchRecoveryView(model: model, batch: batch)
-                        .id(batch.snapshot.id)
+                if RecoveryResultsLayout.usesSplit(hasResults: model.batchRecovery?.results.isEmpty == false,
+                                                  expanded: resultsExpanded) {
+                    VSplitView {
+                        ScrollView {
+                            projectContent
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 160)
+                        recoveryWorkspace
+                            .frame(minHeight: 140)
+                    }
                 } else {
-                    LatestExportView(model: model)
+                    projectContent
+                    recoveryWorkspace
                 }
             case .failed(let message):
                 startContent {
@@ -25,8 +34,26 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: model.batchRecovery?.snapshot.id) { _ in resultsExpanded = false }
         .padding(24)
         .frame(minWidth: 640, minHeight: 620, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var recoveryWorkspace: some View {
+        if let batch = model.batchRecovery {
+            if resultsExpanded {
+                ScrollView {
+                    BatchRecoveryView(model: model, batch: batch, detailsExpanded: $resultsExpanded)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 8)
+                }
+            } else {
+                BatchRecoveryView(model: model, batch: batch, detailsExpanded: $resultsExpanded)
+            }
+        } else {
+            LatestExportView(model: model)
+        }
     }
 
     private func startContent<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -327,7 +354,7 @@ private struct LatestExportView: View {
 private struct BatchRecoveryView: View {
     @ObservedObject var model: AppModel
     let batch: AppModel.BatchRecovery
-    @State private var detailsExpanded = false
+    @Binding var detailsExpanded: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -374,23 +401,20 @@ private struct BatchRecoveryView: View {
             }
             if !batch.results.isEmpty {
                 DisclosureGroup("Recovery results", isExpanded: $detailsExpanded) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            ForEach(batch.results, id: \.item.sequence.sequenceID) { entry in
-                                resultRow(entry)
-                            }
-                            DisclosureGroup("Operation details") {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Source: \(batch.snapshot.sourceURL.path)")
-                                    Text("Destination: \(batch.snapshot.destination.path)")
-                                }
-                                .font(.caption).textSelection(.enabled)
-                            }
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(batch.results, id: \.item.sequence.sequenceID) { entry in
+                            resultRow(entry)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 4)
+                        DisclosureGroup("Operation details") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Source: \(batch.snapshot.sourceURL.path)")
+                                Text("Destination: \(batch.snapshot.destination.path)")
+                            }
+                            .font(.caption).textSelection(.enabled)
+                        }
                     }
-                    .frame(maxHeight: 160)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
                 }
             }
         }
