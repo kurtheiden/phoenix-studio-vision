@@ -229,6 +229,17 @@ actor ProbeCore: PhoenixCoreServing {
         let exhausted = RecoveryFailurePresentation(error:RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"occupied",technicalMessage:"detail"))
         check(exhausted.message == "Phoenix could not find an unused MIDI filename in the destination folder.","Unique-name exhaustion accurate copy")
         check(RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"",technicalMessage:"").permitsNextSequence,"Existing unique-name exhaustion local")
+        let cautions = [ProjectWarning(message:"Same caution",scope:.project,severity:.caution),
+                        ProjectWarning(message:"Same caution",scope:.sequence,severity:.informational),
+                        ProjectWarning(message:"Different caution",scope:.project,severity:.caution)]
+        let originalCautions = cautions
+        check(RecoveryDetailsPresentation.cautionMessages(cautions) == ["Same caution","Different caution"],"Exact caution dedup / distinct retained")
+        check(cautions == originalCautions && cautions.count == 3,"Underlying diagnostic records untouched")
+        check(RecoveryDetailsPresentation.technicalTitle == "Programmer Stuff" && RecoveryDetailsPresentation.technicalExplanation == "Most users will never need this information.","Secondary technical disclosure copy")
+        check(RecoveryDetailsPresentation.cautionsAnswer.contains("safe to open in your DAW") && RecoveryDetailsPresentation.cautionsAnswer.contains("non-musical"),"Bounded caution explanation")
+        check(RecoveryDetailsPresentation.fidelityNote.contains("does not establish") && RecoveryDetailsPresentation.fidelityNote.contains("historical playback fidelity"),"No historical fidelity guarantee")
+        check(RecoveryDetailsPresentation.blockedQuestion.contains("Not yet recoverable") && RecoveryDetailsPresentation.blockedAnswer.contains("rather than guessing or discarding musical information"),"Blocked recovery explanation")
+        check(RecoveryDetailsPresentation.contact == "soundzilla@yahoo.com","Copyable developer contact")
         check(RecoveryWorkspaceTab.allCases.map(\.rawValue) == ["Sequences","Details","Recovery Results"],"All three native workspaces always available")
         check(RecoveryWorkspaceTab.emptyResults == "No MIDI has been recovered yet.","No-results workspace empty copy")
         check(RecoveryWorkspaceCopy.emptyTitle == "Recover MIDI from an old Studio Vision project","UI2A start preserved")

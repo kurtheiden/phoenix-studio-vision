@@ -64,6 +64,7 @@ private struct ProjectInspectionView: View {
     @ObservedObject var model: AppModel
     let inspection: ProjectInspection
     @State private var resultsExpanded = true
+    @State private var programmerStuffExpanded = false
 
     private var selectedSequence: SequenceViewData? {
         inspection.sequences.first { $0.sequenceID == model.selectedSequenceID }
@@ -71,44 +72,52 @@ private struct ProjectInspectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Phoenix").font(.headline).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 20) {
                     Text(inspection.displayName).font(.title.weight(.semibold))
                         .lineLimit(2).textSelection(.enabled)
-                    Text(inspection.recognizedStudioVision
-                         ? "Studio Vision project" : "File not recognized as a supported Studio Vision project")
-                        .foregroundStyle(.secondary)
-                    Text(inspection.recoverySummary).font(.callout)
-                        .accessibilityLabel(inspection.recoverySummary)
+                    Spacer(minLength: 0)
+                    Button("Open Another Project…") { model.openProject() }
+                        .disabled(!model.canOpenProject)
+                        .controlSize(.small)
+                        .fixedSize()
                 }
-                Spacer(minLength: 0)
-                Button("Open Another Project…") { model.openProject() }
-                    .disabled(!model.canOpenProject)
-                    .controlSize(.small)
+                Text(inspection.recognizedStudioVision
+                     ? "Studio Vision project" : "File not recognized as a supported Studio Vision project")
+                    .foregroundStyle(.secondary)
+                Text(inspection.recoverySummary).font(.callout)
+                    .accessibilityLabel(inspection.recoverySummary)
             }
 
-            TabView(selection: $model.workspaceTab) {
-                sequenceWorkspace
-                    .tabItem { Text("Sequences") }.tag(RecoveryWorkspaceTab.sequences)
-                ScrollView {
-                    detailsWorkspace
+            Picker("Workspace", selection: $model.workspaceTab) {
+                ForEach(RecoveryWorkspaceTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
-                .onAppear { model.loadDiagnosticsIfNeeded() }
-                .tabItem { Text("Details") }.tag(RecoveryWorkspaceTab.details)
-                ScrollView {
-                    if let batch = model.currentProjectRecovery {
-                        BatchRecoveryView(model: model, batch: batch, detailsExpanded: $resultsExpanded)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        Text(RecoveryWorkspaceTab.emptyResults)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 32)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Recovery workspace")
+
+            Group {
+                switch model.workspaceTab {
+                case .sequences:
+                    sequenceWorkspace
+                case .details:
+                    ScrollView { detailsWorkspace }
+                case .results:
+                    ScrollView {
+                        if let batch = model.currentProjectRecovery {
+                            BatchRecoveryView(model: model, batch: batch, detailsExpanded: $resultsExpanded)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            Text(RecoveryWorkspaceTab.emptyResults)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 32)
+                        }
                     }
                 }
-                .tabItem { Text("Recovery Results") }.tag(RecoveryWorkspaceTab.results)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .onChange(of: model.batchRecovery?.snapshot.id) { _ in resultsExpanded = true }
         }
     }
@@ -206,16 +215,13 @@ private struct ProjectInspectionView: View {
         VStack(alignment: .leading, spacing: 12) {
             if !inspection.warnings.isEmpty {
                 Text("Recovery notes").font(.headline)
-                ForEach(Array(inspection.warnings.enumerated()), id: \.offset) { _, warning in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(warning.message)
-                        Text(warning.severity.displayName).font(.caption).foregroundStyle(.secondary)
-                    }
+                ForEach(RecoveryDetailsPresentation.cautionMessages(inspection.warnings), id: \.self) { message in
+                    Text(message)
                 }
             }
             if let sequence = selectedSequence {
                 Text("Selected sequence details").font(.headline)
-                Text(sequence.readinessReason.displayDetail)
+                Text(sequence.recoveryExplanation)
             }
             Text("Project information").font(.headline)
             if let source = model.inspectedSourceURL {
@@ -223,10 +229,41 @@ private struct ProjectInspectionView: View {
             }
             Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: inspection.byteSize), countStyle: .file))
             Text("Project support: \(inspection.overallReadiness.displayName)")
-            if case .ready(let version) = model.state {
-                Text("Application contract version \(version)")
+            Text(RecoveryDetailsPresentation.helpTitle).font(.headline)
+            Text(RecoveryDetailsPresentation.cautionsQuestion).fontWeight(.medium)
+            Text(RecoveryDetailsPresentation.cautionsAnswer)
+            Text(RecoveryDetailsPresentation.fidelityNote).foregroundStyle(.secondary)
+            Text(RecoveryDetailsPresentation.blockedQuestion).fontWeight(.medium)
+            Text(RecoveryDetailsPresentation.blockedAnswer)
+            Text("You can send your original Studio Vision project to the developer at \(RecoveryDetailsPresentation.contact) to see whether support can be added.")
+                .textSelection(.enabled)
+
+            Divider()
+            Text(RecoveryDetailsPresentation.technicalExplanation).foregroundStyle(.secondary)
+            DisclosureGroup(RecoveryDetailsPresentation.technicalTitle, isExpanded: $programmerStuffExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let sequence = selectedSequence {
+                        Text("Selected sequence diagnostic").font(.headline)
+                        Text(sequence.readinessReason.displayDetail)
+                    }
+                    if case .ready(let version) = model.state {
+                        Text("Application contract version \(version)")
+                    }
+                    if inspection.diagnosticsAvailable { diagnosticsContent }
+                    ForEach(Array(inspection.warnings.enumerated()), id: \.offset) { _, warning in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(warning.message)
+                            Text("Scope: \(warning.scope.rawValue) · \(warning.severity.displayName)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .textSelection(.enabled)
             }
-            if inspection.diagnosticsAvailable { diagnosticsContent }
+            .onChange(of: programmerStuffExpanded) { expanded in
+                if expanded { model.loadDiagnosticsIfNeeded() }
+            }
+
         }
         .font(.callout)
         .frame(maxWidth: .infinity, alignment: .leading)

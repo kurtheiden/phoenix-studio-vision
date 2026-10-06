@@ -391,3 +391,20 @@ enum RecoveryWorkspaceTab: String, CaseIterable {
     case results = "Recovery Results"
     static let emptyResults = "No MIDI has been recovered yet."
 }
+
+/// Display-only grouping; underlying warning records remain untouched.
+enum RecoveryDetailsPresentation {
+    static let technicalTitle = "Programmer Stuff"
+    static let technicalExplanation = "Most users will never need this information."
+    static let helpTitle = "Questions about recovery"
+    static let cautionsQuestion = "Why are there cautions? Are my recovered files safe to use in my DAW?"
+    static let cautionsAnswer = "Yes. If Phoenix recovered a Sequence to MIDI, the resulting MIDI file is safe to open in your DAW. A caution can mean Phoenix found additional non-musical project information that it retained in the recovery diagnostics."
+    static let fidelityNote = "This does not establish original instrument sounds or historical playback fidelity, or recover information Phoenix did not export."
+    static let blockedQuestion = "What about Sequences labeled \"Not yet recoverable\"?"
+    static let blockedAnswer = "This means Phoenix found something in the Sequence that it cannot yet safely recover. Phoenix leaves that Sequence blocked rather than guessing or discarding musical information."
+    static let contact = "soundzilla@yahoo.com"
+    static func cautionMessages(_ warnings: [ProjectWarning]) -> [String] {
+        var seen = Set<String>()
+        return warnings.map(\.message).filter { seen.insert($0).inserted }
+    }
+}
