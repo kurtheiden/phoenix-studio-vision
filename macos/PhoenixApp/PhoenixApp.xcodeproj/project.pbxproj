@@ -13,6 +13,7 @@
 		A00000010000000000000007 /* ProjectInspectionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000006 /* ProjectInspectionModels.swift */; };
 		A00000010000000000000008 /* ExportDestinationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000007 /* ExportDestinationPanel.swift */; };
 		A00000010000000000000005 /* libphoenix.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000120000000000000001 /* libphoenix.a */; };
+		A00000010000000000000009 /* PhoenixStartupLogo.png in Resources */ = {isa = PBXBuildFile; fileRef = A00000110000000000000008 /* PhoenixStartupLogo.png */; };
 /* End PBXBuildFile section */
 /* Begin PBXFileReference section */
 		A00000100000000000000001 /* Phoenix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Phoenix.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -24,13 +25,14 @@
 		A00000110000000000000006 /* ProjectInspectionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectInspectionModels.swift; sourceTree = "<group>"; };
 		A00000110000000000000007 /* ExportDestinationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportDestinationPanel.swift; sourceTree = "<group>"; };
 		A00000120000000000000001 /* libphoenix.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "$(SRCROOT)/../../target/release/libphoenix.a"; path = "$(SRCROOT)/../../target/release/libphoenix.a"; sourceTree = "<group>"; };
+		A00000110000000000000008 /* PhoenixStartupLogo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Resources/PhoenixStartupLogo.png; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 /* Begin PBXFrameworksBuildPhase section */
 		A00000200000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 /* Begin PBXGroup section */
 		A00000300000000000000001 = {isa = PBXGroup; children = (A00000300000000000000002 /* PhoenixApp */, A00000300000000000000003 /* Products */,); sourceTree = "<group>"; };
-		A00000300000000000000002 /* PhoenixApp */ = {isa = PBXGroup; children = (A00000110000000000000001 /* PhoenixAppApp.swift */, A00000110000000000000002 /* AppModel.swift */, A00000110000000000000003 /* PhoenixCore.swift */, A00000110000000000000004 /* ContentView.swift */, A00000110000000000000005 /* ProjectOpenPanel.swift */, A00000110000000000000006 /* ProjectInspectionModels.swift */, A00000110000000000000007 /* ExportDestinationPanel.swift */, A00000120000000000000001 /* libphoenix.a */,); path = PhoenixApp; sourceTree = "<group>"; };
+		A00000300000000000000002 /* PhoenixApp */ = {isa = PBXGroup; children = (A00000110000000000000001 /* PhoenixAppApp.swift */, A00000110000000000000002 /* AppModel.swift */, A00000110000000000000003 /* PhoenixCore.swift */, A00000110000000000000004 /* ContentView.swift */, A00000110000000000000005 /* ProjectOpenPanel.swift */, A00000110000000000000006 /* ProjectInspectionModels.swift */, A00000110000000000000007 /* ExportDestinationPanel.swift */, A00000120000000000000001 /* libphoenix.a */, A00000110000000000000008 /* PhoenixStartupLogo.png */,); path = PhoenixApp; sourceTree = "<group>"; };
 		A00000300000000000000003 /* Products */ = {isa = PBXGroup; children = (A00000100000000000000001 /* Phoenix.app */,); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 /* Begin PBXNativeTarget section */
@@ -40,7 +42,7 @@
 		A00000600000000000000001 /* Project object */ = {isa = PBXProject; attributes = {LastUpgradeCheck = 2630;}; buildConfigurationList = A00000700000000000000001 /* Build configuration list for PBXProject "PhoenixApp" */; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en,); mainGroup = A00000300000000000000001; productRefGroup = A00000300000000000000003 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (A00000400000000000000001 /* PhoenixApp */,); };
 /* End PBXProject section */
 /* Begin PBXResourcesBuildPhase section */
-		A00000500000000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A00000500000000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000010000000000000009 /* PhoenixStartupLogo.png in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 /* Begin PBXShellScriptBuildPhase section */
 		A00000500000000000000001 /* Cargo build */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); name = "Build Phoenix Rust library"; outputPaths = (); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -e\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\ncd \"$SRCROOT/../..\"\ncargo build --release --locked\n"; };

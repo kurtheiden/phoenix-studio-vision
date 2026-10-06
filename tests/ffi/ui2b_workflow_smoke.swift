@@ -229,6 +229,9 @@ actor ProbeCore: PhoenixCoreServing {
         let exhausted = RecoveryFailurePresentation(error:RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"occupied",technicalMessage:"detail"))
         check(exhausted.message == "Phoenix could not find an unused MIDI filename in the destination folder.","Unique-name exhaustion accurate copy")
         check(RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"",technicalMessage:"").permitsNextSequence,"Existing unique-name exhaustion local")
+        check(PhoenixStartupPresentation.logoResource == "PhoenixStartupLogo","Bundled startup logo identity")
+        check(RecoveryDetailsPresentation.helpInvitation == "Want help recovering a blocked Sequence?","Friendly blocked help invitation")
+        check(RecoveryDetailsPresentation.helpContact == "Send your original Studio Vision project to soundzilla@yahoo.com. It may help us add support for the data Phoenix found.","Friendly help / bounded support possibility")
         let cautions = [ProjectWarning(message:"Same caution",scope:.project,severity:.caution),
                         ProjectWarning(message:"Same caution",scope:.sequence,severity:.informational),
                         ProjectWarning(message:"Different caution",scope:.project,severity:.caution)]

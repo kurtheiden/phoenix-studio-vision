@@ -403,8 +403,14 @@ enum RecoveryDetailsPresentation {
     static let blockedQuestion = "What about Sequences labeled \"Not yet recoverable\"?"
     static let blockedAnswer = "This means Phoenix found something in the Sequence that it cannot yet safely recover. Phoenix leaves that Sequence blocked rather than guessing or discarding musical information."
     static let contact = "soundzilla@yahoo.com"
+    static let helpInvitation = "Want help recovering a blocked Sequence?"
+    static let helpContact = "Send your original Studio Vision project to soundzilla@yahoo.com. It may help us add support for the data Phoenix found."
     static func cautionMessages(_ warnings: [ProjectWarning]) -> [String] {
         var seen = Set<String>()
         return warnings.map(\.message).filter { seen.insert($0).inserted }
     }
+}
+
+enum PhoenixStartupPresentation {
+    static let logoResource = "PhoenixStartupLogo"
 }

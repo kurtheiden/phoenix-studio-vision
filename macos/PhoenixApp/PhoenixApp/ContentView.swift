@@ -7,7 +7,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 20) {
             switch model.state {
             case .starting:
-                startContent {
+                startContent(showLogo: true) {
                     ProgressView("Starting Phoenix…")
                 }
             case .ready:
@@ -23,8 +23,14 @@ struct ContentView: View {
         .frame(minWidth: 640, minHeight: 620, alignment: .topLeading)
     }
 
-    private func startContent<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func startContent<Content: View>(showLogo: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 16) {
+            if showLogo {
+                Image(PhoenixStartupPresentation.logoResource)
+                    .resizable().scaledToFit()
+                    .frame(maxWidth: 220, maxHeight: 220)
+                    .accessibilityHidden(true)
+            }
             Text("Phoenix").font(.largeTitle.weight(.semibold))
             content()
         }
@@ -36,7 +42,7 @@ struct ContentView: View {
     private var projectContent: some View {
         switch model.projectState {
         case .idle:
-            startContent {
+            startContent(showLogo: true) {
                 Text(RecoveryWorkspaceCopy.emptyTitle).font(.title3)
                 Text("Open your project to see which sequences Phoenix can safely recover.")
                     .foregroundStyle(.secondary)
@@ -228,14 +234,13 @@ private struct ProjectInspectionView: View {
                 Text(source.path).textSelection(.enabled)
             }
             Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: inspection.byteSize), countStyle: .file))
-            Text("Project support: \(inspection.overallReadiness.displayName)")
             Text(RecoveryDetailsPresentation.helpTitle).font(.headline)
             Text(RecoveryDetailsPresentation.cautionsQuestion).fontWeight(.medium)
             Text(RecoveryDetailsPresentation.cautionsAnswer)
-            Text(RecoveryDetailsPresentation.fidelityNote).foregroundStyle(.secondary)
             Text(RecoveryDetailsPresentation.blockedQuestion).fontWeight(.medium)
             Text(RecoveryDetailsPresentation.blockedAnswer)
-            Text("You can send your original Studio Vision project to the developer at \(RecoveryDetailsPresentation.contact) to see whether support can be added.")
+            Text(RecoveryDetailsPresentation.helpInvitation).fontWeight(.medium)
+            Text(RecoveryDetailsPresentation.helpContact)
                 .textSelection(.enabled)
 
             Divider()
@@ -246,6 +251,8 @@ private struct ProjectInspectionView: View {
                         Text("Selected sequence diagnostic").font(.headline)
                         Text(sequence.readinessReason.displayDetail)
                     }
+                    Text("Project support: \(inspection.overallReadiness.displayName)")
+                    Text(RecoveryDetailsPresentation.fidelityNote)
                     if case .ready(let version) = model.state {
                         Text("Application contract version \(version)")
                     }
