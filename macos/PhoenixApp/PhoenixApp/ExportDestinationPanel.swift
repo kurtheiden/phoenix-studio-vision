@@ -4,6 +4,7 @@ enum ExportDestinationPanel {
     @MainActor
     static func chooseFolder() -> URL? {
         let panel = NSOpenPanel()
+        panel.prompt = "Choose"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
