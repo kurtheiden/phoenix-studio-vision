@@ -29,7 +29,7 @@ struct ContentView: View {
             if showLogo, let startupLogo {
                 Image(nsImage: startupLogo)
                     .resizable().scaledToFit()
-                    .frame(maxWidth: 220, maxHeight: 220)
+                    .frame(maxWidth: 320, maxHeight: 320)
                     .accessibilityHidden(true)
             }
             if !showLogo {
