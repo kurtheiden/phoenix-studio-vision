@@ -384,9 +384,10 @@ struct RecoveryFailurePresentation: Equatable {
     }
 }
 
-/// Presentation only: collapsed or absent results keep the Sequence-first layout.
-enum RecoveryResultsLayout {
-    static func usesSplit(hasResults: Bool, expanded: Bool) -> Bool {
-        hasResults && expanded
-    }
+/// Presentation state only; never grants recovery authority.
+enum RecoveryWorkspaceTab: String, CaseIterable {
+    case sequences = "Sequences"
+    case details = "Details"
+    case results = "Recovery Results"
+    static let emptyResults = "No MIDI has been recovered yet."
 }

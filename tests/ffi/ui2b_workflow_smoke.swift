@@ -107,6 +107,13 @@ actor ProbeCore: PhoenixCoreServing {
         model.setRecoverySelected("session-1-0",selected:false)
         check(model.recoverySelection.isEmpty,"Ready deselect")
         model.selectAllRecoverable()
+        check(model.workspaceTab == .sequences && model.currentProjectRecovery == nil,"New project Sequences / empty results")
+        let focusBeforeTabs = model.selectedSequenceID
+        let selectionBeforeTabs = model.recoverySelection
+        model.workspaceTab = .details
+        model.workspaceTab = .results
+        check(model.selectedSequenceID == focusBeforeTabs && model.recoverySelection == selectionBeforeTabs,"Tabs independent of focus and recovery selection")
+        model.workspaceTab = .sequences
         check(model.recoverySelection.count == 8 && model.selectedRecoveryCount == 8,"Select exactly eight")
         check(model.recoveryActionTitle == "Recover 8 Sequences…","Multi action count")
         if case .inspected(let inspection) = model.projectState {
@@ -127,6 +134,12 @@ actor ProbeCore: PhoenixCoreServing {
         await until { await core.pendingCount() == 1 }
         let snapshot = model.batchRecovery?.snapshot
         check(snapshot?.items.map(\.sequence.sequenceID) == ["session-1-0","session-1-1","session-1-2"],"Frozen source-order selection")
+        let activeSelection = model.recoverySelection
+        let activeFocus = model.selectedSequenceID
+        model.workspaceTab = .details
+        model.workspaceTab = .results
+        check(model.batchRecovery?.snapshot == snapshot && model.recoverySelection == activeSelection && model.selectedSequenceID == activeFocus,"Active batch/focus/selection unchanged by tabs")
+        model.workspaceTab = .sequences
         check(snapshot?.items[0].sequence.boundedExportCapability?.isRecognized == true,"Capability retained in snapshot")
         model.clearRecoverySelection(); model.selectAllRecoverable(); model.setRecoverySelected("session-1-0",selected:false)
         model.selectedSequenceID = "session-1-14"
@@ -148,6 +161,11 @@ actor ProbeCore: PhoenixCoreServing {
         await until { model.batchRecovery?.isRunning == false }
         check(model.batchRecovery?.successCount == 2 && model.batchRecovery?.failureCount == 1 && model.batchRecovery?.notAttemptedCount == 0,"Accurate partial result")
         check(model.batchRecovery?.summary == "2 sequences recovered.","No false three-success summary")
+        check(model.workspaceTab == .results && model.currentProjectRecovery != nil,"Partial completion opens current results")
+        let selectionAfterRecovery = model.recoverySelection
+        let resultAfterRecovery = model.batchRecovery
+        model.workspaceTab = .sequences
+        check(model.recoverySelection == selectionAfterRecovery && model.batchRecovery == resultAfterRecovery && model.canRecoverSelection,"Return preserves selection/results/actions")
         check(model.batchRecovery?.isAllSuccessful == false,"Partial recovery not all-success")
         check(model.batchRecovery?.results.map(\.outcome.status) == ["Recovered","Could not recover","Recovered"],"Concise partial row statuses")
         check(model.batchRecovery?.failureContext?.message == "A MIDI file with this name already exists in the destination folder.","Musician-facing conflict context")
@@ -169,6 +187,7 @@ actor ProbeCore: PhoenixCoreServing {
         try await core.finish()
         await until { model.batchRecovery?.isRunning == false }
         check(model.batchRecovery?.summary == "1 sequence recovered." && pickers.destinationPrompts == previousPrompts,"Single success existing API/destination")
+        check(model.workspaceTab == .results && model.retainedExportDestination != nil,"Success opens results / last destination retained")
         check(model.batchRecovery?.isAllSuccessful == true && model.batchRecovery?.results.map(\.outcome.status) == ["Recovered"],"One success presentation")
         check(model.batchRecovery?.snapshot.destination == pickers.destination && model.batchRecovery?.failureContext == nil,"Success destination/no failure context")
 
@@ -189,6 +208,7 @@ actor ProbeCore: PhoenixCoreServing {
             check(await fatalCore.callCount() == (kind == 3 ? 2 : 1),"Unsafe failure stops subsequent requests")
             check(fatalModel.batchRecovery?.successCount == (kind == 3 ? 1 : 0) && fatalModel.batchRecovery?.failureCount == 1 && fatalModel.batchRecovery?.notAttemptedCount == (kind == 3 ? 6 : 7),"Stopped outcomes complete")
             check(fatalModel.batchRecovery?.summary == (kind == 3 ? "1 sequence recovered." : "No sequences were recovered."),"Honest stopped/partial failure")
+            check(fatalModel.workspaceTab == .results,"Failure/stopped partial completion opens results")
             check(fatalModel.batchRecovery?.isAllSuccessful == false,"Stopped recovery never all-success")
             if kind == 0 || kind == 3 {
                 check(fatalModel.batchRecovery?.failureContext?.message == "The Studio Vision project changed during recovery, so Phoenix stopped.","Source invalidation copy")
@@ -209,13 +229,14 @@ actor ProbeCore: PhoenixCoreServing {
         let exhausted = RecoveryFailurePresentation(error:RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"occupied",technicalMessage:"detail"))
         check(exhausted.message == "Phoenix could not find an unused MIDI filename in the destination folder.","Unique-name exhaustion accurate copy")
         check(RecoveryOperationError(category:"destination_exists",diagnosticCode:"destination_name_exhausted",displayMessage:"",technicalMessage:"").permitsNextSequence,"Existing unique-name exhaustion local")
-        check(!RecoveryResultsLayout.usesSplit(hasResults:false, expanded:false),"No empty result workspace")
-        check(!RecoveryResultsLayout.usesSplit(hasResults:false, expanded:true),"No split without results")
-        check(!RecoveryResultsLayout.usesSplit(hasResults:true, expanded:false),"Collapsed results compact")
-        check(RecoveryResultsLayout.usesSplit(hasResults:true, expanded:true),"Expanded results independent workspace")
+        check(RecoveryWorkspaceTab.allCases.map(\.rawValue) == ["Sequences","Details","Recovery Results"],"All three native workspaces always available")
+        check(RecoveryWorkspaceTab.emptyResults == "No MIDI has been recovered yet.","No-results workspace empty copy")
         check(RecoveryWorkspaceCopy.emptyTitle == "Recover MIDI from an old Studio Vision project","UI2A start preserved")
         model.openProject()
         await until { await core.openCount() == 2 }
+        await until { model.canOpenProject }
+        check(model.workspaceTab == .sequences && model.currentProjectRecovery == nil,"New project resets tab and excludes previous result")
+
         await until { if case .inspected(let p) = model.projectState { return p.sessionID == "session-2" }; return false }
         check(model.recoverySelection.isEmpty,"New project initial selection empty")
         // Actual Swift orchestration uses the established external specimen only.

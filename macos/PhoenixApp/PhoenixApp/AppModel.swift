@@ -132,6 +132,7 @@ final class AppModel: ObservableObject {
         }
     }
     @Published private(set) var recoverySelection: Set<String> = []
+    @Published var workspaceTab: RecoveryWorkspaceTab = .sequences
     @Published private(set) var batchRecovery: BatchRecovery?
 
     @Published private(set) var state: State = .starting
@@ -183,6 +184,12 @@ final class AppModel: ObservableObject {
         return false
     }
 
+    var currentProjectRecovery: BatchRecovery? {
+        guard case .inspected(let inspection) = projectState,
+              let batch = batchRecovery, batch.snapshot.sessionID == inspection.sessionID else { return nil }
+        return batch
+    }
+
     func openProject() {
         guard canOpenProject, let url = chooseProject() else { return }
         selectedSequenceID = nil
@@ -198,6 +205,7 @@ final class AppModel: ObservableObject {
                 selectedSequenceID = nil
                 diagnosticsState = .notLoaded
                 inspectedSourceURL = url
+                workspaceTab = .sequences
                 projectState = .inspected(summary)
                 FileHandle.standardError.write(Data("UI1B_INSPECTED sequences=\(summary.sequenceCount)\n".utf8))
             } catch {
@@ -300,6 +308,7 @@ final class AppModel: ObservableObject {
             progress.currentIndex = nil
             progress.isRunning = false
             batchRecovery = progress
+            workspaceTab = .results
         }
     }
 

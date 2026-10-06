@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
-    @State private var resultsExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -12,21 +11,7 @@ struct ContentView: View {
                     ProgressView("Starting Phoenix…")
                 }
             case .ready:
-                if RecoveryResultsLayout.usesSplit(hasResults: model.batchRecovery?.results.isEmpty == false,
-                                                  expanded: resultsExpanded) {
-                    VSplitView {
-                        ScrollView {
-                            projectContent
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(minHeight: 160)
-                        recoveryWorkspace
-                            .frame(minHeight: 140)
-                    }
-                } else {
-                    projectContent
-                    recoveryWorkspace
-                }
+                projectContent
             case .failed(let message):
                 startContent {
                     Text("Phoenix could not start").font(.headline)
@@ -34,26 +19,8 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: model.batchRecovery?.snapshot.id) { _ in resultsExpanded = false }
         .padding(24)
         .frame(minWidth: 640, minHeight: 620, alignment: .topLeading)
-    }
-
-    @ViewBuilder
-    private var recoveryWorkspace: some View {
-        if let batch = model.batchRecovery {
-            if resultsExpanded {
-                ScrollView {
-                    BatchRecoveryView(model: model, batch: batch, detailsExpanded: $resultsExpanded)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 8)
-                }
-            } else {
-                BatchRecoveryView(model: model, batch: batch, detailsExpanded: $resultsExpanded)
-            }
-        } else {
-            LatestExportView(model: model)
-        }
     }
 
     private func startContent<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -96,7 +63,7 @@ struct ContentView: View {
 private struct ProjectInspectionView: View {
     @ObservedObject var model: AppModel
     let inspection: ProjectInspection
-    @State private var detailsExpanded = false
+    @State private var resultsExpanded = true
 
     private var selectedSequence: SequenceViewData? {
         inspection.sequences.first { $0.sequenceID == model.selectedSequenceID }
@@ -121,6 +88,33 @@ private struct ProjectInspectionView: View {
                     .controlSize(.small)
             }
 
+            TabView(selection: $model.workspaceTab) {
+                sequenceWorkspace
+                    .tabItem { Text("Sequences") }.tag(RecoveryWorkspaceTab.sequences)
+                ScrollView {
+                    detailsWorkspace
+                }
+                .onAppear { model.loadDiagnosticsIfNeeded() }
+                .tabItem { Text("Details") }.tag(RecoveryWorkspaceTab.details)
+                ScrollView {
+                    if let batch = model.currentProjectRecovery {
+                        BatchRecoveryView(model: model, batch: batch, detailsExpanded: $resultsExpanded)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        Text(RecoveryWorkspaceTab.emptyResults)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 32)
+                    }
+                }
+                .tabItem { Text("Recovery Results") }.tag(RecoveryWorkspaceTab.results)
+            }
+            .onChange(of: model.batchRecovery?.snapshot.id) { _ in resultsExpanded = true }
+        }
+    }
+
+    private var sequenceWorkspace: some View {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Sequences").font(.headline)
                 Spacer()
@@ -168,7 +162,7 @@ private struct ProjectInspectionView: View {
                 }
                 .disabled(model.batchRecovery?.isRunning == true)
                 .listStyle(.inset)
-                .frame(minHeight: 260)
+                .frame(minHeight: 180)
             }
 
             Divider()
@@ -204,50 +198,39 @@ private struct ProjectInspectionView: View {
                 }
             }
 
-            if inspection.warnings.contains(where: { $0.severity == .dataLossRisk }) {
-                Label("Review the recovery notes in Details.", systemImage: "exclamationmark.triangle")
-                    .font(.callout)
-            }
-            DisclosureGroup("Details", isExpanded: Binding(
-                get: { detailsExpanded },
-                set: { expanded in
-                    detailsExpanded = expanded
-                    if expanded { model.loadDiagnosticsIfNeeded() }
-                }
-            )) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if !inspection.warnings.isEmpty {
-                            Text("Recovery notes").font(.headline)
-                            ForEach(Array(inspection.warnings.enumerated()), id: \.offset) { _, warning in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(warning.message)
-                                    Text(warning.severity.displayName).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        if let sequence = selectedSequence {
-                            Text("Selected sequence details").font(.headline)
-                            Text(sequence.readinessReason.displayDetail)
-                        }
-                        Text("Project information").font(.headline)
-                        if let source = model.inspectedSourceURL {
-                            Text(source.path).textSelection(.enabled)
-                        }
-                        Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: inspection.byteSize), countStyle: .file))
-                        Text("Project support: \(inspection.overallReadiness.displayName)")
-                        if case .ready(let version) = model.state {
-                            Text("Application contract version \(version)")
-                        }
-                        if inspection.diagnosticsAvailable { diagnosticsContent }
-                    }
-                    .font(.callout)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 8)
-                }
-                .frame(maxHeight: 160)
-            }
         }
+        .padding(.top, 12)
+    }
+
+    private var detailsWorkspace: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !inspection.warnings.isEmpty {
+                Text("Recovery notes").font(.headline)
+                ForEach(Array(inspection.warnings.enumerated()), id: \.offset) { _, warning in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(warning.message)
+                        Text(warning.severity.displayName).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let sequence = selectedSequence {
+                Text("Selected sequence details").font(.headline)
+                Text(sequence.readinessReason.displayDetail)
+            }
+            Text("Project information").font(.headline)
+            if let source = model.inspectedSourceURL {
+                Text(source.path).textSelection(.enabled)
+            }
+            Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: inspection.byteSize), countStyle: .file))
+            Text("Project support: \(inspection.overallReadiness.displayName)")
+            if case .ready(let version) = model.state {
+                Text("Application contract version \(version)")
+            }
+            if inspection.diagnosticsAvailable { diagnosticsContent }
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 8)
     }
 
     @ViewBuilder
@@ -265,88 +248,6 @@ private struct ProjectInspectionView: View {
             if !summary.unsupportedFamilies.isEmpty {
                 Text("Unsupported event families: \(summary.unsupportedFamilies.joined(separator: ", "))")
             }
-        }
-    }
-}
-
-private struct LatestExportView: View {
-    @ObservedObject var model: AppModel
-    @State private var detailsExpanded = false
-
-    @ViewBuilder
-    var body: some View {
-        switch model.exportState {
-        case .idle:
-            EmptyView()
-        case .exporting(let context):
-            HStack {
-                ProgressView()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Recovering MIDI…").font(.headline)
-                    Text(context.sequenceDisplayName).lineLimit(2)
-                    previousProject(context)
-                }
-            }
-            .accessibilityElement(children: .combine)
-        case .failed(let context, let message):
-            VStack(alignment: .leading, spacing: 5) {
-                Text("MIDI could not be recovered").font(.headline)
-                Text(context.sequenceDisplayName).lineLimit(2)
-                previousProject(context)
-                Text(message).foregroundStyle(.secondary)
-                DisclosureGroup("Recovery attempt details") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Source: \(context.sourceURL.path)")
-                        Text("Destination: \(context.destination.path)")
-                    }
-                    .font(.caption).textSelection(.enabled)
-                }
-            }
-        case .succeeded(let context, let result):
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("MIDI recovered").font(.headline)
-                        Text(result.sequenceDisplayName).lineLimit(2)
-                        Text("Saved to \(context.destination.lastPathComponent)")
-                            .font(.callout).foregroundStyle(.secondary)
-                            .help(result.outputPath)
-                        previousProject(context)
-                    }
-                    Spacer()
-                    Button("Reveal in Finder") { ExportDestinationPanel.revealInFinder(path: result.outputPath) }
-                }
-                DisclosureGroup("Recovery result details", isExpanded: $detailsExpanded) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Source: \(context.sourceURL.path)")
-                            Text(result.outputPath).textSelection(.enabled)
-                            Text("\(result.musicalTrackCount) musical tracks · \(result.totalSMFTrackCount) SMF tracks")
-                            if result.untranslatedMetadataCount > 0 {
-                                Text("\(result.untranslatedMetadataCount) untranslated metadata items")
-                            }
-                            ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
-                                Text(warning.message).accessibilityLabel("Recovery note: \(warning.message)")
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .font(.caption).frame(maxHeight: 100)
-                }
-                if result.warnings.contains(where: { $0.severity == .dataLossRisk }) {
-                    Label("Review the recovery result notes.", systemImage: "exclamationmark.triangle")
-                        .font(.callout)
-                }
-            }
-            .padding(.top, 8)
-        }
-    }
-
-    @ViewBuilder
-    private func previousProject(_ context: AppModel.ExportContext) -> some View {
-        if case .inspected(let current) = model.projectState, current.sessionID != context.sessionID {
-            Text("From previously opened project: \(context.sourceURL.lastPathComponent)")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
