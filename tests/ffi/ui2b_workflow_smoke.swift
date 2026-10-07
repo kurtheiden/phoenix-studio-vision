@@ -245,7 +245,7 @@ actor ProbeCore: PhoenixCoreServing {
         check(RecoveryDetailsPresentation.contact == "soundzilla@yahoo.com","Copyable developer contact")
         check(RecoveryWorkspaceTab.allCases.map(\.rawValue) == ["Sequences","Details","Recovery Results"],"All three native workspaces always available")
         check(RecoveryWorkspaceTab.emptyResults == "No MIDI has been recovered yet.","No-results workspace empty copy")
-        check(RecoveryWorkspaceCopy.emptyTitle == "Recover MIDI from an old Studio Vision project","UI2A start preserved")
+        check(RecoveryWorkspaceCopy.emptyTitle == "Resurrect MIDI from Studio Vision projects.","UI2A start preserved")
         model.openProject()
         await until { await core.openCount() == 2 }
         await until { model.canOpenProject }

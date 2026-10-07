@@ -306,7 +306,7 @@ struct ExportSequenceRequest: Encodable, Equatable {
 enum RecoveryWorkspaceCopy {
     static let openProject = "Open Studio Vision Project…"
     static let recoverMIDI = "Recover MIDI…"
-    static let emptyTitle = "Recover MIDI from an old Studio Vision project"
+    static let emptyTitle = "Resurrect MIDI from Studio Vision projects."
 }
 
 extension ProjectInspection {
