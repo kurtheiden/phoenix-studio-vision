@@ -18,6 +18,7 @@ pub(crate) enum AssociationRefusal {
     SpecialPositions,
     IncompleteNeighborhood,
     Cardinality { slots: usize, pairs: usize },
+    SparseMetadata,
     Overlap,
 }
 
@@ -77,6 +78,14 @@ pub(crate) struct NoEventDataTrack<'a> {
     pub state_context: LocatedBytes<'a>,
 }
 
+/// Opaque, independently framed metadata; its payload never selects event pairs.
+#[derive(Debug)]
+pub(crate) struct SparseMetadata120<'a> {
+    pub track_ordinal: usize,
+    pub presence: LocatedBytes<'a>,
+    pub record: FramedRecord<'a>,
+}
+
 #[derive(Debug)]
 pub(crate) struct Source120SequenceAssociation<'a> {
     pub candidate_record_index: usize,
@@ -84,6 +93,7 @@ pub(crate) struct Source120SequenceAssociation<'a> {
     pub source_name: LocatedBytes<'a>,
     /// Exact framed prelude, retained without interpreting its opaque field.
     pub prelude: FramedRecord<'a>,
+    pub metadata: Vec<SparseMetadata120<'a>>,
     pub leading_special: [LeadingSpecialBinding<'a>; 2],
     pub ordinary: Vec<OrdinaryBinding<'a>>,
     /// Retained zero-event tracks; merge by slot.ordinal to recover source order.
@@ -120,6 +130,13 @@ impl Source120Bridge<'_> {
                         "120-layout record {}: incomplete semantic sequence {:?}, source name span {:?}; association basis: bounded ordinal inference",
                         sequence.candidate_record_index, sequence.sequence_range, sequence.source_name.range
                     ));
+                    for metadata in &sequence.metadata {
+                        details.push(format!(
+                            "Bounded sparse metadata Track {}: presence {:?} {:?}, record {:?}, payload {:?}; payload opaque, not event ownership",
+                            metadata.track_ordinal, metadata.presence.range, metadata.presence.bytes,
+                            metadata.record.record_range, metadata.record.payload.range
+                        ));
+                    }
                     for special in &sequence.leading_special {
                         details.push(format!(
                             "Leading special position {}: view {:?}, label {:?}, pair {:?}/{:?}; source conductor event authority unestablished",
@@ -241,6 +258,78 @@ fn supported_prelude(record: &FramedRecord<'_>) -> bool {
         && payload[field_end..].iter().all(|byte| *byte == 0)
 }
 
+/// Additional records form a sparse list, distinct from the initial prelude.
+/// Applicable only after the existing positive 120-profile and prelude guards.
+fn associate_sparse_metadata<'a>(
+    bytes: &'a [u8],
+    records: &[FramedRecord<'a>],
+    candidate: &Observed120Candidate<'a>,
+    cursor: &mut usize,
+) -> Result<Vec<SparseMetadata120<'a>>, AssociationRefusal> {
+    let mut metadata = Vec::new();
+    // Preserve the existing no-additional-record grammar, including opaque windows.
+    if records.get(*cursor).map(|r| r.record_type.value) != Some(7) {
+        return Ok(metadata);
+    }
+    let mut next = *cursor;
+    for ordinal in 0..usize::from(candidate.count.value) {
+        let start = ordinal
+            .checked_mul(120)
+            .and_then(|n| n.checked_add(106 + 85))
+            .and_then(|n| candidate.candidate_range.start.checked_add(n))
+            .ok_or(AssociationRefusal::Bounds)?;
+        let end = start.checked_add(4).ok_or(AssociationRefusal::Bounds)?;
+        if end > candidate.candidate_range.end {
+            return Err(AssociationRefusal::Bounds);
+        }
+        // The independent label must terminate before the presence window;
+        // overlapping label/selector bytes would be a conflicting grammar.
+        let label_start = start.checked_sub(70).ok_or(AssociationRefusal::Bounds)?;
+        if !bytes
+            .get(label_start..start)
+            .ok_or(AssociationRefusal::Bounds)?
+            .contains(&0)
+        {
+            return Err(AssociationRefusal::SparseMetadata);
+        }
+        let field = bytes.get(start..end).ok_or(AssociationRefusal::Bounds)?;
+        if field.iter().all(|v| *v == 0) {
+            continue;
+        }
+        if ordinal < 2 {
+            return Err(AssociationRefusal::SparseMetadata);
+        }
+        let record = records
+            .get(next)
+            .ok_or(AssociationRefusal::SparseMetadata)?;
+        let previous = records
+            .get(next.checked_sub(1).ok_or(AssociationRefusal::Bounds)?)
+            .ok_or(AssociationRefusal::Bounds)?;
+        if record.record_type.value != 7
+            || !matches!(record.payload.bytes.len(), 2 | 3 | 6 | 8 | 10 | 12 | 15)
+            || record.record_range.start != previous.record_range.end
+            || record.record_range.start.checked_add(5) != Some(record.payload.range.start)
+            || record.payload.range.end != record.record_range.end
+        {
+            return Err(AssociationRefusal::SparseMetadata);
+        }
+        metadata.push(SparseMetadata120 {
+            track_ordinal: ordinal,
+            presence: LocatedBytes {
+                bytes: field,
+                range: start..end,
+            },
+            record: record.clone(),
+        });
+        next = next.checked_add(1).ok_or(AssociationRefusal::Bounds)?;
+    }
+    if records.get(next).map(|r| r.record_type.value) == Some(7) {
+        return Err(AssociationRefusal::SparseMetadata);
+    }
+    *cursor = next;
+    Ok(metadata)
+}
+
 fn associate_candidate<'a>(
     bytes: &'a [u8],
     records: &[FramedRecord<'a>],
@@ -255,6 +344,7 @@ fn associate_candidate<'a>(
         return Err(AssociationRefusal::UnsupportedTrailer);
     }
     let mut cursor = candidate.record_index.checked_add(2).ok_or_else(bounds)?;
+    let metadata = associate_sparse_metadata(bytes, records, candidate, &mut cursor)?;
     let mut pairs = Vec::new();
     let terminal = loop {
         let primary = records
@@ -365,6 +455,7 @@ fn associate_candidate<'a>(
         sequence_range: start..terminal.record_range.end,
         source_name: candidate.observed_name.clone(),
         prelude: following.clone(),
+        metadata,
         leading_special: [
             LeadingSpecialBinding {
                 slot: slot0,

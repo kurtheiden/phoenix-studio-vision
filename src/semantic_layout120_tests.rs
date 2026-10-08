@@ -714,3 +714,290 @@ fn longer_preludes_require_complete_unambiguous_neighborhoods() {
     missing_adjacent[root.records[1].record_range.start] = 9;
     assert!(associate_project_120(&missing_adjacent).is_err());
 }
+
+fn sparse_fixture(participating: &[usize], payloads: &[&[u8]], pairs: usize) -> Vec<u8> {
+    let mut b = ordinary_fixture(&[b"First", b"Gap", b"Last"], pairs);
+    for ordinal in 0..5 {
+        let at = 8 + 106 + 120 * ordinal + 85;
+        b[at..at + 4].fill(0);
+        if participating.contains(&ordinal) {
+            b[at..at + 4].copy_from_slice(&(ordinal as u32 + 1).to_be_bytes());
+        }
+    }
+    let root = parse_root_record_stream(&b).unwrap();
+    let at = root.records[1].record_range.end;
+    let mut extra = Vec::new();
+    for p in payloads {
+        record(&mut extra, 7, p);
+    }
+    b.splice(at..at, extra);
+    b
+}
+
+#[test]
+fn sparse_type07_opaque_order_identity_and_exact_accounting() {
+    let b = sparse_fixture(&[2, 4], &[&[0x80, 0xff], &[0, 1, 2]], 5);
+    let dense = ordinary_fixture(&[b"First", b"Gap", b"Last"], 5);
+    let bridge = associate_project_120(&b).unwrap();
+    let s = bridge.candidates[0].association.as_ref().unwrap();
+    let old = associate_project_120(&dense).unwrap();
+    let old = old.candidates[0].association.as_ref().unwrap();
+    assert_eq!(s.source_name.bytes, old.source_name.bytes);
+    assert_eq!(
+        s.metadata
+            .iter()
+            .map(|m| m.track_ordinal)
+            .collect::<Vec<_>>(),
+        [2, 4]
+    );
+    assert_eq!(s.metadata[0].record.payload.bytes, [0x80, 0xff]);
+    assert_eq!(s.metadata[1].record.payload.bytes, [0, 1, 2]);
+    assert_eq!(
+        s.metadata[0].record.record_range.start,
+        s.prelude.record_range.end
+    );
+    assert_eq!(
+        s.metadata[0].record.record_range.end,
+        s.metadata[1].record.record_range.start
+    );
+    assert_eq!(
+        s.metadata[1].record.record_range.end,
+        s.leading_special[0].pair.primary.record_range.start
+    );
+    assert_eq!(s.sequence_range.end, b.len());
+    for (t, o) in s.ordinary.iter().zip(&old.ordinary) {
+        assert_eq!(t.slot.ordinal, o.slot.ordinal);
+        assert_eq!(t.slot.label.bytes, o.slot.label.bytes);
+        assert_eq!(t.local_pair_ordinal, o.local_pair_ordinal);
+        assert_eq!(t.pair.primary.payload.bytes, o.pair.primary.payload.bytes);
+        assert_eq!(
+            t.pair.secondary.payload.bytes,
+            o.pair.secondary.payload.bytes
+        );
+    }
+    assert!(old.metadata.is_empty());
+    // Payload values and repeated names do not choose or reorder owners.
+    let mut changed = b.clone();
+    for m in &s.metadata {
+        changed[m.record.payload.range.clone()].fill(0xff);
+    }
+    let again = associate_project_120(&changed).unwrap();
+    assert_eq!(
+        again.candidates[0]
+            .association
+            .as_ref()
+            .unwrap()
+            .metadata
+            .iter()
+            .map(|m| m.track_ordinal)
+            .collect::<Vec<_>>(),
+        [2, 4]
+    );
+}
+
+#[test]
+fn sparse_type07_conflicts_variants_and_cardinality_stay_refused() {
+    for (mask, payloads) in [
+        (vec![0, 2], vec![vec![1, 2], vec![3, 4]]),
+        (vec![2, 4], vec![vec![1, 2]]),
+        (vec![2], vec![vec![1, 2], vec![3, 4]]),
+        (vec![], vec![vec![1, 2]]),
+        (vec![2], vec![vec![]]),
+        (vec![2], vec![vec![1; 4]]),
+        (vec![2], vec![vec![1; 16]]),
+    ] {
+        let p: Vec<_> = payloads.iter().map(Vec::as_slice).collect();
+        let b = sparse_fixture(&mask, &p, 5);
+        assert!(matches!(
+            associate_project_120(&b).unwrap().candidates[0].association,
+            Err(AssociationRefusal::SparseMetadata)
+        ));
+    }
+    let b = sparse_fixture(&[2, 4], &[&[1, 2], &[3, 4]], 4);
+    assert!(matches!(
+        associate_project_120(&b).unwrap().candidates[0].association,
+        Err(AssociationRefusal::Cardinality { slots: 5, pairs: 4 })
+    ));
+    let mut b = sparse_fixture(&[2], &[&[1, 2]], 5);
+    let root = parse_root_record_stream(&b).unwrap();
+    // A metadata record after a musical pair is outside the bounded list.
+    let range = root.records[2].record_range.clone();
+    let at = root.records[4].record_range.end;
+    let extra = b[range.clone()].to_vec();
+    b.splice(at..at, extra);
+    b.drain(range);
+    assert!(matches!(
+        associate_project_120(&b).unwrap().candidates[0].association,
+        Err(AssociationRefusal::IncompleteNeighborhood)
+    ));
+}
+
+#[test]
+#[ignore = "requires explicitly supplied preserved Prologue original and normalized specimens"]
+fn sparse_type07_authentic_cross_layout_and_remaining_guards_read_only() {
+    use sha2::{Digest, Sha256};
+    let b = std::fs::read(std::env::var("PHOENIX_CCA005_ORIGINAL").unwrap()).unwrap();
+    let normalized = std::fs::read(std::env::var("PHOENIX_CCA005_NORMALIZED").unwrap()).unwrap();
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&b)),
+        "b3a3efd8179d3ffe2a5026b3a40eab74da3ce6e674bb06162a176df07389b733"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&normalized)),
+        "0618cd5087987d7f694ca7532e1cc8a01b4adf7e3043ec648783d71e7e5ad714"
+    );
+    let observed = observe_project_120(&b).unwrap();
+    let root = parse_root_record_stream(&b).unwrap();
+    let nroot = parse_root_record_stream(&normalized).unwrap();
+    let bridge = associate_project_120(&b).unwrap();
+    let proofs = crate::authority120::prove_project120(&b).unwrap();
+    // PM-R12 cross-layout ranges, pinned by both source hashes; no payload semantics.
+    let expected: &[(usize, usize, &[usize], &[usize])] = &[
+        (0, 2520, &[2, 3, 4], &[3551, 3559, 3570]),
+        (1, 5046, &[2, 3, 4, 6], &[6412, 6420, 6433, 6446]),
+        (2, 7948, &[2, 3, 4, 6, 7], &[9480, 9488, 9499, 9510, 9518]),
+        (
+            3,
+            15391,
+            &[2, 5, 6, 7, 8],
+            &[17421, 17428, 17436, 17444, 17452],
+        ),
+        (4, 19079, &[2, 3, 4], &[20114, 20122, 20133]),
+        (
+            5,
+            21383,
+            &[2, 3, 4, 6, 7, 8],
+            &[23245, 23253, 23270, 23281, 23289, 23297],
+        ),
+        (
+            6,
+            27805,
+            &[2, 3, 4, 5, 6, 7],
+            &[29501, 29509, 29516, 29524, 29532, 29547],
+        ),
+        (8, 30672, &[2, 3, 4], &[31703, 31711, 31722]),
+        (9, 33023, &[2, 3, 4, 6], &[34389, 34397, 34410, 34423]),
+        (
+            10,
+            35925,
+            &[2, 3, 4, 6, 7],
+            &[37457, 37465, 37476, 37487, 37495],
+        ),
+        (
+            11,
+            43368,
+            &[2, 5, 6, 7, 8],
+            &[45398, 45405, 45413, 45421, 45429],
+        ),
+        (12, 46881, &[2, 3, 4], &[47916, 47924, 47935]),
+        (
+            13,
+            49185,
+            &[2, 3, 4, 6, 7, 8],
+            &[51047, 51055, 51072, 51083, 51091, 51099],
+        ),
+        (
+            14,
+            55432,
+            &[2, 3, 4, 5, 6, 7],
+            &[57128, 57136, 57143, 57151, 57159, 57174],
+        ),
+    ];
+    let mut total = 0;
+    for &(ordinal, nstart, mask, record_starts) in expected {
+        let c = &observed.candidates[ordinal];
+        let mut cursor = c.record_index + 2;
+        let metadata = associate_sparse_metadata(&b, &root.records, c, &mut cursor).unwrap();
+        assert_eq!(
+            metadata.iter().map(|m| m.track_ordinal).collect::<Vec<_>>(),
+            mask
+        );
+        assert_eq!(metadata.len(), record_starts.len());
+        for (m, &start) in metadata.iter().zip(record_starts) {
+            let nr = nroot
+                .records
+                .iter()
+                .find(|r| r.record_range.start == start)
+                .unwrap();
+            assert_eq!(nr.record_type.value, 7);
+            assert_eq!(m.record.payload.bytes, nr.payload.bytes);
+            assert_eq!(
+                m.record.record_range.len(),
+                5 + m.record.payload.bytes.len()
+            );
+        }
+        // Normalized slots preserve the entire ordered mask and raw labels.
+        for slot in 0..usize::from(c.count.value) {
+            let original_label = c.candidate_range.start + 121 + 120 * slot;
+            let normalized_label = nstart + 223 + 166 * slot;
+            let old = b[original_label..c.candidate_range.end]
+                .split(|v| *v == 0)
+                .next()
+                .unwrap();
+            let new = normalized[normalized_label..]
+                .split(|v| *v == 0)
+                .next()
+                .unwrap();
+            assert_eq!(old, new);
+            let at = nstart + 208 + 166 * slot + 85;
+            assert_eq!(
+                normalized[at..at + 4].iter().any(|v| *v != 0),
+                mask.contains(&slot)
+            );
+        }
+        total += metadata.len();
+        if [0, 3, 5].contains(&ordinal) {
+            let s = bridge.candidates[ordinal].association.as_ref().unwrap();
+            assert_eq!(s.metadata.len(), metadata.len());
+            assert!(proofs[ordinal].result.is_ok());
+            let ranges = [
+                s.leading_special[0].pair.primary.record_range.clone(),
+                s.leading_special[0].pair.secondary.record_range.clone(),
+                s.leading_special[1].pair.primary.record_range.clone(),
+                s.leading_special[1].pair.secondary.record_range.clone(),
+            ];
+            assert_eq!(
+                crate::bounded_conductor::decode_compact_conductor(&b, ranges).unwrap_err(),
+                crate::bounded_conductor::ConductorRefusal::Envelope
+            );
+            eprintln!(
+                "{}: sparse association and C0 authority pass; conductor Envelope remains",
+                String::from_utf8_lossy(s.source_name.bytes)
+            );
+        } else {
+            assert!(matches!(
+                bridge.candidates[ordinal].association,
+                Err(AssociationRefusal::Cardinality { .. })
+            ));
+            eprintln!(
+                "{}: sparse metadata bounded; {:?}",
+                String::from_utf8_lossy(c.observed_name.bytes),
+                bridge.candidates[ordinal].association.as_ref().unwrap_err()
+            );
+        }
+    }
+    assert_eq!(total, 64);
+    assert!(matches!(
+        bridge.candidates[7].association,
+        Err(AssociationRefusal::IncompleteNeighborhood)
+    ));
+    eprintln!("64 sparse records / 14 Frames matched; 3 conductor refusals, 11 cardinality refusals; separate Prologue unchanged; no MIDI generated");
+}
+
+#[test]
+fn sparse_type07_label_overlap_and_missing_terminal_refuse() {
+    let mut b = sparse_fixture(&[2], &[&[1, 2]], 5);
+    let label = 8 + 121 + 240;
+    b[label..label + 70].fill(b'x');
+    assert!(matches!(
+        associate_project_120(&b).unwrap().candidates[0].association,
+        Err(AssociationRefusal::SparseMetadata)
+    ));
+    let mut b = sparse_fixture(&[2], &[&[1, 2]], 5);
+    let root = parse_root_record_stream(&b).unwrap();
+    b.truncate(root.records.last().unwrap().record_range.start);
+    assert!(matches!(
+        associate_project_120(&b).unwrap().candidates[0].association,
+        Err(AssociationRefusal::IncompleteNeighborhood)
+    ));
+}

@@ -467,13 +467,50 @@ fn explicit_program120_authentic_original_normalized_bridge_read_only() {
         eprintln!("authentic Frame ordinal{} C0 success: events{} programs{} route channel{}; complete eligibility NOT established", ordinal + 1, count, programs, channel);
     }
     assert_eq!(total, 9);
-    // Production association is not bypassed: sparse metadata is still unsupported.
+    // Sparse association now passes; complete recovery still requires conductor authority.
     let proofs = prove_project120(&b).unwrap();
     for ordinal in [0, 3, 5] {
-        assert!(matches!(
-            &proofs[ordinal].result,
-            Err(Authority120Refusal::Association(_))
-        ));
+        assert!(proofs[ordinal].result.is_ok());
     }
-    eprintln!("production first blocker remains sparse metadata association; observational downstream remains conductor Envelope");
+    eprintln!(
+        "production sparse association and C0 decoding pass; downstream remains conductor Envelope"
+    );
+}
+
+#[test]
+fn sparse_type07_authority_preserves_route_timing_and_event_order() {
+    let events = [0, 0xc0, 96, 5, 0x90, 60, 100, 64, 10];
+    let old = fixture(&events, 2, 3, false);
+    let mut b = old.clone();
+    for ordinal in 0..3 {
+        let at = 8 + 106 + ordinal * 120 + 85;
+        b[at..at + 4].fill(0);
+    }
+    b[8 + 106 + 240 + 85] = 1;
+    let root = parse_root_record_stream(&b).unwrap();
+    let at = root.records[1].record_range.end;
+    b.splice(at..at, [7, 0, 0, 0, 2, 0x80, 0xff]);
+    let p = result(&b).unwrap();
+    let previous = result(&old).unwrap();
+    assert_eq!(p.name(), previous.name());
+    let t = &p.tracks()[0];
+    assert_eq!(t.ordinal(), previous.tracks()[0].ordinal());
+    let TrackRoute120::Single(route) = t.route() else {
+        panic!("route")
+    };
+    assert_eq!(route.channel, 5);
+    assert_eq!(route.instrument_row, 1);
+    assert_eq!(t.walk().unwrap().logical_event_count(), 2);
+    assert_eq!(
+        t.walk()
+            .unwrap()
+            .items
+            .iter()
+            .map(|i| match i {
+                MixedEventItem::Event(e) => e.position,
+                _ => panic!("event"),
+            })
+            .collect::<Vec<_>>(),
+        [0, 5]
+    );
 }
