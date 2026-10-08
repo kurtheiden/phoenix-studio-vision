@@ -1,8 +1,9 @@
 //! Bounded saved track-mute interpretation for the evidenced Descriptor166 subset.
 //!
 //! This is inferred saved state, not an observed UI state or MIDI inclusion policy.
-//! No export, profile, readiness, or event-decoding decision consumes this module.
-//! See docs/MUTE_INCLUSION_STRUCTURAL_SCOPE.md and Experiments 035/036.
+//! The bounded recovery builder requires OFF; this module never authorizes omission.
+//! See Experiments 035/036 and the exact 04-guard PM-R10 evidence recorded in
+//! docs/BOUNDED_SAVED_MUTE_04_GUARD_IMPLEMENTATION.md.
 
 use std::ops::Range;
 
@@ -10,6 +11,7 @@ use crate::mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEvent
 use crate::sequence_container::{parse_project_166, Project166Error, TrackAssociations};
 
 const GUARD: [u8; 7] = [0x00, 0x04, 0x00, 0x00, 0x04, 0x01, 0x00];
+const GUARD_04: [u8; 7] = [0x04, 0x04, 0x00, 0x00, 0x04, 0x01, 0x00];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SavedMuteUnknown {
@@ -122,7 +124,7 @@ pub fn collect_saved_mute_evidence(
                 if bounds.event_range.is_empty() {
                     return Err(SavedMuteUnknown::EmptyEvents);
                 }
-                if guard != GUARD {
+                if guard != GUARD && guard != GUARD_04 {
                     return Err(SavedMuteUnknown::GuardMismatch);
                 }
                 let state = match raw[0] {

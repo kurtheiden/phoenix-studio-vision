@@ -10,6 +10,7 @@ use std::path::Path;
 
 const NOTE: &[u8] = &[0, 0x90, 60, 64, 32, 1];
 const GUARD: [u8; 7] = [0, 4, 0, 0, 4, 1, 0];
+const GUARD_04: [u8; 7] = [4, 4, 0, 0, 4, 1, 0];
 const DESCRIPTOR: usize = 8 + 208 + 2 * 166;
 const CANDIDATE: usize = DESCRIPTOR - 24;
 const ROOT: &str = "/Users/kurtheiden/Documents/Phoenix Research/Controlled Save Experiments";
@@ -51,6 +52,12 @@ fn state(bytes: &[u8]) -> SavedMuteState {
     collect_saved_mute_evidence(bytes).unwrap()[0].state
 }
 
+fn guarded_fixture(value: u8, events: &[u8], pairs: usize, guard: [u8; 7]) -> Vec<u8> {
+    let mut bytes = fixture(value, events, pairs);
+    bytes[CANDIDATE + 1..CANDIDATE + 8].copy_from_slice(&guard);
+    bytes
+}
+
 #[test]
 fn exact_whitelist_and_provenance_not_arbitrary_bit_mask() {
     for value in 0..=255 {
@@ -75,20 +82,84 @@ fn exact_whitelist_and_provenance_not_arbitrary_bit_mask() {
 
 #[test]
 fn every_guard_byte_must_match_for_both_states() {
-    for value in [0x80, 0x88] {
-        for (index, expected) in GUARD.iter().enumerate() {
-            for other in 0..=255 {
-                if other == *expected {
-                    continue;
+    for guard in [GUARD, GUARD_04] {
+        for value in [0x80, 0x88] {
+            for index in 0..guard.len() {
+                for other in 0..=255 {
+                    let mut changed = guard;
+                    changed[index] = other;
+                    if changed == GUARD || changed == GUARD_04 {
+                        continue;
+                    }
+                    let bytes = guarded_fixture(value, NOTE, 1, changed);
+                    assert_eq!(
+                        state(&bytes),
+                        SavedMuteState::Unknown(SavedMuteUnknown::GuardMismatch)
+                    );
                 }
-                let mut bytes = fixture(value, NOTE, 1);
-                bytes[CANDIDATE + 1 + index] = other;
-                assert_eq!(
-                    state(&bytes),
-                    SavedMuteState::Unknown(SavedMuteUnknown::GuardMismatch)
-                );
             }
         }
+    }
+}
+
+#[test]
+fn exact_04_guard_state_whitelist_and_provenance() {
+    for value in 0..=255 {
+        let bytes = guarded_fixture(value, NOTE, 1, GUARD_04);
+        let rows = collect_saved_mute_evidence(&bytes).unwrap();
+        assert_eq!(rows[0].candidate_offset, Some(CANDIDATE));
+        assert_eq!(rows[0].candidate_value, Some(value));
+        assert_eq!(rows[0].neighboring_guard, Some(GUARD_04));
+        assert_eq!(rows[0].pair_ordinal, Some(0));
+        assert_eq!(rows[0].descriptor_ordinal, 2);
+        assert_eq!(
+            rows[0].event_range,
+            collect_saved_mute_evidence(&fixture(value, NOTE, 1)).unwrap()[0].event_range
+        );
+        assert_eq!(
+            rows[0].state,
+            match value {
+                0x80 => SavedMuteState::Off,
+                0x88 => SavedMuteState::On,
+                _ => SavedMuteState::Unknown(SavedMuteUnknown::UnsupportedValue),
+            }
+        );
+    }
+}
+
+#[test]
+fn exact_04_guard_does_not_bypass_binding_bounds_or_complete_walk() {
+    for value in [0x80, 0x88] {
+        assert_eq!(
+            state(&guarded_fixture(value, NOTE, 0, GUARD_04)),
+            SavedMuteState::Unknown(SavedMuteUnknown::UnresolvedBinding)
+        );
+        assert_eq!(
+            state(&guarded_fixture(value, &[], 1, GUARD_04)),
+            SavedMuteState::Unknown(SavedMuteUnknown::EmptyEvents)
+        );
+        let mut blank = guarded_fixture(value, NOTE, 1, GUARD_04);
+        blank[DESCRIPTOR + 15] = 0;
+        assert_eq!(
+            state(&blank),
+            SavedMuteState::Unknown(SavedMuteUnknown::BlankOrUnboundedLabel)
+        );
+        for cut in 1..NOTE.len() {
+            assert_eq!(
+                state(&guarded_fixture(value, &NOTE[..cut], 1, GUARD_04)),
+                SavedMuteState::Unknown(SavedMuteUnknown::IncompleteEventWalk)
+            );
+        }
+        let mut bytes = guarded_fixture(value, NOTE, 1, GUARD_04);
+        let end = parse_project_166(&bytes).unwrap().sequences[0].track_pairs[0]
+            .primary
+            .record_range
+            .end;
+        bytes[end - 7] = 0;
+        assert_eq!(
+            state(&bytes),
+            SavedMuteState::Unknown(SavedMuteUnknown::InvalidEventBounds)
+        );
     }
 }
 
@@ -220,6 +291,115 @@ fn authentic_controlled_transitions_and_relocation() {
 }
 
 #[test]
+fn authentic_pm_r10_04_guard_transition_preserves_owned_music_and_routing() {
+    let shared = Path::new("/Volumes/Extreme Pro 2TB/Applications/SheepShaver/Shared");
+    let control_path = shared.join("PMR03 CTRL");
+    let edit_path = shared.join("PMR10 EDIT");
+    if !control_path.is_file() || !edit_path.is_file() {
+        eprintln!("optional authentic PM-R10 fixtures absent");
+        return;
+    }
+    let control = fs::read(control_path).unwrap();
+    let edit = fs::read(edit_path).unwrap();
+    for (bytes, hash) in [
+        (
+            &control,
+            "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132",
+        ),
+        (
+            &edit,
+            "681a0446c074d87273cee70cf80829984084effcc8d0fdcb200015fa3af03ab8",
+        ),
+    ] {
+        assert_eq!(bytes.len(), 211468);
+        assert_eq!(format!("{:x}", Sha256::digest(bytes)), hash);
+    }
+    let a = collect_saved_mute_evidence(&control).unwrap();
+    let b = collect_saved_mute_evidence(&edit).unwrap();
+    assert_eq!(a.len(), 133);
+    assert_eq!(a.len(), b.len());
+    for (a, b) in a.iter().zip(&b) {
+        assert_eq!(a.sequence_ordinal, b.sequence_ordinal);
+        assert_eq!(a.descriptor_ordinal, b.descriptor_ordinal);
+        assert_eq!(a.descriptor_range, b.descriptor_range);
+        assert_eq!(a.label_bytes, b.label_bytes);
+        assert_eq!(a.pair_ordinal, b.pair_ordinal);
+        assert_eq!(a.event_range, b.event_range);
+        assert_eq!(a.neighboring_guard, b.neighboring_guard);
+        if (a.sequence_ordinal, a.descriptor_ordinal) == (14, 10) {
+            assert_eq!(a.candidate_offset, Some(0x2f6a3));
+            assert_eq!(b.candidate_offset, a.candidate_offset);
+            assert_eq!(a.neighboring_guard, Some(GUARD_04));
+            assert_eq!(
+                (a.candidate_value, b.candidate_value),
+                (Some(0x80), Some(0x88))
+            );
+            assert_eq!(
+                (a.state, b.state),
+                (SavedMuteState::Off, SavedMuteState::On)
+            );
+        } else {
+            assert_eq!(a.state, b.state);
+        }
+    }
+    let pa = parse_project_166(&control).unwrap();
+    let pb = parse_project_166(&edit).unwrap();
+    assert_eq!(pa.sequences.len(), pb.sequences.len());
+    for (a, b) in pa.sequences.iter().zip(&pb.sequences) {
+        assert_eq!(a.sequence_range, b.sequence_range);
+        assert_eq!(a.sequence_name, b.sequence_name);
+        assert_eq!(a.track_associations, b.track_associations);
+    }
+    let a = phoenix::sequence_container::parse_root_record_stream(&control).unwrap();
+    let b = phoenix::sequence_container::parse_root_record_stream(&edit).unwrap();
+    assert_eq!(a.records.len(), b.records.len());
+    let mut counts = [0, 0];
+    for (a, b) in a.records.iter().zip(&b.records) {
+        assert_eq!(a.record_range, b.record_range);
+        assert_eq!(a.record_type.value, b.record_type.value);
+        match a.record_type.value {
+            0x02 => {
+                assert_eq!(a.payload.bytes[2..6], b.payload.bytes[2..6]);
+                assert_eq!(a.payload.bytes[14..], b.payload.bytes[14..]);
+                counts[0] += 1;
+            }
+            0x29 => {
+                assert_eq!(a.payload.bytes, b.payload.bytes);
+                counts[1] += 1;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(counts, [168, 168]);
+    let a = phoenix::bounded_routing::decode_bounded_routing(&control).unwrap();
+    let b = phoenix::bounded_routing::decode_bounded_routing(&edit).unwrap();
+    assert_eq!(a.len(), b.len());
+    for (a, b) in a.iter().zip(&b) {
+        assert_eq!(
+            (a.structural_ordinal, a.descriptor_ordinal),
+            (b.structural_ordinal, b.descriptor_ordinal)
+        );
+        // Save-rekeyed device identifiers may differ; the resolved context must not.
+        assert_eq!(
+            a.result.as_ref().map(|r| (
+                r.pair_ordinal,
+                &r.event_range,
+                &r.consumed_range,
+                r.midi_channel,
+                &r.device_name
+            )),
+            b.result.as_ref().map(|r| (
+                r.pair_ordinal,
+                &r.event_range,
+                &r.consumed_range,
+                r.midi_channel,
+                &r.device_name
+            ))
+        );
+    }
+}
+
+#[test]
 fn authentic_inventory_and_policy_readiness_are_separate() {
     let Some(bytes) = authentic(
         BASE,
@@ -294,21 +474,21 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
         }
     }
     let expected_counts = [
-        ("xForm", (1, 8, 4)),
-        ("Bells for her", (2, 7, 5)),
-        ("Situation", (0, 4, 2)),
-        ("Sequence D", (0, 3, 3)),
-        ("Sequence E", (1, 2, 5)),
-        ("Girl-U-Want", (0, 2, 1)),
-        ("mission impossibl", (0, 5, 5)),
+        ("xForm", (1, 10, 2)),
+        ("Bells for her", (2, 10, 2)),
+        ("Situation", (0, 6, 0)),
+        ("Sequence D", (0, 5, 1)),
+        ("Sequence E", (1, 5, 2)),
+        ("Girl-U-Want", (0, 3, 0)),
+        ("mission impossibl", (0, 10, 0)),
         ("happyone", (3, 4, 4)),
         ("Sequence I", (0, 0, 11)),
-        ("newsong", (0, 2, 3)),
+        ("newsong", (0, 3, 2)),
         ("Sequence K", (0, 1, 1)),
         ("Renaissance", (0, 4, 2)),
         ("Get on up & Dance", (1, 14, 1)),
-        ("Jurrasic Park", (0, 4, 3)),
-        ("Ode to Clarke", (2, 6, 1)),
+        ("Jurrasic Park", (1, 4, 2)),
+        ("Ode to Clarke", (2, 7, 0)),
         ("Over the Top", (0, 3, 0)),
         ("Sequence Q", (0, 1, 0)),
         ("Sequence R", (0, 2, 0)),
@@ -322,6 +502,38 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
     // The bounded composition extension now completes this event walk.
     // This adds inferred saved state, not export omission authority.
     assert_eq!(blocked.state, SavedMuteState::On);
+    let newly_decoded = rows
+        .iter()
+        .filter(|r| {
+            r.neighboring_guard == Some(GUARD_04)
+                && matches!(r.state, SavedMuteState::Off | SavedMuteState::On)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(newly_decoded.len(), 21);
+    assert_eq!(
+        newly_decoded
+            .iter()
+            .filter(|r| r.state == SavedMuteState::On)
+            .count(),
+        1
+    );
+    assert_eq!(
+        newly_decoded
+            .iter()
+            .map(|r| r.sequence_ordinal)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        10
+    );
+    let incomplete_04 = rows
+        .iter()
+        .find(|r| r.sequence_name == b"happyone" && r.descriptor_ordinal == 8)
+        .unwrap();
+    assert_eq!(incomplete_04.neighboring_guard, Some(GUARD_04));
+    assert_eq!(
+        incomplete_04.state,
+        SavedMuteState::Unknown(SavedMuteUnknown::IncompleteEventWalk)
+    );
     for (name, _, _) in &before {
         let group: Vec<_> = rows
             .iter()

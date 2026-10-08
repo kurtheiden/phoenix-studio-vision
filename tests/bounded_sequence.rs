@@ -186,6 +186,30 @@ fn mute_on_refuses() {
     mute_mutation(136);
 }
 #[test]
+fn exact_04_guard_off_preserves_context_and_on_still_refuses() {
+    let original = synthetic(NOTE);
+    let expected = accepted(&original);
+    let mut changed = original.clone();
+    let offset =
+        parse_project_166(&original).unwrap().sequences[0].track_descriptors()[0].label_start - 39;
+    changed[offset + 1] = 4;
+    let observed = accepted(&changed);
+    assert_eq!(observed.name(), expected.name());
+    assert_eq!(observed.sequence_range(), expected.sequence_range());
+    assert_eq!(observed.tracks().len(), expected.tracks().len());
+    assert_eq!(
+        observed.tracks()[0].source_ordinal(),
+        expected.tracks()[0].source_ordinal()
+    );
+    assert_eq!(
+        observed.tracks()[0].routing(),
+        expected.tracks()[0].routing()
+    );
+    assert_eq!(observed.tracks()[0].events(), expected.tracks()[0].events());
+    changed[offset] = 0x88;
+    assert_eq!(refused(&changed).stage, "mute");
+}
+#[test]
 fn unknown_mute_refuses() {
     mute_mutation(129);
 }
