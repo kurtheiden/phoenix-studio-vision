@@ -58,6 +58,8 @@ pub struct PositionedEvent<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixedEventKind<'a> {
     Note(BoundedNoteEvent<'a>),
+    /// Canonical project Program tag; channel is supplied by proven 120 routing.
+    Program(BoundedProgramEntry<'a>),
     Controller(BoundedControllerRecord<'a>),
     MidiController(BoundedMidiController<'a>),
     ChannelPressure {
@@ -70,6 +72,15 @@ pub enum MixedEventKind<'a> {
     },
     ContextMediatedNote(BoundedContextMediatedNoteEntry<'a>),
     DoubleContextMediatedNote(BoundedDoubleContextMediatedNoteEntry<'a>),
+}
+
+/// Explicit C0 entry, available only to the crate's owned 120 single-route path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedProgramEntry<'a> {
+    pub representation_range: Range<usize>,
+    pub timing_delta: LocatedVlq<'a>,
+    pub status: LocatedByte,
+    pub program: LocatedByte,
 }
 
 /// Controller family in explicit channel-status or compact continuation form.
@@ -277,6 +288,25 @@ pub fn walk_bounded_mixed_events(
     bounds: MixedEventBounds,
     timing_basis: MixedEventTimingBasis,
 ) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
+    walk_mixed_events(bytes, bounds, timing_basis, false)
+}
+
+/// Ownership and single-Instrument applicability are established by authority120.
+/// This does not create routing or export authority and is not a generic decoder.
+pub(crate) fn walk_bounded_120_single_events(
+    bytes: &[u8],
+    bounds: MixedEventBounds,
+    timing_basis: MixedEventTimingBasis,
+) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
+    walk_mixed_events(bytes, bounds, timing_basis, true)
+}
+
+fn walk_mixed_events(
+    bytes: &[u8],
+    bounds: MixedEventBounds,
+    timing_basis: MixedEventTimingBasis,
+    explicit_program: bool,
+) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
     let start = bounds.event_range.start;
     let end = bounds.event_range.end;
     if start > end || end > bytes.len() {
@@ -419,6 +449,51 @@ pub fn walk_bounded_mixed_events(
                     next,
                     position,
                     ActiveEventState::Note,
+                )
+            }
+            0xc0 if explicit_program => {
+                let next =
+                    timing_end
+                        .checked_add(2)
+                        .ok_or(MixedEventWalkError::EventPastBound {
+                            cursor,
+                            required_end: usize::MAX,
+                            event_end: end,
+                        })?;
+                if next > end {
+                    return Err(MixedEventWalkError::EventPastBound {
+                        cursor,
+                        required_end: next,
+                        event_end: end,
+                    });
+                }
+                let offset = timing_end + 1;
+                let value = bytes[offset];
+                if value > 127 {
+                    return Err(MixedEventWalkError::HighBitData {
+                        cursor,
+                        offset,
+                        observed: value,
+                    });
+                }
+                let timing_delta = located_vlq(bytes, cursor, timing_end, cursor)?;
+                let position = add_position(previous_position, timing_delta.value, cursor)?;
+                (
+                    MixedEventItem::Event(Box::new(PositionedEvent {
+                        position,
+                        event: MixedEventKind::Program(BoundedProgramEntry {
+                            representation_range: cursor..next,
+                            timing_delta,
+                            status: LocatedByte {
+                                value: first,
+                                offset: timing_end,
+                            },
+                            program: LocatedByte { value, offset },
+                        }),
+                    })),
+                    next,
+                    position,
+                    ActiveEventState::None,
                 )
             }
             0xb0..=0xbf => decode_midi_controller(
@@ -1224,3 +1299,7 @@ fn bend_item(position: u32, decoded: DecodedPitchBendEntry<'_>) -> MixedEventIte
         },
     }))
 }
+
+#[cfg(test)]
+#[path = "explicit_program120_tests.rs"]
+mod explicit_program120_tests;

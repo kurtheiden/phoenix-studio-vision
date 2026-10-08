@@ -28,6 +28,7 @@ fn family_counts(result: &phoenix::mixed_event::MixedEventWalk<'_>) -> [usize; 5
                 counts[1] += 1;
             }
             MixedEventItem::Event(event) => match &event.event {
+                MixedEventKind::Program(_) => panic!("generic walker admitted scoped Program"),
                 MixedEventKind::Note(_)
                 | MixedEventKind::ContextMediatedNote(_)
                 | MixedEventKind::DoubleContextMediatedNote(_) => counts[0] += 1,

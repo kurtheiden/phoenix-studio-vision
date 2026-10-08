@@ -2340,6 +2340,7 @@ fn inventory_families(
                 }
                 MixedEventKind::ChannelPressure { .. } => present[3] = true,
                 MixedEventKind::PitchBend { .. } => present[4] = true,
+                MixedEventKind::Program(_) => present[0] = true,
             },
         }
     }

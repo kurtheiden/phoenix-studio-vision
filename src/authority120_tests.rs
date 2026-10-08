@@ -320,3 +320,160 @@ fn source_snapshot_and_different_channel_cannot_be_mixed() {
     assert_eq!(q.source(), b);
     // There is no public constructor accepting a foreign walk, pair or route.
 }
+
+#[test]
+fn explicit_program120_owned_single_route_and_exact_accounting() {
+    let b = fixture(&[5, 0xc0, 96], 1, 3, false);
+    let proof = result(&b).unwrap();
+    let t = &proof.tracks()[0];
+    let TrackRoute120::Single(r) = t.route() else {
+        panic!("single")
+    };
+    assert_eq!(r.channel, 5);
+    assert_eq!(r.instrument_row, 1);
+    assert_eq!(t.context_records(), 0);
+    assert_eq!(t.declared(), Some(1));
+    assert_eq!(t.walk().unwrap().logical_event_count(), 1);
+    for raw in [0, 2] {
+        assert!(matches!(
+            result(&fixture(&[5, 0xc0, 96], raw, 3, false)),
+            Err(Authority120Refusal::Accounting { .. })
+        ));
+    }
+    assert!(matches!(
+        result(&fixture(&[5, 0xc0, 96], 1, 2, false)),
+        Err(Authority120Refusal::Association(_))
+    ));
+}
+#[test]
+fn explicit_program120_unknown_routing_and_multi_never_grant_authority() {
+    let label = 8 + 121 + 240;
+    for (offset, value) in [
+        (label - 33, 2),
+        (label - 33, 0),
+        (label - 32, 1),
+        (label - 31, 0),
+        (label - 31, 99),
+    ] {
+        let mut b = fixture(&[0, 0xc0, 96], 1, 3, false);
+        b[offset] = value;
+        assert!(result(&b).is_err(), "offset{offset} value{value}");
+    }
+}
+
+#[test]
+#[ignore = "requires explicitly supplied preserved Prologue original and normalized specimens"]
+fn explicit_program120_authentic_original_normalized_bridge_read_only() {
+    use sha2::{Digest, Sha256};
+    let b =
+        std::fs::read(std::env::var("PHOENIX_CCA004_ORIGINAL").expect("original path")).unwrap();
+    let normalized =
+        std::fs::read(std::env::var("PHOENIX_CCA004_NORMALIZED").expect("normalized path"))
+            .unwrap();
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&b)),
+        "b3a3efd8179d3ffe2a5026b3a40eab74da3ce6e674bb06162a176df07389b733"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&normalized)),
+        "0618cd5087987d7f694ca7532e1cc8a01b4adf7e3043ec648783d71e7e5ad714"
+    );
+    let observed = crate::observed_layout120::observe_project_120(&b).unwrap();
+    let root = parse_root_record_stream(&b).unwrap();
+    let mut total = 0;
+    for (ordinal, event_range, normalized_range, count, expected_programs, channel) in [
+        (0, 2506..2856, 3775..4138, 70, 1, 3),
+        (3, 14302..14459, 17654..17863, 24, 4, 1),
+        (5, 18534..19431, 23506..24455, 180, 4, 3),
+    ] {
+        let label = observed.candidates[ordinal].candidate_range.start + 121 + 120 * 2;
+        let association = label - 33..label;
+        let w = walk_bounded_120_single_events(
+            &b,
+            MixedEventBounds {
+                event_range: event_range.clone(),
+            },
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(w.consumed_range, event_range);
+        assert_eq!(w.logical_event_count(), count);
+        let r = single_route(&root.records, association.clone(), &b[association], &w).unwrap();
+        assert_eq!(r.channel, channel);
+        let mut transformed = Vec::new();
+        let mut cursor = event_range.start;
+        let mut programs = 0;
+        for item in &w.items {
+            if let MixedEventItem::Event(e) = item {
+                if let MixedEventKind::Program(p) = &e.event {
+                    transformed.extend_from_slice(&b[cursor..p.status.offset]);
+                    transformed.extend([
+                        0xff,
+                        0x7c,
+                        0x0c,
+                        0,
+                        0,
+                        p.program.value,
+                        0,
+                        0,
+                        0,
+                        0,
+                        4,
+                        0xff,
+                        0xff,
+                        0xff,
+                        p.program.value,
+                    ]);
+                    cursor = p.representation_range.end;
+                    programs += 1;
+                }
+            }
+        }
+        transformed.extend_from_slice(&b[cursor..event_range.end]);
+        assert_eq!(programs, expected_programs);
+        assert_eq!(transformed, normalized[normalized_range.clone()]);
+        let n = walk_bounded_mixed_events(
+            &normalized,
+            MixedEventBounds {
+                event_range: normalized_range,
+            },
+            Default::default(),
+        )
+        .unwrap();
+        let old: Vec<_> = w
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                MixedEventItem::Event(e) => match &e.event {
+                    MixedEventKind::Program(p) => Some((e.position, p.program.value)),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        let new: Vec<_> = n
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                MixedEventItem::Patch(p) => Some((p.position, p.patch.program_change.value)),
+                MixedEventItem::PatchToNote(p) => {
+                    Some((p.patch_position, p.patch.program_change.value))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(old, new);
+        total += programs;
+        eprintln!("authentic Frame ordinal{} C0 success: events{} programs{} route channel{}; complete eligibility NOT established", ordinal + 1, count, programs, channel);
+    }
+    assert_eq!(total, 9);
+    // Production association is not bypassed: sparse metadata is still unsupported.
+    let proofs = prove_project120(&b).unwrap();
+    for ordinal in [0, 3, 5] {
+        assert!(matches!(
+            &proofs[ordinal].result,
+            Err(Authority120Refusal::Association(_))
+        ));
+    }
+    eprintln!("production first blocker remains sparse metadata association; observational downstream remains conductor Envelope");
+}

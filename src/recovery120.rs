@@ -267,6 +267,15 @@ fn single_handoff(
     for item in &w.items {
         match item {
             MixedEventItem::Event(e) => out.push(match &e.event {
+                MixedEventKind::Program(p) => DecodedExportEvent {
+                    absolute_position: e.position,
+                    source_ordinal: ordinal,
+                    source_range: Some(p.representation_range.clone()),
+                    kind: midi_export::DecodedExportEventKind::Patch {
+                        program: p.program.value,
+                        translation: PatchTranslation::ProgramOnlyConfirmed,
+                    },
+                },
                 MixedEventKind::Note(n) => DecodedExportEvent::from_note(e.position, ordinal, n),
                 MixedEventKind::ContextMediatedNote(n) => {
                     DecodedExportEvent::from_note_body(e.position, ordinal, &n.note)

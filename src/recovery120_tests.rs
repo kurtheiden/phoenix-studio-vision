@@ -228,3 +228,61 @@ fn authentic_external_classification_and_eight_byte_identical_artifacts_when_ava
     }
     assert_eq!(good, 8);
 }
+
+#[test]
+fn explicit_program120_handoff_preserves_route_value_time_and_source_range() {
+    // Verify decoded handoff/adaptation without constructing MIDI bytes.
+    let b = fixture(&[0x81, 0, 0xc0, 96], 1);
+    let proof = crate::authority120::prove_project120(&b)
+        .unwrap()
+        .remove(0)
+        .result
+        .unwrap();
+    let t = &proof.tracks()[0];
+    let handoff = single_handoff(t.walk().unwrap(), Some(t.ordinal())).unwrap();
+    assert_eq!(handoff.len(), 1);
+    assert_eq!(handoff[0].absolute_position, 128);
+    assert_eq!(
+        handoff[0].source_range,
+        Some(t.walk().unwrap().event_range.clone())
+    );
+    let TrackRoute120::Single(r) = t.route() else {
+        panic!("single")
+    };
+    let adapted = midi_export::adapt_track(
+        &handoff,
+        Some(ChannelAssignment {
+            channel: MidiChannel::new(r.channel).unwrap(),
+            provenance: ChannelAssignmentProvenance::ParsedRouting,
+        }),
+        TimingPolicy::Identity480,
+        PatchPolicy::StrictKnownOnly,
+    )
+    .unwrap();
+    assert_eq!(adapted.counts.program_changes, 1);
+    assert_eq!(adapted.counts.bank_select_msb, 0);
+    assert_eq!(adapted.counts.bank_select_lsb, 0);
+    assert_eq!(adapted.scheduled_events[0].absolute_tick, 128);
+    assert_eq!(
+        adapted.scheduled_events[0].message,
+        crate::smf::ChannelMessage::ProgramChange {
+            channel: MidiChannel::new(5).unwrap(),
+            program: crate::smf::MidiDataByte::new(96).unwrap()
+        }
+    );
+}
+#[test]
+fn explicit_program120_cannot_bypass_conductor_refusal() {
+    let mut b = fixture(&[0, 0xc0, 96], 1);
+    let root = crate::sequence_container::parse_root_record_stream(&b).unwrap();
+    let at = root
+        .records
+        .iter()
+        .find(|r| r.record_type.value == 2)
+        .unwrap()
+        .payload
+        .range
+        .start;
+    b[at + 1] = 0x0c;
+    assert_eq!(result(&b).unwrap_err().stage, "conductor");
+}

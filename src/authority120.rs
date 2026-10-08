@@ -5,7 +5,8 @@
 use crate::bounded_multi_patch::{decode_bounded_multi_patch_track, BoundedMultiPatchTrack};
 use crate::bounded_routing::{validate_bounded_routing_contexts, ValidatedContext};
 use crate::mixed_event::{
-    walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind, MixedEventWalk,
+    walk_bounded_120_single_events, walk_bounded_mixed_events, MixedEventBounds, MixedEventItem,
+    MixedEventKind, MixedEventWalk,
 };
 use crate::semantic_layout120::{
     associate_project_120, OrdinaryBinding, Source120SequenceAssociation,
@@ -214,7 +215,24 @@ fn prove_track<'a>(
         .get(2..6)
         .ok_or(Authority120Refusal::Bounds)?;
     let declared = u32::from_be_bytes(raw.try_into().map_err(|_| Authority120Refusal::Bounds)?);
-    let walk = walk_bounded_mixed_events(
+    // Only independently associated ordinary 120 slots with a single-Instrument
+    // selector may decode the canonical Program form. Full routing proof below
+    // still must succeed before any Track proof is returned; Multi stays strict.
+    let label_start = t.slot.label.range.start;
+    let association_start = label_start
+        .checked_sub(33)
+        .ok_or(Authority120Refusal::Bounds)?;
+    if association_start < s.sequence_range.start || label_start > t.pair.primary.record_range.start
+    {
+        return Err(Authority120Refusal::Bounds);
+    }
+    let single = source.get(association_start) == Some(&1);
+    let walker = if single {
+        walk_bounded_120_single_events
+    } else {
+        walk_bounded_mixed_events
+    };
+    let walk = walker(
         source,
         MixedEventBounds {
             event_range: bounds.event_range.clone(),
@@ -281,6 +299,7 @@ fn reconcile(
                     MixedEventKind::ContextMediatedNote(_) => 1,
                     MixedEventKind::DoubleContextMediatedNote(_) => 2,
                     MixedEventKind::Note(_)
+                    | MixedEventKind::Program(_)
                     | MixedEventKind::Controller(_)
                     | MixedEventKind::MidiController(_)
                     | MixedEventKind::PitchBend { .. }

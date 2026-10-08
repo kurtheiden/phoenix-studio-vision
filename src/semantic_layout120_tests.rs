@@ -412,6 +412,9 @@ fn authorized_school_event_meter() {
                                     | MixedEventKind::MidiController(_) => 2,
                                     MixedEventKind::ChannelPressure { .. } => 3,
                                     MixedEventKind::PitchBend { .. } => 4,
+                                    MixedEventKind::Program(_) => {
+                                        panic!("generic walker admitted scoped Program")
+                                    }
                                 }] += 1
                             }
                         }

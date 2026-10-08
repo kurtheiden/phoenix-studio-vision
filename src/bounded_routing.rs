@@ -343,6 +343,7 @@ pub fn validate_bounded_routing_contexts(
                     )?;
                 }
                 MixedEventKind::Note(_)
+                | MixedEventKind::Program(_)
                 | MixedEventKind::ChannelPressure { .. }
                 | MixedEventKind::PitchBend { .. } => {}
             },
