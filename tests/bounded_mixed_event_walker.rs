@@ -28,6 +28,7 @@ fn family_counts(result: &phoenix::mixed_event::MixedEventWalk<'_>) -> [usize; 5
                 counts[1] += 1;
             }
             MixedEventItem::Event(event) => match &event.event {
+                MixedEventKind::SysEx(_) => {}
                 MixedEventKind::Program(_) => panic!("generic walker admitted scoped Program"),
                 MixedEventKind::Note(_)
                 | MixedEventKind::ContextMediatedNote(_)
@@ -1157,7 +1158,7 @@ fn authentic_composition_extensions_complete_only_the_audited_tracks() {
             }
         }
     }
-    assert_eq!(failures, [(0, 1), (0, 8), (7, 5), (7, 6)]);
+    assert_eq!(failures, [(0, 8)]);
     assert!(matches!(
         project.sequences[8].track_associations,
         phoenix::sequence_container::TrackAssociations::Unresolved {
@@ -1663,51 +1664,22 @@ fn authentic_remaining_forms_have_exact_successes_and_failure_frontiers() {
         }
         per_sequence.push(n);
     }
-    assert_eq!(complete, 128);
+    assert_eq!(complete, 131);
     assert_eq!(
         (per_sequence[9], per_sequence[11], per_sequence[17]),
         (5, 6, 2)
     );
     assert_eq!(
         failures,
-        vec![
-            (
-                0,
-                1,
-                MixedEventWalkError::UnsupportedStatus {
-                    cursor: 0x7a25,
-                    offset: 0x7a27,
-                    observed: 0xf0
-                }
-            ),
-            (
-                0,
-                8,
-                MixedEventWalkError::PatchContextMismatch {
-                    cursor: 0xc490,
-                    offset: 0xc49c,
-                    observed: Some(0xff)
-                }
-            ),
-            (
-                7,
-                5,
-                MixedEventWalkError::UnsupportedStatus {
-                    cursor: 0x21476,
-                    offset: 0x21478,
-                    observed: 0xf0
-                }
-            ),
-            (
-                7,
-                6,
-                MixedEventWalkError::UnsupportedStatus {
-                    cursor: 0x219db,
-                    offset: 0x219dc,
-                    observed: 0xf0
-                }
-            ),
-        ]
+        vec![(
+            0,
+            8,
+            MixedEventWalkError::PatchContextMismatch {
+                cursor: 0xc490,
+                offset: 0xc49c,
+                observed: Some(0xff)
+            }
+        ),]
     );
 }
 
@@ -1810,7 +1782,7 @@ fn source_controllers_refuse_truncation_invalid_data_and_other_statuses() {
         b[offset] = 128;
         assert!(walk(&b).is_err());
     }
-    for status in [0x80, 0x91, 0xa0, 0xc0, 0xd1, 0xe1, 0xf0, 0xf7] {
+    for status in [0x80, 0x91, 0xa0, 0xc0, 0xd1, 0xe1, 0xf7] {
         assert!(matches!(
             walk(&[0, status, 7, 64]),
             Err(MixedEventWalkError::UnsupportedStatus { .. })

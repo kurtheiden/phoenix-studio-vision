@@ -342,7 +342,8 @@ pub fn validate_bounded_routing_contexts(
                         i,
                     )?;
                 }
-                MixedEventKind::Note(_)
+                MixedEventKind::SysEx(_)
+                | MixedEventKind::Note(_)
                 | MixedEventKind::Program(_)
                 | MixedEventKind::ChannelPressure { .. }
                 | MixedEventKind::PitchBend { .. } => {}

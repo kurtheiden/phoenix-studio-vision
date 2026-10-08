@@ -652,3 +652,62 @@ fn independent_validate_synthetic(file: &[u8]) {
         );
     }
 }
+
+#[test]
+fn sysex_adapter_refuses_unvalidated_payloads_and_preserves_exact_valid_bytes() {
+    for payload in [
+        vec![],
+        vec![0; 6],
+        vec![0; 8],
+        vec![0, 1, 2, 3, 4, 5, 0],
+        vec![0, 1, 0xf7, 3, 4, 5, 0xf7],
+    ] {
+        assert!(adapt(&[event(0, 0, DecodedExportEventKind::SysEx { payload })], 1).is_err());
+    }
+    let payload = vec![0, 0x41, 0x32, 0, 12, 93, 0xf7];
+    let a = adapt(
+        &[event(
+            123,
+            7,
+            DecodedExportEventKind::SysEx {
+                payload: payload.clone(),
+            },
+        )],
+        16,
+    )
+    .unwrap();
+    assert_eq!(a.scheduled_events.len(), 1);
+    assert_eq!(a.scheduled_events[0].absolute_tick, 123);
+    assert_eq!(
+        phoenix::smf::serialize_channel_message(&a.scheduled_events[0].message),
+        [vec![0xf0, 7], payload].concat()
+    );
+}
+
+#[test]
+fn sysex_smf_requires_source_order_instead_of_message_priority() {
+    let events = [
+        event(
+            0,
+            0,
+            DecodedExportEventKind::SysEx {
+                payload: vec![0, 0x41, 0x32, 0, 12, 93, 0xf7],
+            },
+        ),
+        note(0, 1, 60, 100, 40, 2),
+    ];
+    let a = adapt(&events, 4).unwrap();
+    assert_eq!(
+        serialize_musical_track(&a.scheduled_events),
+        Err(SmfSerializeError::SysExRequiresSourceOrder)
+    );
+    let output = phoenix::smf::serialize_musical_track_with_ordering(
+        &a.scheduled_events,
+        phoenix::smf::MusicalTrackOrdering::SourceOrder,
+    )
+    .unwrap();
+    assert_eq!(
+        &output.as_bytes()[8..18],
+        &[0, 0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7]
+    );
+}

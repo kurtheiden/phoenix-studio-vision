@@ -103,6 +103,7 @@ pub enum EvidenceEventFamily {
     Tempo,
     Meter,
     Patch,
+    SysEx,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -583,7 +584,8 @@ fn canonical_family_index(family: EvidenceEventFamily) -> Option<u8> {
         EvidenceEventFamily::Controller => Some(2),
         EvidenceEventFamily::ChannelPressure => Some(3),
         EvidenceEventFamily::PitchBend => Some(4),
-        EvidenceEventFamily::ProgramChange
+        EvidenceEventFamily::SysEx
+        | EvidenceEventFamily::ProgramChange
         | EvidenceEventFamily::Tempo
         | EvidenceEventFamily::Meter => None,
     }

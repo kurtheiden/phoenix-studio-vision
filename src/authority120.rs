@@ -298,6 +298,9 @@ fn reconcile(
                 match &e.event {
                     MixedEventKind::ContextMediatedNote(_) => 1,
                     MixedEventKind::DoubleContextMediatedNote(_) => 2,
+                    MixedEventKind::SysEx(_) => {
+                        return Err(Authority120Refusal::UnsupportedAccounting)
+                    }
                     MixedEventKind::Note(_)
                     | MixedEventKind::Program(_)
                     | MixedEventKind::Controller(_)

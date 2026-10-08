@@ -326,14 +326,14 @@ fn authenticated_corpus_predicate_results() {
         "Sequence R",
     ];
     let expected_counts = [
-        (11, 0, 2),
+        (12, 0, 1),
         (12, 2, 0),
         (6, 0, 0),
         (5, 1, 0),
         (6, 2, 0),
         (3, 0, 0),
         (10, 0, 0),
-        (7, 2, 2),
+        (9, 2, 0),
         (0, 0, 11),
         (0, 1, 4),
         (1, 1, 0),
@@ -381,7 +381,7 @@ fn authenticated_corpus_predicate_results() {
             assert!(accepted > 0);
             assert_eq!(refused, 0, "{name}");
         }
-        if ["xForm", "happyone"].contains(&name) {
+        if name == "xForm" {
             assert!(rows.iter().any(|r| r.structural_ordinal == s
                 && matches!(r.result, Err(RoutingRefusal::IncompleteEventWalk(_)))));
         }
@@ -397,7 +397,7 @@ fn authenticated_corpus_predicate_results() {
         }
     }
     assert_eq!(matched_expected, 8);
-    assert_eq!(forms, [83, 17]);
+    assert_eq!(forms, [86, 17]);
     println!("Authenticated F={} Z={}", forms[0], forms[1]);
 }
 
@@ -456,7 +456,7 @@ fn bounded_success_leaves_existing_readiness_and_profile_evidence_unchanged() {
         .routing_channel_resolutions(&before.session_id)
         .unwrap();
     let rows = decode_bounded_routing(&std::fs::read(BASELINE).unwrap()).unwrap();
-    assert_eq!(rows.iter().filter(|r| r.result.is_ok()).count(), 100);
+    assert_eq!(rows.iter().filter(|r| r.result.is_ok()).count(), 103);
     assert_eq!(
         before
             .sequences

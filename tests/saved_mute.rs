@@ -474,14 +474,14 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
         }
     }
     let expected_counts = [
-        ("xForm", (1, 10, 2)),
+        ("xForm", (1, 11, 1)),
         ("Bells for her", (2, 10, 2)),
         ("Situation", (0, 6, 0)),
         ("Sequence D", (0, 5, 1)),
         ("Sequence E", (1, 5, 2)),
         ("Girl-U-Want", (0, 3, 0)),
         ("mission impossibl", (0, 10, 0)),
-        ("happyone", (3, 4, 4)),
+        ("happyone", (3, 6, 2)),
         ("Sequence I", (0, 0, 11)),
         ("newsong", (0, 3, 2)),
         ("Sequence K", (0, 1, 1)),
@@ -509,7 +509,7 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
                 && matches!(r.state, SavedMuteState::Off | SavedMuteState::On)
         })
         .collect::<Vec<_>>();
-    assert_eq!(newly_decoded.len(), 21);
+    assert_eq!(newly_decoded.len(), 22);
     assert_eq!(
         newly_decoded
             .iter()
@@ -523,17 +523,14 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
             .map(|r| r.sequence_ordinal)
             .collect::<std::collections::BTreeSet<_>>()
             .len(),
-        10
+        11
     );
     let incomplete_04 = rows
         .iter()
         .find(|r| r.sequence_name == b"happyone" && r.descriptor_ordinal == 8)
         .unwrap();
     assert_eq!(incomplete_04.neighboring_guard, Some(GUARD_04));
-    assert_eq!(
-        incomplete_04.state,
-        SavedMuteState::Unknown(SavedMuteUnknown::IncompleteEventWalk)
-    );
+    assert_eq!(incomplete_04.state, SavedMuteState::Off);
     for (name, _, _) in &before {
         let group: Vec<_> = rows
             .iter()

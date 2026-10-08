@@ -2294,7 +2294,7 @@ fn inventory_track(
 fn inventory_families(
     walk: &crate::mixed_event::MixedEventWalk<'_>,
 ) -> (Vec<EvidenceEventFamily>, u64, Vec<PatchEvidence>) {
-    let mut present = [false; 5];
+    let mut present = [false; 6];
     let mut patch_evidence = Vec::new();
     for (item_index, item) in walk.items.iter().enumerate() {
         match item {
@@ -2340,6 +2340,7 @@ fn inventory_families(
                 }
                 MixedEventKind::ChannelPressure { .. } => present[3] = true,
                 MixedEventKind::PitchBend { .. } => present[4] = true,
+                MixedEventKind::SysEx(_) => present[5] = true,
                 MixedEventKind::Program(_) => present[0] = true,
             },
         }
@@ -2350,6 +2351,7 @@ fn inventory_families(
         EvidenceEventFamily::Controller,
         EvidenceEventFamily::ChannelPressure,
         EvidenceEventFamily::PitchBend,
+        EvidenceEventFamily::SysEx,
     ];
     let families = canonical
         .into_iter()

@@ -413,6 +413,11 @@ pub(crate) fn build_conversion_ready_sequence(
                                 &entry,
                             )
                         }
+                        MixedEventKind::SysEx(_) => {
+                            return Err(ConversionReadyError::PolicyMismatch(
+                                "SysEx is not authorized by authenticated profile evidence".into(),
+                            ));
+                        }
                         MixedEventKind::Program(_) => {
                             return Err(ConversionReadyError::PolicyMismatch(
                                 "explicit project Program requires owned 120 routing".into(),
@@ -546,6 +551,11 @@ fn omission_inventory(
                 }
                 MixedEventKind::ChannelPressure { .. } => present[3] = true,
                 MixedEventKind::PitchBend { .. } => present[4] = true,
+                MixedEventKind::SysEx(_) => {
+                    return Err(ConversionReadyError::PolicyMismatch(
+                        "SysEx omission is not authorized".into(),
+                    ))
+                }
                 MixedEventKind::Program(_) => present[0] = true,
             },
         }

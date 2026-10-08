@@ -268,6 +268,9 @@ pub fn build_bounded_sequence_manifest(
             match item {
                 MixedEventItem::Event(e) => {
                     events.push(match &e.event {
+                        MixedEventKind::SysEx(s) => {
+                            DecodedExportEvent::from_sysex(e.position, ordinal, s)
+                        }
                         MixedEventKind::Note(n) => {
                             DecodedExportEvent::from_note(e.position, ordinal, n)
                         }

@@ -267,6 +267,13 @@ fn single_handoff(
     for item in &w.items {
         match item {
             MixedEventItem::Event(e) => out.push(match &e.event {
+                MixedEventKind::SysEx(_) => {
+                    return Err(refusal(
+                        "event handoff",
+                        at,
+                        "SysEx not evidenced for 120 layout",
+                    ))
+                }
                 MixedEventKind::Program(p) => DecodedExportEvent {
                     absolute_position: e.position,
                     source_ordinal: ordinal,

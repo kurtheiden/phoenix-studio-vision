@@ -58,6 +58,7 @@ pub struct PositionedEvent<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MixedEventKind<'a> {
     Note(BoundedNoteEvent<'a>),
+    SysEx(BoundedSysExEntry<'a>),
     /// Canonical project Program tag; channel is supplied by proven 120 routing.
     Program(BoundedProgramEntry<'a>),
     Controller(BoundedControllerRecord<'a>),
@@ -72,6 +73,16 @@ pub enum MixedEventKind<'a> {
     },
     ContextMediatedNote(BoundedContextMediatedNoteEntry<'a>),
     DoubleContextMediatedNote(BoundedDoubleContextMediatedNoteEntry<'a>),
+}
+
+/// Exact evidenced F0/07 source representation; payload includes final F7.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedSysExEntry<'a> {
+    pub representation_range: Range<usize>,
+    pub timing_delta: LocatedVlq<'a>,
+    pub status: LocatedByte,
+    pub payload_length: LocatedByte,
+    pub payload: LocatedBytes<'a>,
 }
 
 /// Explicit C0 entry, available only to the crate's owned 120 single-route path.
@@ -216,6 +227,15 @@ pub enum MixedEventWalkError {
         observed: u8,
     },
     UnsupportedStatus {
+        cursor: usize,
+        offset: usize,
+        observed: u8,
+    },
+    MalformedSysEx {
+        cursor: usize,
+        offset: usize,
+    },
+    UnsupportedSysExSuccessor {
         cursor: usize,
         offset: usize,
         observed: u8,
@@ -436,6 +456,93 @@ fn walk_mixed_events(
                     )
                 }
             },
+            0xf0 if !explicit_program => {
+                let next =
+                    timing_end
+                        .checked_add(9)
+                        .ok_or(MixedEventWalkError::EventPastBound {
+                            cursor,
+                            required_end: usize::MAX,
+                            event_end: end,
+                        })?;
+                if next > end {
+                    return Err(MixedEventWalkError::EventPastBound {
+                        cursor,
+                        required_end: next,
+                        event_end: end,
+                    });
+                }
+                let length_offset = timing_end + 1;
+                let payload_start = timing_end + 2;
+                if bytes[length_offset] != 7 {
+                    return Err(MixedEventWalkError::MalformedSysEx {
+                        cursor,
+                        offset: length_offset,
+                    });
+                }
+                for (index, value) in bytes[payload_start..next - 1].iter().enumerate() {
+                    let offset = payload_start + index;
+                    if *value > 127 {
+                        return Err(MixedEventWalkError::MalformedSysEx { cursor, offset });
+                    }
+                }
+                if bytes[next - 1] != 0xf7 {
+                    return Err(MixedEventWalkError::MalformedSysEx {
+                        cursor,
+                        offset: next - 1,
+                    });
+                }
+                // CCA-016 establishes only explicit F0/90 successors, not
+                // a general source compact-state or SMF running-status rule.
+                if next < end {
+                    let timing = decode_7bit_be_vlq(bytes, next, end).map_err(|source| {
+                        MixedEventWalkError::TimingVlq {
+                            cursor: next,
+                            source,
+                        }
+                    })?;
+                    let offset = next + timing.bytes_consumed;
+                    let observed = *bytes.get(offset).filter(|_| offset < end).ok_or(
+                        MixedEventWalkError::MissingDispatchByte {
+                            cursor: next,
+                            offset,
+                        },
+                    )?;
+                    if !matches!(observed, 0xf0 | 0x90) {
+                        return Err(MixedEventWalkError::UnsupportedSysExSuccessor {
+                            cursor,
+                            offset,
+                            observed,
+                        });
+                    }
+                }
+                let timing_delta = located_vlq(bytes, cursor, timing_end, cursor)?;
+                let position = add_position(previous_position, timing_delta.value, cursor)?;
+                (
+                    MixedEventItem::Event(Box::new(PositionedEvent {
+                        position,
+                        event: MixedEventKind::SysEx(BoundedSysExEntry {
+                            representation_range: cursor..next,
+                            timing_delta,
+                            status: LocatedByte {
+                                value: 0xf0,
+                                offset: timing_end,
+                            },
+                            payload_length: LocatedByte {
+                                value: 7,
+                                offset: length_offset,
+                            },
+                            payload: LocatedBytes {
+                                bytes: &bytes[payload_start..next],
+                                range: payload_start..next,
+                            },
+                        }),
+                    })),
+                    next,
+                    position,
+                    state,
+                )
+            }
             0xff => dispatch_ff(bytes, cursor, timing_end, end, previous_position)?,
             0x90 => {
                 let (note, next) = decode_note_at(bytes, cursor, end, true)

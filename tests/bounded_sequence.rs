@@ -972,3 +972,89 @@ fn authentic_pressure_bend_populations_keep_independent_first_blockers() {
         );
     }
 }
+
+#[test]
+fn sysex_handoff_preserves_payload_ticks_source_order_and_channelled_notes() {
+    use phoenix::midi_export::DecodedExportEventKind;
+    use phoenix::smf::{serialize_channel_message, ChannelMessage};
+    let stream = [
+        0, 0x90, 60, 100, 40, 4, 0, 0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7, 0, 0xf0, 7, 0, 0x41,
+        0x32, 0, 12, 92, 0xf7, 2, 0x90, 61, 101, 41, 5,
+    ];
+    let bytes = synthetic(&stream);
+    let manifest = accepted(&bytes);
+    let routed = &manifest.tracks()[0];
+    assert_eq!(manifest.name(), b"New!");
+    assert_eq!(routed.routing().midi_channel, 4);
+    assert_eq!(
+        routed.routing().consumed_range,
+        routed.routing().event_range
+    );
+    let e = routed.events();
+    assert_eq!(
+        e.iter()
+            .map(|e| (e.absolute_position, e.source_ordinal))
+            .collect::<Vec<_>>(),
+        [(0, 0), (0, 1), (0, 2), (2, 3)]
+    );
+    let DecodedExportEventKind::SysEx { payload } = &e[1].kind else {
+        panic!()
+    };
+    assert_eq!(payload, &[0, 0x41, 0x32, 0, 12, 93, 0xf7]);
+    let scheduled = phoenix::midi_export::adapt_track(
+        e,
+        Some(phoenix::midi_export::ChannelAssignment {
+            channel: phoenix::smf::MidiChannel::new(4).unwrap(),
+            provenance: phoenix::midi_export::ChannelAssignmentProvenance::ParsedRouting,
+        }),
+        phoenix::midi_export::TimingPolicy::Identity480,
+        phoenix::midi_export::PatchPolicy::StrictKnownOnly,
+    )
+    .unwrap();
+    let sys = scheduled
+        .scheduled_events
+        .iter()
+        .filter(|e| matches!(e.message, ChannelMessage::SysEx { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(sys.len(), 2);
+    assert_eq!(
+        serialize_channel_message(&sys[0].message),
+        [0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7]
+    );
+    let output = assemble_bounded_sequence(&manifest).unwrap();
+    let conductor_len = u32::from_be_bytes(output[18..22].try_into().unwrap()) as usize;
+    let start = 22 + conductor_len;
+    let len = u32::from_be_bytes(output[start + 4..start + 8].try_into().unwrap()) as usize;
+    assert_eq!(start + 8 + len, output.len());
+    // Exact independent track readback, including source-ordered same-tick events,
+    // two generated Note endings and one final EOT; no payload normalization.
+    let mut expected = vec![0, 0xff, 3, 5];
+    expected.extend(b"Other");
+    expected.extend([
+        0, 0x93, 60, 100, 0, 0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7, 0, 0xf0, 7, 0, 0x41, 0x32, 0,
+        12, 92, 0xf7, 2, 0x93, 61, 101, 2, 0x83, 60, 40, 3, 0x83, 61, 41, 0, 0xff, 0x2f, 0,
+    ]);
+    assert_eq!(&output[start + 8..], expected);
+}
+
+#[test]
+fn sysex_handoff_does_not_waive_mute_terminal_conductor_or_ownership() {
+    let bytes = synthetic(&[
+        0, 0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7, 0, 0x90, 60, 100, 40, 2,
+    ]);
+    let p = parse_project_166(&bytes).unwrap();
+    let s = &p.sequences[0];
+    let mut b = bytes.clone();
+    b[s.track_descriptors()[0].label_start - 39] = 0x88;
+    assert_eq!(refused(&b).stage, "mute");
+    let mut b = bytes.clone();
+    b[s.terminal_record.payload.range.start] = 0;
+    assert_eq!(refused(&b).stage, "sequence terminal");
+    let mut b = bytes.clone();
+    b[s.tempo_primary.payload.range.start + 1] ^= 1;
+    assert_eq!(refused(&b).stage, "conductor coverage");
+    let mut b = bytes.clone();
+    let pair = &s.track_pairs[0];
+    b.drain(pair.primary.record_range.start..pair.secondary.record_range.end);
+    assert_eq!(refused(&b).stage, "ownership");
+}

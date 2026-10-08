@@ -8,7 +8,7 @@ use crate::{
     channel_pressure::ChannelPressureEntry,
     controller::BoundedControllerRecord,
     meter::InitialMeterEvent,
-    mixed_event::BoundedMidiController,
+    mixed_event::{BoundedMidiController, BoundedSysExEntry},
     patch::BoundedPatchRepresentation,
     pitch_bend::PitchBendEntry,
     smf::{MidiChannel, MidiDataByte, ScheduledEvent, SmfSerializeError, TimeSignature},
@@ -70,6 +70,9 @@ pub struct DecodedExportEvent {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodedExportEventKind {
+    SysEx {
+        payload: Vec<u8>,
+    },
     Note {
         pitch: u8,
         attack_velocity: u8,
@@ -115,6 +118,21 @@ pub enum DecodedExportEventKind {
 }
 
 impl DecodedExportEvent {
+    pub fn from_sysex(
+        absolute_position: u32,
+        source_ordinal: u64,
+        entry: &BoundedSysExEntry<'_>,
+    ) -> Self {
+        Self {
+            absolute_position,
+            source_ordinal,
+            source_range: Some(entry.representation_range.clone()),
+            kind: DecodedExportEventKind::SysEx {
+                payload: entry.payload.bytes.to_vec(),
+            },
+        }
+    }
+
     pub fn from_midi_controller(
         absolute_position: u32,
         source_ordinal: u64,
@@ -423,6 +441,20 @@ pub fn adapt_track(
             _ => channel_assignment.channel,
         };
         match event.kind {
+            DecodedExportEventKind::SysEx { ref payload } => {
+                let payload = crate::smf::BoundedSysExPayload::new(payload).map_err(|source| {
+                    MidiExportError::InvalidMidiValue {
+                        source_ordinal: Some(event.source_ordinal),
+                        source_range: event.source_range.clone(),
+                        source,
+                    }
+                })?;
+                scheduled_events.push(ScheduledEvent {
+                    absolute_tick: event.absolute_position,
+                    stable_ordinal: source_stable_ordinal,
+                    message: crate::smf::ChannelMessage::SysEx { payload },
+                });
+            }
             DecodedExportEventKind::Note {
                 pitch,
                 attack_velocity,

@@ -259,6 +259,8 @@ fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
 /// Errors produced while validating or serializing MIDI-domain values.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SmfSerializeError {
+    InvalidSysExPayload,
+    SysExRequiresSourceOrder,
     InvalidChannel { value: u8 },
     InvalidDataByte { value: u8 },
     InvalidPpqn { value: u16 },
@@ -325,9 +327,31 @@ impl MidiDataByte {
     }
 }
 
-/// The explicit-status channel voice messages supported by the first writer.
+/// Validated complete length-seven SysEx payload; bytes include final F7.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedSysExPayload([u8; 7]);
+impl BoundedSysExPayload {
+    pub fn new(bytes: &[u8]) -> Result<Self, SmfSerializeError> {
+        let payload: [u8; 7] = bytes
+            .try_into()
+            .map_err(|_| SmfSerializeError::InvalidSysExPayload)?;
+        if payload[6] != 0xf7 || payload[..6].iter().any(|b| *b > 127) {
+            return Err(SmfSerializeError::InvalidSysExPayload);
+        }
+        Ok(Self(payload))
+    }
+    pub fn as_bytes(&self) -> &[u8; 7] {
+        &self.0
+    }
+}
+
+/// Explicit-status messages. The legacy type name is retained for compatibility;
+/// SysEx is system-exclusive and carries no channel.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChannelMessage {
+    SysEx {
+        payload: BoundedSysExPayload,
+    },
     NoteOff {
         channel: MidiChannel,
         key: MidiDataByte,
@@ -358,7 +382,7 @@ pub enum ChannelMessage {
     },
 }
 
-/// One MIDI-domain channel message scheduled at an absolute tick.
+/// One MIDI-domain message scheduled at an absolute tick.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScheduledEvent {
     pub absolute_tick: u32,
@@ -433,9 +457,14 @@ pub fn encode_midi_vlq(value: u32) -> Result<Vec<u8>, SmfSerializeError> {
     Ok(buffer[index..].to_vec())
 }
 
-/// Serializes one channel message with an explicit status byte.
+/// Serializes one explicit-status message, including bounded SysEx framing.
 pub fn serialize_channel_message(message: &ChannelMessage) -> Vec<u8> {
     match message {
+        ChannelMessage::SysEx { payload } => {
+            let mut bytes = vec![0xf0, 7];
+            bytes.extend_from_slice(payload.as_bytes());
+            bytes
+        }
         ChannelMessage::NoteOff {
             channel,
             key,
@@ -575,6 +604,13 @@ fn serialize_musical_track_payload(
     ordering: MusicalTrackOrdering,
     provenance: &[NoteSourceProvenance],
 ) -> Result<SerializedTrack, SmfSerializeError> {
+    if ordering == MusicalTrackOrdering::ExistingPriority
+        && events
+            .iter()
+            .any(|e| matches!(e.message, ChannelMessage::SysEx { .. }))
+    {
+        return Err(SmfSerializeError::SysExRequiresSourceOrder);
+    }
     let mut ordered = events.to_vec();
     match ordering {
         MusicalTrackOrdering::ExistingPriority => ordered.sort_by_key(|event| {
@@ -861,6 +897,7 @@ fn message_priority(message: &ChannelMessage) -> u8 {
         ChannelMessage::ChannelPressure { .. } => 6,
         ChannelMessage::NoteOff { .. } => 7,
         ChannelMessage::NoteOn { .. } => 8,
+        ChannelMessage::SysEx { .. } => 9,
     }
 }
 

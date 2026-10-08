@@ -27,6 +27,7 @@ pub(crate) fn musical_expected(name: &[u8], scheduled: &[ScheduledEvent]) -> Eve
     for e in &events {
         use ChannelMessage::*;
         let (s, d) = match &e.message {
+            SysEx { payload } => (0xf0, payload.as_bytes().to_vec()),
             NoteOn {
                 channel,
                 key,
