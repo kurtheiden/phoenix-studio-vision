@@ -1,6 +1,6 @@
 //! Pure, fail-closed construction evidence. This module grants no export authority.
 //!
-//! Only the Descriptor166, initial-only conductor, unmuted nonempty Note/CC0
+//! Only the Descriptor166, initial-only conductor, unmuted nonempty Note/Pressure/Bend/CC0
 //! Patch subset is admitted. Accepted values have private construction and are
 //! independent of compatibility profiles, paths, identities and application policy.
 use std::{fmt, ops::Range};
@@ -267,10 +267,18 @@ pub fn build_bounded_sequence_manifest(
         for item in &walk.items {
             match item {
                 MixedEventItem::Event(e) => {
-                    let MixedEventKind::Note(n) = &e.event else {
-                        return Err(refusal("translation", "unsupported parsed event"));
-                    };
-                    events.push(DecodedExportEvent::from_note(e.position, ordinal, n));
+                    events.push(match &e.event {
+                        MixedEventKind::Note(n) => {
+                            DecodedExportEvent::from_note(e.position, ordinal, n)
+                        }
+                        MixedEventKind::ChannelPressure { entry, .. } => {
+                            DecodedExportEvent::from_channel_pressure(e.position, ordinal, entry)
+                        }
+                        MixedEventKind::PitchBend { entry, .. } => {
+                            DecodedExportEvent::from_pitch_bend(e.position, ordinal, entry)
+                        }
+                        _ => return Err(refusal("translation", "unsupported parsed event")),
+                    });
                 }
                 MixedEventItem::PatchToNote(n) => {
                     let patch = classified

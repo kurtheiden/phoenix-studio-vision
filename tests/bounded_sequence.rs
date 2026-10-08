@@ -542,6 +542,136 @@ fn authenticated_native_sequence_reconciliation() {
 }
 
 #[test]
+fn pressure_bend_handoff_preserves_timing_values_channel_and_source_order() {
+    use phoenix::midi_export::DecodedExportEventKind;
+    // Explicit entries, compact family continuations and a same-tick Note.
+    let stream = [
+        0, 0xd0, 7, 5, 8, 0, 0xe0, 1, 64, 3, 2, 65, 0, 0x90, 60, 127, 113, 102, 0, 0xd0, 9,
+    ];
+    let bytes = synthetic(&stream);
+    let manifest = accepted(&bytes);
+    let routed = &manifest.tracks()[0];
+    assert_eq!(routed.routing().midi_channel, 4);
+    assert_eq!(
+        routed.routing().event_range,
+        routed.routing().consumed_range
+    );
+    let events = routed.events();
+    assert_eq!(events.len(), 6);
+    assert_eq!(
+        events
+            .iter()
+            .map(|e| e.absolute_position)
+            .collect::<Vec<_>>(),
+        [0, 5, 5, 8, 8, 8]
+    );
+    for (i, e) in events.iter().enumerate() {
+        assert_eq!(e.source_ordinal, i as u64);
+        assert!(routed.routing().event_range.start <= e.source_range.as_ref().unwrap().start);
+        assert!(e.source_range.as_ref().unwrap().end <= routed.routing().event_range.end);
+    }
+    assert!(matches!(
+        events[0].kind,
+        DecodedExportEventKind::ChannelPressure { value: 7 }
+    ));
+    assert!(matches!(
+        events[1].kind,
+        DecodedExportEventKind::ChannelPressure { value: 8 }
+    ));
+    assert!(matches!(
+        events[2].kind,
+        DecodedExportEventKind::PitchBend { lsb: 1, msb: 64 }
+    ));
+    assert!(matches!(
+        events[3].kind,
+        DecodedExportEventKind::PitchBend { lsb: 2, msb: 65 }
+    ));
+    assert!(matches!(
+        events[5].kind,
+        DecodedExportEventKind::ChannelPressure { value: 9 }
+    ));
+    let output = assemble_bounded_sequence(&manifest).unwrap();
+    // Independent existing SMF reader; skip the conductor chunk, retain every message.
+    let conductor_len = u32::from_be_bytes(output[18..22].try_into().unwrap()) as usize;
+    let start = 22 + conductor_len;
+    assert_eq!(&output[start..start + 4], b"MTrk");
+    let len = u32::from_be_bytes(output[start + 4..start + 8].try_into().unwrap()) as usize;
+    assert_eq!(start + 8 + len, output.len());
+    let readback = track(&output[start + 8..]);
+    assert_eq!(
+        readback.messages[..6]
+            .iter()
+            .map(|m| (m.tick, m.bytes.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (0, vec![0xd3, 7]),
+            (5, vec![0xd3, 8]),
+            (5, vec![0xe3, 1, 64]),
+            (8, vec![0xe3, 2, 65]),
+            (8, vec![0x93, 60, 127]),
+            (8, vec![0xd3, 9])
+        ]
+    );
+    assert_eq!(readback.messages.len(), 7); // Includes the generated Note ending.
+}
+
+#[test]
+fn pressure_bend_handoff_accepts_channel_endpoints() {
+    for channel in [1, 16] {
+        let mut bytes = synthetic(&[0, 0xd0, 127, 0, 0xe0, 127, 127]);
+        let root = phoenix::sequence_container::parse_root_record_stream(&bytes).unwrap();
+        let offset = root
+            .records
+            .iter()
+            .filter(|r| r.record_type.value == 0x10)
+            .nth(1)
+            .unwrap()
+            .payload
+            .range
+            .start
+            + 27;
+        bytes[offset] = channel - 1;
+        let m = accepted(&bytes);
+        assert_eq!(m.tracks()[0].routing().midi_channel, channel);
+        assemble_bounded_sequence(&m).unwrap();
+    }
+}
+
+#[test]
+fn pressure_bend_handoff_malformed_values_and_unknown_successors_refuse() {
+    for stream in [
+        vec![0, 0xd0],
+        vec![0, 0xe0],
+        vec![0, 0xe0, 1],
+        vec![0, 0xd0, 7, 0],
+        vec![0, 0xe0, 1, 64, 0, 2],
+        vec![0, 0xd0, 128],
+        vec![0, 0xe0, 128, 64],
+        vec![0, 0xe0, 0, 128],
+        vec![0, 0xd0, 7, 0, 0xf0],
+    ] {
+        refused(&synthetic(&stream));
+    }
+}
+
+#[test]
+fn pressure_bend_handoff_does_not_waive_mute_conductor_or_ownership() {
+    let bytes = synthetic(&[0, 0xd0, 7, 0, 0xe0, 1, 64]);
+    let parsed = parse_project_166(&bytes).unwrap();
+    let sequence = &parsed.sequences[0];
+    let mut muted = bytes.clone();
+    muted[sequence.track_descriptors()[0].label_start - 39] = 0x88;
+    assert_eq!(refused(&muted).stage, "mute");
+    let mut terminal = bytes.clone();
+    terminal[sequence.terminal_record.payload.range.start] = 0;
+    assert_eq!(refused(&terminal).stage, "sequence terminal");
+    let mut unowned = bytes.clone();
+    let pair = &sequence.track_pairs[0];
+    unowned.drain(pair.primary.record_range.start..pair.secondary.record_range.end);
+    assert_eq!(refused(&unowned).stage, "ownership");
+}
+
+#[test]
 fn parsed_controller_has_no_translation_in_this_contract() {
     let b = synthetic(&[0, 255, 65, 5, 0, 1, 0, 7, 64]);
     assert_eq!(refused(&b).stage, "translation");
@@ -801,4 +931,44 @@ fn invalid_selected_sequence_is_not_replaced_by_valid_sibling() {
     assert_eq!(error.diagnostic_code, "sequence_not_export_capable");
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     application_export(&bytes, 1);
+}
+
+#[test]
+fn authentic_pressure_bend_populations_keep_independent_first_blockers() {
+    use phoenix::mixed_event::{
+        walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+    };
+    let bytes = std::fs::read(PROJECT).expect("authenticated existing development fixture");
+    assert_eq!(bytes.len(), 211468);
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&bytes)),
+        "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132"
+    );
+    let project = parse_project_166(&bytes).unwrap();
+    for (sequence, pair, pressures, bends) in [(1, 8, 32, 0), (1, 13, 0, 102), (0, 7, 0, 44)] {
+        let bounds = project.sequences[sequence]
+            .validated_track_event_bounds(pair)
+            .unwrap();
+        let walk = walk_bounded_mixed_events(
+            &bytes,
+            MixedEventBounds {
+                event_range: bounds.event_range.clone(),
+            },
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(walk.consumed_range, bounds.event_range);
+        let count = |pressure| {
+            walk.items.iter().filter(|item| matches!(item,
+            MixedEventItem::Event(e) if if pressure { matches!(e.event, MixedEventKind::ChannelPressure { .. }) }
+                else { matches!(e.event, MixedEventKind::PitchBend { .. }) })).count()
+        };
+        assert_eq!((count(true), count(false)), (pressures, bends));
+        assert_eq!(
+            build_bounded_sequence_manifest(&bytes, sequence, 480)
+                .unwrap_err()
+                .stage,
+            "conductor prelude"
+        );
+    }
 }
