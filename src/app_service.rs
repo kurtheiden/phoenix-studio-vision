@@ -920,6 +920,141 @@ impl AppService {
         })
     }
 
+    /// Preview a separate conditional Note-only rendering. No readiness/capability changes.
+    pub fn preview_experimental_sequence(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<
+        crate::experimental_export::ExperimentalPlan,
+        crate::experimental_export::ExperimentalExportError,
+    > {
+        use crate::experimental_export::{ExperimentalExportError as Error, ExperimentalPlan};
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| Error("unknown session".into()))?;
+        let ordinal = session
+            .sequence_ordinals
+            .get(sequence_id)
+            .ok_or_else(|| Error("unknown sequence".into()))?;
+        let source =
+            fs::read(&session.source_path).map_err(|e| Error(format!("source unreadable: {e}")))?;
+        if source.len() != session.source_bytes.len()
+            || sha256_hex(&source) != session.source_sha256
+        {
+            return Err(Error("source identity changed".into()));
+        }
+        let (report, midi) = crate::experimental_export::build(&source, *ordinal as usize)?;
+        Ok(ExperimentalPlan {
+            session_id: session_id.clone(),
+            sequence_id: sequence_id.clone(),
+            report,
+            midi,
+        })
+    }
+
+    /// Explicitly opted-in INCOMPLETE output. Never calls verified authorization or promotes Ready.
+    /// As in the existing synchronous service, cancellation is not supported.
+    pub fn export_experimental_sequence(
+        &self,
+        request: ExportSequenceRequest,
+        plan: &crate::experimental_export::ExperimentalPlan,
+        acknowledge_incomplete_and_include_all_proved_tracks: bool,
+    ) -> Result<
+        crate::experimental_export::ExperimentalExportResponse,
+        crate::experimental_export::ExperimentalExportError,
+    > {
+        use crate::experimental_export::{
+            ExperimentalExportError as Error, ExperimentalExportResponse, LABEL,
+        };
+        if !acknowledge_incomplete_and_include_all_proved_tracks {
+            return Err(Error("affirmative experimental opt-in required".into()));
+        }
+        if request.contract_version != CONTRACT_VERSION
+            || request.session_id != plan.session_id
+            || request.sequence_id != plan.sequence_id
+        {
+            return Err(Error("plan/session/contract mismatch".into()));
+        }
+        // A fixed paired destination avoids sidecar/name ambiguity. Other policies are refused.
+        if request.collision_policy != CollisionPolicy::FailIfExists {
+            return Err(Error("experimental export requires fail-if-exists".into()));
+        }
+        let fresh =
+            self.preview_experimental_sequence(&request.session_id, &request.sequence_id)?;
+        if fresh.report != plan.report || fresh.midi != plan.midi {
+            return Err(Error("experimental plan changed".into()));
+        }
+        if normalize_export_filename_stem(&request.filename_stem).is_none() {
+            return Err(Error("invalid experimental filename stem".into()));
+        }
+        let mut destination = request.clone();
+        destination.filename_stem = format!("EXPERIMENTAL INCOMPLETE - {}", request.filename_stem);
+        let count = u32::try_from(fresh.report.tracks.len())
+            .map_err(|_| Error("Track count overflow".into()))?;
+        let total = count
+            .checked_add(1)
+            .ok_or_else(|| Error("Track count overflow".into()))?;
+        let preflight = || ExportResponsePreflight {
+            session_id: request.session_id.clone(),
+            sequence_id: request.sequence_id.clone(),
+            sequence_display_name: format!("{LABEL}: {}", fresh.report.source_name),
+            compatibility_profile: None,
+            bounded_export_capability: None,
+            musical_track_count: count,
+            total_smf_track_count: total,
+            counts: AppExportCounts::default(),
+            warnings: Vec::new(),
+            cleanup_warning_source_order: 0,
+            untranslated_metadata_count: 0,
+        };
+        let limits = || ExportLimits {
+            candidate_count: 1,
+            temp_attempt_count: EXPORT_TEMP_ATTEMPT_LIMIT,
+        };
+        let report = serde_json::to_vec_pretty(&fresh.report)
+            .map_err(|e| Error(format!("report encoding: {e}")))?;
+        // Publish mandatory limitations first. If MIDI fails, report may remain,
+        // explicitly disclosed in the error; never delete/overwrite a published file.
+        let companion = self
+            .commit_output_bytes(
+                &destination,
+                &report,
+                preflight(),
+                &RealExportFileSystem,
+                limits(),
+                "limitations.json",
+            )
+            .map_err(|e| Error(format!("limitations publication refused: {e:?}")))?;
+        let output = self
+            .commit_output_bytes(
+                &destination,
+                &fresh.midi,
+                preflight(),
+                &RealExportFileSystem,
+                limits(),
+                "mid",
+            )
+            .map_err(|e| {
+                Error(format!(
+                    "MIDI publication refused; limitations retained at {}: {e:?}",
+                    companion.output_path
+                ))
+            })?;
+        let mut publication_warnings = companion.warnings;
+        publication_warnings.extend(output.warnings);
+        // The generic publication helper's internal DTO is not experimental authority.
+        // Never return its Validated status or complete-recovery capability.
+        Ok(ExperimentalExportResponse {
+            label: LABEL,
+            output_path: output.output_path,
+            limitations_path: companion.output_path,
+            report: fresh.report,
+            publication_warnings,
+        })
+    }
+
     /// Prepare, commit, and report one single-sequence MIDI export.
     #[allow(clippy::result_large_err)]
     pub fn export_sequence(
@@ -1086,9 +1221,23 @@ impl AppService {
         &self,
         request: &ExportSequenceRequest,
         bytes: &[u8],
+        response: ExportResponsePreflight,
+        file_system: &F,
+        limits: ExportLimits,
+    ) -> Result<ExportSequenceResponse, AppError> {
+        self.commit_output_bytes(request, bytes, response, file_system, limits, "mid")
+    }
+
+    // Shared no-overwrite destination transaction; ordinary MIDI behavior is unchanged.
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
+    fn commit_output_bytes<F: ExportFileSystem>(
+        &self,
+        request: &ExportSequenceRequest,
+        bytes: &[u8],
         mut response: ExportResponsePreflight,
         file_system: &F,
         limits: ExportLimits,
+        extension: &str,
     ) -> Result<ExportSequenceResponse, AppError> {
         let normalized_stem =
             normalize_export_filename_stem(&request.filename_stem).ok_or_else(|| {
@@ -1175,6 +1324,11 @@ impl AppService {
         let mut committed = None;
         for candidate_index in 0..candidate_count {
             let filename = export_candidate_filename(&normalized_stem, candidate_index);
+            let filename = if extension == "mid" {
+                filename
+            } else {
+                format!("{}.{}", filename.trim_end_matches(".mid"), extension)
+            };
             let candidate = destination.join(filename);
             let Some(output_path) = candidate.to_str().map(str::to_owned) else {
                 return Err(self.export_error_with_temp_cleanup(

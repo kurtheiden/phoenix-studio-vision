@@ -513,6 +513,13 @@ pub fn serialize_track_name(name: &[u8]) -> Result<Vec<u8>, SmfSerializeError> {
     Ok(bytes)
 }
 
+/// Descriptive SMF text, never a source musical interpretation.
+pub fn serialize_text_event(text: &[u8]) -> Result<Vec<u8>, SmfSerializeError> {
+    let mut bytes = serialize_track_name(text)?;
+    bytes[1] = 0x01;
+    Ok(bytes)
+}
+
 pub fn serialize_set_tempo(mpqn: u32) -> Result<Vec<u8>, SmfSerializeError> {
     if mpqn == 0 || mpqn > 0x00ff_ffff {
         return Err(SmfSerializeError::InvalidTempo { mpqn });
@@ -851,6 +858,21 @@ pub fn serialize_conductor_track_with_key(
     payload.extend_from_slice(&serialize_time_signature(signature));
     payload.push(0);
     payload.extend_from_slice(&serialize_end_of_track());
+    make_track_chunk(payload)
+}
+
+/// Existing initial conductor serialization plus a descriptive limitation event.
+pub(crate) fn serialize_conductor_track_with_text(
+    name: &[u8],
+    mpqn: u32,
+    signature: TimeSignature,
+    text: &[u8],
+) -> Result<SerializedTrack, SmfSerializeError> {
+    let base = serialize_conductor_track(name, mpqn, signature)?;
+    let mut payload = base.bytes[8..base.bytes.len() - 4].to_vec();
+    payload.push(0);
+    payload.extend(serialize_text_event(text)?);
+    payload.extend([0, 0xff, 0x2f, 0]);
     make_track_chunk(payload)
 }
 
