@@ -94,6 +94,25 @@ pub fn decode_compact_conductor(
     bytes: &[u8],
     ranges: [Range<usize>; 4],
 ) -> Result<CompactConductor, ConductorRefusal> {
+    decode_conductor_impl(bytes, ranges, false)
+}
+
+pub(crate) fn decode_reference_qualified_conductor(
+    bytes: &[u8],
+    ranges: [Range<usize>; 4],
+    qualification: &crate::compatibility_profiles::NativeReference120Qualification<'_>,
+) -> Result<CompactConductor, ConductorRefusal> {
+    if !qualification.conductor_matches(bytes, &ranges) {
+        return Err(ConductorRefusal::RecordBounds);
+    }
+    decode_conductor_impl(bytes, ranges, true)
+}
+
+fn decode_conductor_impl(
+    bytes: &[u8],
+    ranges: [Range<usize>; 4],
+    reference_header02: bool,
+) -> Result<CompactConductor, ConductorRefusal> {
     let root = parse_root_record_stream(bytes).map_err(|_| ConductorRefusal::Framing)?;
     let mut records = Vec::new();
     for (i, range) in ranges.iter().enumerate() {
@@ -128,7 +147,10 @@ pub fn decode_compact_conductor(
         meter_event_bytes,
         meter_start,
         8,
-        !with_key,
+        PairEnvelope {
+            padded: !with_key,
+            reference_header02,
+        },
     )?;
     check_pair(
         tempo.payload.bytes,
@@ -137,7 +159,10 @@ pub fn decode_compact_conductor(
         7,
         14,
         7,
-        !with_key,
+        PairEnvelope {
+            padded: !with_key,
+            reference_header02,
+        },
     )?;
     let ms = meter.payload.range.start;
     let ts = tempo.payload.range.start;
@@ -201,6 +226,11 @@ pub fn decode_compact_conductor(
     result.adapt(b"")?;
     Ok(result)
 }
+struct PairEnvelope {
+    padded: bool,
+    reference_header02: bool,
+}
+
 fn check_pair(
     p: &[u8],
     s: &[u8],
@@ -208,13 +238,16 @@ fn check_pair(
     event_bytes: usize,
     final_start: usize,
     final_len: usize,
-    padded: bool,
+    envelope: PairEnvelope,
 ) -> Result<(), ConductorRefusal> {
+    let padded = envelope.padded;
     let tail_start = 14 + event_bytes;
     let tail_end = tail_start + 7;
     if p.len() != if padded { 38 } else { tail_end }
         || p[0] != 0
-        || !(p[1] == 1 || (!padded && count == 2 && p[1] == 3))
+        || !(p[1] == 1
+            || (!padded && count == 2 && p[1] == 3)
+            || (padded && envelope.reference_header02 && p[1] == 2))
         || p[2..6] != count.to_be_bytes()
         || p[6..10] != [0; 4]
         || p[tail_start..tail_end] != [0x87, 0xff, 0xff, 0x7f, 0xff, 0x2f, 0]

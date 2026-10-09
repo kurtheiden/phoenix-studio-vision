@@ -811,3 +811,52 @@ pub fn built_in_compatibility_registry() -> Result<CompatibilityRegistry, Profil
         over_the_top_profile()?,
     ])
 }
+
+// A native-reference qualification for one immutable 120-layout source/object.
+// This is target-specific policy, not a new generic header or terminal grammar.
+// The witness is the owner-exported 592-byte pick up the pace SMF documented
+// in CCA-020/022/023. Production never reads that reference or a /tmp report.
+pub(crate) struct NativeReference120Qualification<'a> {
+    source: &'a [u8],
+}
+
+pub(crate) fn qualify_native_reference120<'a>(
+    source: &'a [u8],
+    sequence_ordinal: usize,
+    sequence_range: &std::ops::Range<usize>,
+) -> Option<NativeReference120Qualification<'a>> {
+    use sha2::{Digest, Sha256};
+    if source.len() != 406_294
+        || sequence_ordinal != 0
+        || *sequence_range != (9095..10134)
+        || format!("{:x}", Sha256::digest(source))
+            != "40217bf534e7ac7f01ccab65d5d6f3fc873f08c134095410da2cbf5cef88ac70"
+    {
+        return None;
+    }
+    Some(NativeReference120Qualification { source })
+}
+
+impl NativeReference120Qualification<'_> {
+    pub(crate) fn conductor_matches(
+        &self,
+        source: &[u8],
+        ranges: &[std::ops::Range<usize>; 4],
+    ) -> bool {
+        std::ptr::eq(self.source, source)
+            && *ranges == [9545..9588, 9588..9622, 9622..9665, 9665..9698]
+    }
+
+    pub(crate) fn terminal_matches(
+        &self,
+        source: &[u8],
+        sequence_range: &std::ops::Range<usize>,
+        record_range: &std::ops::Range<usize>,
+        payload: &[u8],
+    ) -> bool {
+        std::ptr::eq(self.source, source)
+            && *sequence_range == (9095..10134)
+            && *record_range == (10123..10134)
+            && payload == [0, 0, 0, 1, 0xff, 0xff]
+    }
+}

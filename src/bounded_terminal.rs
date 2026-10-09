@@ -47,6 +47,29 @@ pub fn assess_terminal_coverage(
     sequence_range: Range<usize>,
     recovered_records: &[Range<usize>],
 ) -> Result<Option<TerminalDiagnostic>, TerminalRefusal> {
+    assess_terminal_impl(bytes, sequence_range, recovered_records, None)
+}
+
+pub(crate) fn assess_reference_qualified_terminal(
+    bytes: &[u8],
+    sequence_range: Range<usize>,
+    recovered_records: &[Range<usize>],
+    qualification: &crate::compatibility_profiles::NativeReference120Qualification<'_>,
+) -> Result<Option<TerminalDiagnostic>, TerminalRefusal> {
+    assess_terminal_impl(
+        bytes,
+        sequence_range,
+        recovered_records,
+        Some(qualification),
+    )
+}
+
+fn assess_terminal_impl(
+    bytes: &[u8],
+    sequence_range: Range<usize>,
+    recovered_records: &[Range<usize>],
+    qualification: Option<&crate::compatibility_profiles::NativeReference120Qualification<'_>>,
+) -> Result<Option<TerminalDiagnostic>, TerminalRefusal> {
     let root = parse_root_record_stream(bytes).map_err(|_| TerminalRefusal::Framing)?;
     let first = root
         .records
@@ -111,7 +134,10 @@ pub fn assess_terminal_coverage(
         && payload.iter().filter(|v| **v == 0xfe).count() >= 2
         && payload.iter().all(|v| matches!(v, 0xff | 0xfe))
         && !payload.windows(2).any(|pair| pair == [0xfe, 0xfe]);
-    if !single && !repeated {
+    let reference_qualified = qualification.is_some_and(|q| {
+        q.terminal_matches(bytes, &sequence_range, &terminal.record_range, payload)
+    });
+    if !single && !repeated && !reference_qualified {
         return Err(TerminalRefusal::UnsupportedMaterial);
     }
     Ok(Some(TerminalDiagnostic {

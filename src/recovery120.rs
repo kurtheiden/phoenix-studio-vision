@@ -1,8 +1,12 @@
 //! Complete in-memory recovery of the established bounded 120 subprofile.
 //! No AppService capability, filesystem output or format fallback is provided.
 use crate::authority120::{prove_project120, SequenceProof120, TrackRoute120};
-use crate::bounded_conductor::{decode_compact_conductor, CompactConductor};
-use crate::bounded_terminal::{assess_terminal_coverage, TerminalDiagnostic};
+use crate::bounded_conductor::{
+    decode_compact_conductor, decode_reference_qualified_conductor, CompactConductor,
+};
+use crate::bounded_terminal::{
+    assess_reference_qualified_terminal, assess_terminal_coverage, TerminalDiagnostic,
+};
 use crate::midi_export::{
     self, ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent, ExportCounts,
     PatchPolicy, PatchTranslation, TimingPolicy,
@@ -142,8 +146,13 @@ fn recover<'a>(
         s.leading_special[1].pair.primary.record_range.clone(),
         s.leading_special[1].pair.secondary.record_range.clone(),
     ];
-    let conductor = decode_compact_conductor(source, ranges.clone())
-        .map_err(|e| refusal("conductor", None, e))?;
+    let qualification =
+        crate::compatibility_profiles::qualify_native_reference120(source, ordinal, &proof.range());
+    let conductor = match &qualification {
+        Some(q) => decode_reference_qualified_conductor(source, ranges.clone(), q),
+        None => decode_compact_conductor(source, ranges.clone()),
+    }
+    .map_err(|e| refusal("conductor", None, e))?;
     let c = conductor
         .adapt(proof.name())
         .map_err(|e| refusal("conductor adaptation", None, e))?;
@@ -225,8 +234,11 @@ fn recover<'a>(
         });
     }
     coverage.sort_by_key(|r| r.start);
-    let terminal = assess_terminal_coverage(source, proof.range(), &coverage)
-        .map_err(|e| refusal("terminal", None, e))?;
+    let terminal = match &qualification {
+        Some(q) => assess_reference_qualified_terminal(source, proof.range(), &coverage, q),
+        None => assess_terminal_coverage(source, proof.range(), &coverage),
+    }
+    .map_err(|e| refusal("terminal", None, e))?;
     let midi = smf::serialize_format1(c.ppqn, &chunks).map_err(|e| refusal("SMF", None, e))?;
     crate::readback120::verify(&midi, c.ppqn, &expected)
         .map_err(|e| refusal("readback", None, e))?;
