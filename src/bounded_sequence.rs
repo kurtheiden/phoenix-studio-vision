@@ -120,7 +120,7 @@ impl BoundedSequenceManifest {
 // Exact bounded initial-only record envelope. Bytes 10..14 in the primary
 // are opaque prefix context, not interpreted as a position or event.
 // Secondary value copies must agree, including the full surrounding framing.
-fn initial_only(
+pub(crate) fn initial_only(
     primary: &FramedRecord<'_>,
     secondary: &FramedRecord<'_>,
     event: &[u8],

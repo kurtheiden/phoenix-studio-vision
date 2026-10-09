@@ -951,6 +951,65 @@ impl AppService {
             sequence_id: sequence_id.clone(),
             report,
             midi,
+            selection166: None,
+        })
+    }
+
+    /// Source-bound Descriptor166 inventory; does not grant export authority.
+    pub fn experimental_tracks166(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<
+        Vec<crate::experimental166::TrackIdentity166>,
+        crate::experimental_export::ExperimentalExportError,
+    > {
+        let (source, ordinal) = self.experimental_source166(session_id, sequence_id)?;
+        crate::experimental166::inventory(&source, ordinal)
+    }
+
+    fn experimental_source166(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<(Vec<u8>, usize), crate::experimental_export::ExperimentalExportError> {
+        use crate::experimental_export::ExperimentalExportError as Error;
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| Error("unknown session".into()))?;
+        let ordinal = *session
+            .sequence_ordinals
+            .get(sequence_id)
+            .ok_or_else(|| Error("unknown sequence".into()))?;
+        let source =
+            fs::read(&session.source_path).map_err(|e| Error(format!("source unreadable: {e}")))?;
+        if source.len() != session.source_bytes.len()
+            || sha256_hex(&source) != session.source_sha256
+        {
+            return Err(Error("source identity changed".into()));
+        }
+        Ok((source, ordinal as usize))
+    }
+
+    /// Explicit selected scope. Every identity is rederived from the inspected source.
+    pub fn preview_experimental_selected166(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+        selection: &[crate::experimental166::TrackIdentity166],
+    ) -> Result<
+        crate::experimental_export::ExperimentalPlan,
+        crate::experimental_export::ExperimentalExportError,
+    > {
+        let (source, ordinal) = self.experimental_source166(session_id, sequence_id)?;
+        let (report, midi) = crate::experimental166::build(&source, ordinal, selection)?;
+        Ok(crate::experimental_export::ExperimentalPlan {
+            session_id: session_id.clone(),
+            sequence_id: sequence_id.clone(),
+            report,
+            midi,
+            selection166: Some(selection.to_vec()),
         })
     }
 
@@ -960,7 +1019,7 @@ impl AppService {
         &self,
         request: ExportSequenceRequest,
         plan: &crate::experimental_export::ExperimentalPlan,
-        acknowledge_incomplete_and_include_all_proved_tracks: bool,
+        acknowledge_incomplete_and_explicit_scope: bool,
     ) -> Result<
         crate::experimental_export::ExperimentalExportResponse,
         crate::experimental_export::ExperimentalExportError,
@@ -968,7 +1027,7 @@ impl AppService {
         use crate::experimental_export::{
             ExperimentalExportError as Error, ExperimentalExportResponse, LABEL,
         };
-        if !acknowledge_incomplete_and_include_all_proved_tracks {
+        if !acknowledge_incomplete_and_explicit_scope {
             return Err(Error("affirmative experimental opt-in required".into()));
         }
         if request.contract_version != CONTRACT_VERSION
@@ -981,8 +1040,16 @@ impl AppService {
         if request.collision_policy != CollisionPolicy::FailIfExists {
             return Err(Error("experimental export requires fail-if-exists".into()));
         }
-        let fresh =
-            self.preview_experimental_sequence(&request.session_id, &request.sequence_id)?;
+        let fresh = match &plan.selection166 {
+            Some(selection) => self.preview_experimental_selected166(
+                &request.session_id,
+                &request.sequence_id,
+                selection,
+            )?,
+            None => {
+                self.preview_experimental_sequence(&request.session_id, &request.sequence_id)?
+            }
+        };
         if fresh.report != plan.report || fresh.midi != plan.midi {
             return Err(Error("experimental plan changed".into()));
         }
