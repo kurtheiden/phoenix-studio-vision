@@ -861,6 +861,51 @@ pub fn serialize_conductor_track_with_key(
     make_track_chunk(payload)
 }
 
+/// Serialize a complete bounded Tempo map with the caller's supported initial
+/// meter/key. This does not decode meter maps or confer project export authority.
+/// Use map.ppqn() for Format-1 assembly. No Tempo at zero is synthesized.
+pub fn serialize_tempo_map_conductor(
+    name: &[u8],
+    map: &crate::tempo::BoundedTempoMap<'_>,
+    signature: TimeSignature,
+    key: Option<(i8, bool)>,
+) -> Result<SerializedTrack, SmfSerializeError> {
+    if let Some((accidentals, _)) = key {
+        if !(-7..=7).contains(&accidentals) {
+            return Err(SmfSerializeError::InvalidKeySignature { accidentals });
+        }
+    }
+    let mut payload = vec![0];
+    payload.extend(serialize_track_name(name)?);
+    let mut events = map.events().iter().peekable();
+    // Preserve the existing single-initial Tempo/name/key/meter byte ordering.
+    if events.peek().is_some_and(|e| e.absolute_tick == 0) {
+        let event = events.next().unwrap();
+        payload.push(0);
+        payload.extend(serialize_set_tempo(event.mpqn())?);
+    }
+    if let Some((accidentals, minor)) = key {
+        payload.extend([0, 0xff, 0x59, 2, accidentals as u8, u8::from(minor)]);
+    }
+    payload.push(0);
+    payload.extend(serialize_time_signature(signature));
+    let mut previous_tick = 0;
+    for event in events {
+        let delta = event.absolute_tick.checked_sub(previous_tick).ok_or(
+            SmfSerializeError::InternalNonmonotonicOrdering {
+                previous_tick,
+                tick: event.absolute_tick,
+            },
+        )?;
+        payload.extend(encode_midi_vlq(delta)?);
+        payload.extend(serialize_set_tempo(event.mpqn())?);
+        previous_tick = event.absolute_tick;
+    }
+    payload.push(0);
+    payload.extend(serialize_end_of_track());
+    make_track_chunk(payload)
+}
+
 /// Existing initial conductor serialization plus a descriptive limitation event.
 pub(crate) fn serialize_conductor_track_with_text(
     name: &[u8],

@@ -1,7 +1,8 @@
-//! Exact-bounded decoding for the observed Studio Vision initial Tempo form.
+//! Exact-bounded initial Tempo and counted Tempo-map decoding.
 //!
-//! This module does not discover Tempo structures, parse a Tempo map, or
-//! interpret the required zero byte as a general position representation.
+//! The map grammar is supported by CCA-045 source/SMF correlations. Callers
+//! supply established event-only bounds and count; no discovery, envelope
+//! qualification or complete-export authority is supplied by this module.
 
 use std::fmt;
 use std::ops::Range;
@@ -347,4 +348,132 @@ mod tests {
             })
         );
     }
+}
+
+/// Caller-established event-only bounds, excluding primary prefix/tail/secondary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TempoMapBounds {
+    pub event_range: Range<usize>,
+    pub declared_count: u32,
+}
+
+/// One source Tempo object, retaining timing/value bytes and absolute provenance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TempoMapEvent<'a> {
+    pub source_range: Range<usize>,
+    pub delta: crate::patch::LocatedVlq<'a>,
+    pub absolute_tick: u32,
+    pub mpqn_bytes: [LocatedByte; 3],
+}
+impl TempoMapEvent<'_> {
+    pub fn mpqn(&self) -> u32 {
+        (u32::from(self.mpqn_bytes[0].value) << 16)
+            | (u32::from(self.mpqn_bytes[1].value) << 8)
+            | u32::from(self.mpqn_bytes[2].value)
+    }
+}
+
+/// Complete consumption of the supplied map body, not a conductor/export proof.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedTempoMap<'a> {
+    event_range: Range<usize>,
+    events: Vec<TempoMapEvent<'a>>,
+}
+impl<'a> BoundedTempoMap<'a> {
+    pub fn event_range(&self) -> Range<usize> {
+        self.event_range.clone()
+    }
+    pub fn events(&self) -> &[TempoMapEvent<'a>] {
+        &self.events
+    }
+    /// CCA-045's identity conversion; no scaling or inferred offset.
+    pub fn ppqn(&self) -> u16 {
+        480
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TempoMapError {
+    Bounds,
+    Count,
+    Timing(crate::track7::VlqError),
+    Truncated { offset: usize },
+    UnsupportedEvent { offset: usize },
+    InvalidTempo { offset: usize },
+    PositionOverflow { offset: usize },
+    Unconsumed { offset: usize },
+}
+impl fmt::Display for TempoMapError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "bounded Tempo map refused: {self:?}")
+    }
+}
+impl std::error::Error for TempoMapError {}
+
+/// Decode exactly the counted VLQ-delta / FF51 / 03 / MPQN[3] grammar.
+/// Equal-position events are retained in source order, never deduplicated.
+/// The enclosing record and its non-event bytes remain the caller's responsibility.
+pub fn decode_bounded_tempo_map(
+    bytes: &[u8],
+    bounds: TempoMapBounds,
+) -> Result<BoundedTempoMap<'_>, TempoMapError> {
+    let range = bounds.event_range;
+    if range.start >= range.end || range.end > bytes.len() {
+        return Err(TempoMapError::Bounds);
+    }
+    let count = usize::try_from(bounds.declared_count).map_err(|_| TempoMapError::Count)?;
+    if count == 0 || count > (range.end - range.start) / 7 {
+        return Err(TempoMapError::Count);
+    }
+    let mut cursor = range.start;
+    let mut tick = 0u32;
+    let mut events = Vec::new();
+    for _ in 0..count {
+        let start = cursor;
+        let timing = crate::track7::decode_7bit_be_vlq(bytes, cursor, range.end)
+            .map_err(TempoMapError::Timing)?;
+        let timing_end = cursor
+            .checked_add(timing.bytes_consumed)
+            .ok_or(TempoMapError::Bounds)?;
+        let end = timing_end.checked_add(6).ok_or(TempoMapError::Bounds)?;
+        if end > range.end {
+            return Err(TempoMapError::Truncated { offset: timing_end });
+        }
+        if bytes[timing_end..timing_end + 3] != [0xff, 0x51, 0x03] {
+            return Err(TempoMapError::UnsupportedEvent { offset: timing_end });
+        }
+        tick = tick
+            .checked_add(timing.value)
+            .ok_or(TempoMapError::PositionOverflow { offset: start })?;
+        let event = TempoMapEvent {
+            source_range: start..end,
+            delta: crate::patch::LocatedVlq {
+                value: timing.value,
+                bytes: &bytes[start..timing_end],
+                range: start..timing_end,
+            },
+            absolute_tick: tick,
+            mpqn_bytes: [
+                located_byte(bytes, timing_end + 3),
+                located_byte(bytes, timing_end + 4),
+                located_byte(bytes, timing_end + 5),
+            ],
+        };
+        // Raw zero remains supported by the old initial decoder, but cannot be
+        // represented as a valid recovered SMF Tempo under the existing contract.
+        if event.mpqn() == 0 {
+            return Err(TempoMapError::InvalidTempo {
+                offset: timing_end + 3,
+            });
+        }
+        events.push(event);
+        cursor = end;
+    }
+    if cursor != range.end {
+        return Err(TempoMapError::Unconsumed { offset: cursor });
+    }
+    Ok(BoundedTempoMap {
+        event_range: range,
+        events,
+    })
 }
