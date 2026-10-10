@@ -323,6 +323,31 @@ fn authentic_original_sweeper_26_events_and_export_firewall() {
         .all(|w| w[0].absolute_tick < w[1].absolute_tick && w[0].mpqn() < w[1].mpqn()));
     let chunk = smf::serialize_tempo_map_conductor(b"sweeper", &map, signature(), None).unwrap();
     assert_eq!(tempos(chunk.as_bytes()), expected);
+    let meter = phoenix::meter::decode_bounded_initial_meter(
+        &b,
+        phoenix::meter::InitialMeterBounds {
+            event_range: 36253..36261,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (
+            meter.numerator.value,
+            meter.denominator_exponent.value,
+            meter.third_payload.value,
+            meter.fourth_payload.value
+        ),
+        (4, 2, 8, 8)
+    );
+    let assembled = integrated(&map);
+    assert_eq!(assembled.report.totals.tempo, 26);
+    assert_eq!(tempos(conductor_chunk(&assembled.smf_bytes)), expected);
+    // Whole conductor/source qualification is unchanged, not waived by assembly.
+    assert!(phoenix::bounded_conductor::decode_compact_conductor(
+        &b,
+        [36234..36277, 36277..36314, 36314..36548, 36548..36800]
+    )
+    .is_err());
     assert!(phoenix::authority120::prove_project120(&b).unwrap()[5]
         .result
         .is_err());
@@ -407,4 +432,148 @@ fn authentic_minuet_152_events_match_independent_midi_and_distinct_first_prefix(
         *initial_meter
     );
     assert_eq!(tempos(chunk.as_bytes()), expected);
+}
+
+// The production assembler's conductor branch, not a direct serializer test.
+fn integrated(
+    map: &phoenix::tempo::BoundedTempoMap<'_>,
+) -> phoenix::multitrack_export::MultitrackExportResult {
+    let input = phoenix::multitrack_export::MultitrackSequenceInput {
+        sequence_name: b"S",
+        tempo_mpqn: map.events()[0].mpqn(),
+        meter_values: (4, 2, 8, 8),
+        timing_policy: phoenix::midi_export::TimingPolicy::Identity480,
+        meter_policy: phoenix::midi_export::MeterPolicy::KnownHistoricalOnly,
+        tracks: &[],
+    };
+    phoenix::multitrack_export::assemble_multitrack_sequence_with_tempo_map(&input, map).unwrap()
+}
+fn conductor_chunk(file: &[u8]) -> &[u8] {
+    assert_eq!(
+        &file[..14],
+        &[77, 84, 104, 100, 0, 0, 0, 6, 0, 1, 0, 1, 1, 224]
+    );
+    &file[14..]
+}
+#[test]
+fn production_assembler_map_counts_positions_and_single_tempo_parity() {
+    let raw = [
+        0, 255, 81, 3, 7, 161, 32, 0x81, 0x70, 255, 81, 3, 9, 137, 104, 0, 255, 81, 3, 14, 78, 28,
+    ];
+    let map = decode(&raw, 3).unwrap();
+    let result = integrated(&map);
+    assert_eq!(result.report.totals.tempo, 3);
+    assert_eq!(result.report.totals.meter, 1);
+    assert_eq!(
+        tempos(conductor_chunk(&result.smf_bytes)),
+        [(0, 500000), (240, 625000), (240, 937500)]
+    );
+    let single = decode(&raw[..7], 1).unwrap();
+    let input = phoenix::multitrack_export::MultitrackSequenceInput {
+        sequence_name: b"S",
+        tempo_mpqn: 500000,
+        meter_values: (4, 2, 8, 8),
+        timing_policy: phoenix::midi_export::TimingPolicy::Identity480,
+        meter_policy: phoenix::midi_export::MeterPolicy::KnownHistoricalOnly,
+        tracks: &[],
+    };
+    assert_eq!(
+        integrated(&single),
+        phoenix::multitrack_export::assemble_multitrack_sequence(&input).unwrap()
+    );
+    // Reuse the same production musical-track branch; a Tempo map cannot bypass
+    // unsupported-event refusals or affect otherwise identical musical chunks.
+    use phoenix::midi_export::{
+        ChannelAssignment, ChannelAssignmentProvenance, DecodedExportEvent, DecodedExportEventKind,
+        PatchPolicy,
+    };
+    let events = vec![DecodedExportEvent {
+        absolute_position: 0,
+        source_ordinal: 0,
+        source_range: None,
+        kind: DecodedExportEventKind::Note {
+            pitch: 60,
+            attack_velocity: 90,
+            release_velocity: 45,
+            duration: 480,
+        },
+    }];
+    let track = phoenix::multitrack_export::MusicalTrackInput {
+        context: "test",
+        name: b"Piano",
+        channel_assignment: ChannelAssignment {
+            channel: smf::MidiChannel::new(2).unwrap(),
+            provenance: ChannelAssignmentProvenance::ParsedRouting,
+        },
+        events: &events,
+        patch_policy: PatchPolicy::StrictKnownOnly,
+    };
+    let tracks = [track];
+    let musical_input = phoenix::multitrack_export::MultitrackSequenceInput {
+        tracks: &tracks,
+        ..input.clone()
+    };
+    let mapped = phoenix::multitrack_export::assemble_multitrack_sequence_with_tempo_map(
+        &musical_input,
+        &map,
+    )
+    .unwrap();
+    let old = phoenix::multitrack_export::assemble_multitrack_sequence(&musical_input).unwrap();
+    fn musical_tail(b: &[u8]) -> &[u8] {
+        let n = u32::from_be_bytes(b[18..22].try_into().unwrap()) as usize;
+        &b[22 + n..]
+    }
+    assert_eq!(
+        musical_tail(&mapped.smf_bytes),
+        musical_tail(&old.smf_bytes)
+    );
+    assert_eq!(mapped.report.tracks, old.report.tracks);
+    let mut bad_events = events.clone();
+    bad_events[0].kind = DecodedExportEventKind::Unsupported {
+        family: "unsupported conductor cannot waive music",
+    };
+    let bad_tracks = [phoenix::multitrack_export::MusicalTrackInput {
+        events: &bad_events,
+        ..tracks[0].clone()
+    }];
+    let bad_input = phoenix::multitrack_export::MultitrackSequenceInput {
+        tracks: &bad_tracks,
+        ..input.clone()
+    };
+    assert!(
+        phoenix::multitrack_export::assemble_multitrack_sequence_with_tempo_map(&bad_input, &map)
+            .is_err()
+    );
+    let delayed = decode(&raw[7..15], 1).unwrap();
+    assert_eq!(
+        tempos(conductor_chunk(&integrated(&delayed).smf_bytes)),
+        [(240, 625000)]
+    );
+}
+#[test]
+fn integrated_conductor_conflicts_and_unsupported_policies_refuse() {
+    use phoenix::{
+        midi_export::{MeterPolicy, TimingPolicy},
+        multitrack_export::{assemble_multitrack_sequence_with_tempo_map, MultitrackSequenceInput},
+    };
+    let raw = body(&[(0, 500000), (0, 625000)]);
+    let duplicate_initial = decode(&raw, 2).unwrap();
+    let single = decode(&raw[..7], 1).unwrap();
+    let mut input = MultitrackSequenceInput {
+        sequence_name: b"S",
+        tempo_mpqn: 500000,
+        meter_values: (4, 2, 8, 8),
+        timing_policy: TimingPolicy::Identity480,
+        meter_policy: MeterPolicy::KnownHistoricalOnly,
+        tracks: &[],
+    };
+    assert!(assemble_multitrack_sequence_with_tempo_map(&input, &duplicate_initial).is_err());
+    input.tempo_mpqn = 625000;
+    assert!(assemble_multitrack_sequence_with_tempo_map(&input, &single).is_err());
+    input.tempo_mpqn = 500000;
+    input.timing_policy = TimingPolicy::Unsupported;
+    assert!(assemble_multitrack_sequence_with_tempo_map(&input, &single).is_err());
+    input.timing_policy = TimingPolicy::Identity480;
+    input.meter_values = (4, 2, 17, 8);
+    assert!(assemble_multitrack_sequence_with_tempo_map(&input, &single).is_err());
 }

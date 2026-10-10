@@ -72,6 +72,9 @@ pub struct MultitrackExportResult {
 /// Context-preserving failures from pure sequence assembly.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MultitrackExportError {
+    ConductorTempoMapContract {
+        reason: &'static str,
+    },
     ConductorAdaptation {
         source: MidiExportError,
     },
@@ -96,6 +99,9 @@ pub enum MultitrackExportError {
 impl fmt::Display for MultitrackExportError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ConductorTempoMapContract { reason } => {
+                write!(formatter, "cannot integrate Tempo map: {reason}")
+            }
             Self::ConductorAdaptation { source } => {
                 write!(formatter, "cannot adapt conductor: {source}")
             }
@@ -134,7 +140,36 @@ impl std::error::Error for MultitrackExportError {}
 pub fn assemble_multitrack_sequence(
     input: &MultitrackSequenceInput<'_>,
 ) -> Result<MultitrackExportResult, MultitrackExportError> {
-    let conductor = adapt_conductor(
+    assemble_impl(input, None)
+}
+
+/// Existing transactional assembler with a fully consumed caller-bounded Tempo map.
+/// Caller must independently establish complete conductor ownership/envelope and
+/// supported initial meter coverage. This is MIDI-domain assembly, not source
+/// qualification or permission to export. Existing project gates remain unchanged.
+/// No key/meter map is admitted; ambiguous simultaneous initial Tempos refuse.
+pub fn assemble_multitrack_sequence_with_tempo_map(
+    input: &MultitrackSequenceInput<'_>,
+    map: &crate::tempo::BoundedTempoMap<'_>,
+) -> Result<MultitrackExportResult, MultitrackExportError> {
+    if map.events()[0].mpqn() != input.tempo_mpqn {
+        return Err(MultitrackExportError::ConductorTempoMapContract {
+            reason: "initial value differs from the supplied map",
+        });
+    }
+    if map.events().get(1).is_some_and(|e| e.absolute_tick == 0) {
+        return Err(MultitrackExportError::ConductorTempoMapContract {
+            reason: "relative ordering of multiple initial Tempos and meter is not established",
+        });
+    }
+    assemble_impl(input, Some(map))
+}
+
+fn assemble_impl(
+    input: &MultitrackSequenceInput<'_>,
+    map: Option<&crate::tempo::BoundedTempoMap<'_>>,
+) -> Result<MultitrackExportResult, MultitrackExportError> {
+    let mut conductor = adapt_conductor(
         input.sequence_name,
         input.tempo_mpqn,
         input.meter_values,
@@ -143,11 +178,25 @@ pub fn assemble_multitrack_sequence(
     )
     .map_err(|source| MultitrackExportError::ConductorAdaptation { source })?;
 
-    let conductor_track = serialize_conductor_track(
-        &conductor.sequence_name,
-        conductor.tempo_mpqn,
-        conductor.time_signature,
-    )
+    let conductor_track = if let Some(map) = map {
+        conductor.counts.tempo = u64::try_from(map.events().len()).map_err(|_| {
+            MultitrackExportError::ConductorTempoMapContract {
+                reason: "Tempo count overflow",
+            }
+        })?;
+        crate::smf::serialize_tempo_map_conductor(
+            &conductor.sequence_name,
+            map,
+            conductor.time_signature,
+            None,
+        )
+    } else {
+        serialize_conductor_track(
+            &conductor.sequence_name,
+            conductor.tempo_mpqn,
+            conductor.time_signature,
+        )
+    }
     .map_err(|source| MultitrackExportError::ConductorSerialization { source })?;
 
     let mut serialized_tracks = Vec::with_capacity(input.tracks.len() + 1);
