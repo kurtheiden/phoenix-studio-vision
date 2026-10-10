@@ -521,7 +521,7 @@ impl AppService {
                 status.push_str(&summary);
             }
             diagnostics.technical_errors.push(summary);
-            if let Ok(bridge) = crate::semantic_layout120::associate_project_120(&bytes) {
+            if let Ok(bridge) = crate::semantic_layout120::associate_semantic_project_120(&bytes) {
                 // Association evidence alone never grants export authority.
                 diagnostics
                     .technical_errors

@@ -1002,3 +1002,357 @@ fn sparse_type07_label_overlap_and_missing_terminal_refuse() {
         Err(AssociationRefusal::IncompleteNeighborhood)
     ));
 }
+
+fn primary_only_fixture(labels: &[&[u8]], pairs: usize, primary_ordinal: usize) -> Vec<u8> {
+    let mut bytes = ordinary_fixture(labels, pairs);
+    let root = parse_root_record_stream(&bytes).unwrap();
+    let primary = &root.records[2 + 2 * primary_ordinal];
+    let secondary = root.records[3 + 2 * primary_ordinal].record_range.clone();
+    let prefix = primary.payload.range.start;
+    bytes[prefix..prefix + 2].copy_from_slice(&[0, 1]);
+    bytes.drain(secondary);
+    bytes
+}
+
+#[test]
+fn primary_only_structural_binding_keeps_source_order_without_export_authority() {
+    // Unrelated names and an empty body demonstrate that musical signatures are not guards.
+    let bytes = primary_only_fixture(&[b"Unrelated", b"Following"], 4, 2);
+    let bridge = associate_semantic_project_120(&bytes).unwrap();
+    let sequence = bridge.candidates[0].association.as_ref().unwrap();
+    let track = &sequence.primary_only[0];
+    assert_eq!(track.slot.ordinal, 2);
+    assert_eq!(track.slot.label.bytes, b"Unrelated");
+    assert_eq!(track.local_primary_ordinal, 2);
+    assert_eq!(track.declared_count, 0);
+    assert!(track.event_range.is_empty());
+    assert_eq!(track.zero_prefix_field.bytes, [0; 4]);
+    assert_eq!(sequence.ordinary.len(), 1);
+    assert_eq!(sequence.ordinary[0].slot.ordinal, 3);
+    assert_eq!(sequence.ordinary[0].local_pair_ordinal, 3);
+    assert_eq!(
+        track.primary.record_range.end,
+        sequence.ordinary[0].pair.primary.record_range.start
+    );
+    assert!(bridge
+        .diagnostic_details()
+        .iter()
+        .any(|s| s.contains("primary-only, no secondary")));
+    assert!(matches!(
+        associate_project_120(&bytes).unwrap().candidates[0].association,
+        Err(AssociationRefusal::IncompleteNeighborhood)
+    ));
+    assert!(crate::authority120::prove_project120(&bytes).unwrap()[0]
+        .result
+        .is_err());
+    assert!(crate::recovery120::recover_project120(&bytes).unwrap()[0]
+        .result
+        .is_err());
+    assert!(crate::experimental_export::build(&bytes, 0).is_err());
+}
+
+#[test]
+fn primary_only_zero_prefix_preserves_real_pairs_but_refuses_unexpected_secondaries() {
+    let bytes = ordinary_fixture(&[b"Track"], 3);
+    assert_eq!(
+        format!("{:?}", associate_semantic_project_120(&bytes).unwrap()),
+        format!("{:?}", associate_project_120(&bytes).unwrap())
+    );
+    let mut bytes = primary_only_fixture(&[b"One", b"Two"], 4, 2);
+    let root = parse_root_record_stream(&bytes).unwrap();
+    let terminal = root.records.last().unwrap().record_range.start;
+    let mut orphan = Vec::new();
+    record(&mut orphan, 0x29, &[0; 23]);
+    bytes.splice(terminal..terminal, orphan);
+    assert!(
+        associate_semantic_project_120(&bytes).unwrap().candidates[0]
+            .association
+            .is_err()
+    );
+    // An otherwise valid pair followed by another secondary cannot borrow that orphan.
+    let mut bytes = ordinary_fixture(&[b"Track"], 3);
+    let terminal = parse_root_record_stream(&bytes)
+        .unwrap()
+        .records
+        .last()
+        .unwrap()
+        .record_range
+        .start;
+    let mut duplicate = Vec::new();
+    record(&mut duplicate, 0x29, &[0; 23]);
+    bytes.splice(terminal..terminal, duplicate);
+    assert!(
+        associate_semantic_project_120(&bytes).unwrap().candidates[0]
+            .association
+            .is_err()
+    );
+}
+
+#[test]
+fn primary_only_nonzero_prefix_malformed_header_tail_and_truncation_refuse() {
+    let original = primary_only_fixture(&[b"Track"], 3, 2);
+    let root = parse_root_record_stream(&original).unwrap();
+    let range = root.records[6].payload.range.clone();
+    for offset in [
+        range.start,
+        range.start + 1,
+        range.start + 10,
+        range.start + 11,
+        range.start + 12,
+        range.start + 13,
+        range.end - 7,
+        range.end - 3,
+        range.end - 2,
+        range.end - 1,
+    ] {
+        let mut bytes = original.clone();
+        bytes[offset] ^= 1;
+        assert!(
+            associate_semantic_project_120(&bytes).unwrap().candidates[0]
+                .association
+                .is_err(),
+            "offset {offset}"
+        );
+    }
+    for size in [0, 1, 5, 10, 13, 14, 20] {
+        let mut bytes = original.clone();
+        let mut replacement = Vec::new();
+        record(
+            &mut replacement,
+            2,
+            &original[range.start..range.start + size],
+        );
+        bytes.splice(root.records[6].record_range.clone(), replacement);
+        assert!(
+            associate_semantic_project_120(&bytes).unwrap().candidates[0]
+                .association
+                .is_err(),
+            "size {size}"
+        );
+    }
+    for end in range.start..root.records[6].record_range.end {
+        assert!(associate_semantic_project_120(&original[..end]).is_err());
+    }
+}
+
+#[test]
+fn primary_only_exact_cardinality_refuses_shortage_surplus_and_multiple_interruptions() {
+    for (labels, pairs, expected) in [
+        (&[b"One".as_slice(), b"Two".as_slice()][..], 3, 4),
+        (&[b"One".as_slice()][..], 4, 3),
+    ] {
+        let bytes = primary_only_fixture(labels, pairs, 2);
+        assert!(
+            matches!(associate_semantic_project_120(&bytes).unwrap().candidates[0].association,
+            Err(AssociationRefusal::Cardinality { slots, pairs: observed }) if slots == expected && observed == pairs)
+        );
+    }
+    let mut bytes = primary_only_fixture(&[b"One", b"Two"], 4, 2);
+    let root = parse_root_record_stream(&bytes).unwrap();
+    let last_primary = root.records[7].payload.range.start;
+    let last_secondary = root.records[8].record_range.clone();
+    bytes[last_primary..last_primary + 2].copy_from_slice(&[0, 1]);
+    bytes.drain(last_secondary);
+    assert!(matches!(
+        associate_semantic_project_120(&bytes).unwrap().candidates[0].association,
+        Err(AssociationRefusal::IncompleteNeighborhood)
+    ));
+}
+
+#[test]
+fn primary_only_zero_state_is_distinct_and_specials_cannot_be_primary_only() {
+    let mut bytes = primary_only_fixture(&[b"Never used", b"Owned", b"Following"], 4, 2);
+    zero_state(&mut bytes, 0);
+    let bridge = associate_semantic_project_120(&bytes).unwrap();
+    let s = bridge.candidates[0].association.as_ref().unwrap();
+    assert_eq!(s.no_event_data[0].slot.ordinal, 2);
+    assert_eq!(s.primary_only[0].slot.ordinal, 3);
+    assert_eq!(s.primary_only[0].local_primary_ordinal, 2);
+    assert_eq!(s.ordinary[0].slot.ordinal, 4);
+    // A near-zero state cannot silently skip a consuming descriptor.
+    let label = 8 + 121 + 120 * 2;
+    bytes[label - 39] = 1;
+    assert!(matches!(
+        associate_semantic_project_120(&bytes).unwrap().candidates[0].association,
+        Err(AssociationRefusal::Cardinality { slots: 5, pairs: 4 })
+    ));
+    for ordinal in [0, 1] {
+        let bytes = primary_only_fixture(&[b"Track"], 3, ordinal);
+        assert!(
+            associate_semantic_project_120(&bytes).unwrap().candidates[0]
+                .association
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn primary_only_foreign_boundaries_and_swallowed_siblings_refuse() {
+    let original = primary_only_fixture(&[b"Track"], 3, 2);
+    let terminal = parse_root_record_stream(&original)
+        .unwrap()
+        .records
+        .last()
+        .unwrap()
+        .record_range
+        .start;
+    for kind in [1, 5, 7, 9, 0x29] {
+        let mut bytes = original.clone();
+        bytes[terminal] = kind;
+        match associate_semantic_project_120(&bytes) {
+            Err(_) => {} // A malformed sibling candidate refuses at observation first.
+            Ok(bridge) => assert!(bridge.candidates[0].association.is_err()),
+        }
+    }
+    let mut bytes = original[..terminal].to_vec();
+    bytes.extend_from_slice(&ordinary_fixture(&[b"Sibling"], 3)[8..]);
+    let bridge = associate_semantic_project_120(&bytes).unwrap();
+    assert!(bridge.candidates[0].association.is_err());
+    assert!(bridge.candidates[1].association.is_ok());
+}
+
+#[test]
+fn primary_only_diagnostics_do_not_publish_export_capabilities() {
+    use crate::app_contract::*;
+    use crate::app_service::AppService;
+    let path = std::env::temp_dir().join(format!(
+        "phoenix-primary-only-firewall-{}",
+        std::process::id()
+    ));
+    std::fs::write(&path, primary_only_fixture(&[b"Track"], 3, 2)).unwrap();
+    let mut service = AppService::new();
+    let r = service
+        .inspect_project(InspectProjectRequest {
+            contract_version: CONTRACT_VERSION,
+            source_path: path.to_string_lossy().into_owned(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .unwrap();
+    std::fs::remove_file(path).unwrap();
+    let d = service
+        .get_diagnostics(&r.session_id, DiagnosticsLevel::Full)
+        .unwrap();
+    assert!(d
+        .technical_errors
+        .iter()
+        .any(|s| s.contains("primary-only, no secondary")));
+    for row in &r.sequences {
+        assert_ne!(row.readiness, Readiness::Ready);
+        assert!(row.export_capability.is_none());
+        assert!(row.bounded_export_capability.is_none());
+        assert!(service
+            .preview_experimental_sequence(&r.session_id, &row.sequence_id)
+            .is_err());
+    }
+}
+
+#[test]
+#[ignore = "requires explicitly supplied authentic original and Archive COMIC BOOK outside Git"]
+fn primary_only_authentic_sweeper_and_separate_shortages() {
+    use sha2::{Digest, Sha256};
+    let original = std::fs::read(std::env::var("PHOENIX_COMIC_ORIGINAL_SOURCE").unwrap()).unwrap();
+    let archive = std::fs::read(std::env::var("PHOENIX_COMIC_ARCHIVE_SOURCE").unwrap()).unwrap();
+    let cases = [
+        (
+            &original,
+            452284,
+            "22a9e2589098b0d475f6e288eeebc9303bed644aa8ce09f9971a0060c9160486",
+            70358..70919,
+            18,
+            24,
+        ),
+        (
+            &archive,
+            406294,
+            "40217bf534e7ac7f01ccab65d5d6f3fc873f08c134095410da2cbf5cef88ac70",
+            70050..70611,
+            19,
+            23,
+        ),
+    ];
+    for (source, size, hash, primary_range, second, primaries) in cases {
+        assert_eq!(source.len(), size);
+        assert_eq!(format!("{:x}", Sha256::digest(source)), hash);
+        let bridge = associate_semantic_project_120(source).unwrap();
+        let s = bridge.candidates[5].association.as_ref().unwrap();
+        assert_eq!(s.source_name.bytes, b"sweeper");
+        assert_eq!(
+            s.sequence_range.start,
+            if size == 452284 { 33024 } else { 32842 }
+        );
+        assert_eq!(s.primary_only.len(), 1);
+        let multi = &s.primary_only[0];
+        assert_eq!(multi.slot.ordinal, 9);
+        assert_eq!(multi.local_primary_ordinal, 9);
+        assert_eq!(multi.slot.label.bytes, b"multi");
+        assert_eq!(multi.primary.record_range, primary_range);
+        assert_eq!(multi.declared_count, 46);
+        assert_eq!(
+            multi.event_range,
+            primary_range.start + 19..primary_range.end - 7
+        );
+        assert_eq!(multi.zero_prefix_field.bytes, [0; 4]);
+        let pipe = s.ordinary.iter().find(|t| t.slot.ordinal == 10).unwrap();
+        assert_eq!(pipe.slot.label.bytes, b"pipe");
+        assert_eq!(pipe.local_pair_ordinal, 10);
+        assert_eq!(pipe.pair.primary.record_range.start, primary_range.end);
+        assert_eq!(
+            bridge.candidates[second].observation.observed_name.bytes,
+            b"sweeper #2"
+        );
+        assert!(matches!(bridge.candidates[second].association,
+            Err(AssociationRefusal::Cardinality{slots:25,pairs}) if pairs==primaries));
+        let paired = associate_project_120(source).unwrap();
+        for (old, new) in paired.candidates.iter().zip(&bridge.candidates) {
+            if old.association.is_ok() {
+                assert_eq!(
+                    format!("{:?}", old.association),
+                    format!("{:?}", new.association)
+                );
+            }
+        }
+        assert!(crate::authority120::prove_project120(source).unwrap()[5]
+            .result
+            .is_err());
+        assert!(crate::recovery120::recover_project120(source).unwrap()[5]
+            .result
+            .is_err());
+        assert!(crate::experimental_export::build(source, 5).is_err());
+    }
+    assert_eq!(&original[70377..70912], &archive[70069..70604]);
+}
+
+#[test]
+fn primary_only_extension_preserves_existing_paired_and_never_used_cases() {
+    for marker in [[0xfe, 0xff], [0xff, 0xff]] {
+        for pairs in [2, 3, 4, 5] {
+            let bytes = fixture(
+                &[b"Meter Track", b"Tempo Track", b"Same", b"Same"],
+                pairs,
+                marker,
+            );
+            assert_eq!(
+                format!("{:?}", associate_project_120(&bytes).unwrap()),
+                format!("{:?}", associate_semantic_project_120(&bytes).unwrap())
+            );
+        }
+    }
+    for unused in [0, 1, 2] {
+        let mut bytes = ordinary_fixture(&[b"First", b"Unused", b"Last"], 4);
+        zero_state(&mut bytes, unused);
+        assert_eq!(
+            format!("{:?}", associate_project_120(&bytes).unwrap()),
+            format!("{:?}", associate_semantic_project_120(&bytes).unwrap())
+        );
+    }
+    let original = ordinary_fixture(&[b"Track"], 3);
+    let root = parse_root_record_stream(&original).unwrap();
+    for index in [2, 3, 8] {
+        let mut bytes = original.clone();
+        bytes[root.records[index].record_range.start] = 9;
+        assert_eq!(
+            format!("{:?}", associate_project_120(&bytes).unwrap()),
+            format!("{:?}", associate_semantic_project_120(&bytes).unwrap())
+        );
+    }
+}

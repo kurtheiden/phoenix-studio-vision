@@ -56,6 +56,25 @@ impl Source120Pair<'_> {
     }
 }
 
+/// Semantic evidence only: no secondary, event-bound token or export authority.
+#[derive(Debug)]
+pub(crate) struct PrimaryOnlyBinding<'a> {
+    pub slot: Source120Slot<'a>,
+    pub local_primary_ordinal: usize,
+    pub primary: FramedRecord<'a>,
+    pub zero_prefix_field: LocatedBytes<'a>,
+    pub declared_count: u32,
+    pub declared_count_range: Range<usize>,
+    pub event_range: Range<usize>,
+    pub tail: LocatedBytes<'a>,
+}
+
+#[derive(Debug)]
+enum Source120Unit<'a> {
+    Paired(Source120Pair<'a>),
+    PrimaryOnly(FramedRecord<'a>),
+}
+
 #[derive(Debug)]
 pub(crate) struct LeadingSpecialBinding<'a> {
     pub slot: Source120Slot<'a>,
@@ -96,6 +115,7 @@ pub(crate) struct Source120SequenceAssociation<'a> {
     pub metadata: Vec<SparseMetadata120<'a>>,
     pub leading_special: [LeadingSpecialBinding<'a>; 2],
     pub ordinary: Vec<OrdinaryBinding<'a>>,
+    pub primary_only: Vec<PrimaryOnlyBinding<'a>>,
     /// Retained zero-event tracks; merge by slot.ordinal to recover source order.
     pub no_event_data: Vec<NoEventDataTrack<'a>>,
 }
@@ -151,6 +171,16 @@ impl Source120Bridge<'_> {
                             track.state_context.range, track.state_context.bytes
                         ));
                     }
+                    for item in &sequence.primary_only {
+                        details.push(format!(
+                            "Ordinary unit {}: view {:?}, label {:?}, local primary {} {:?}; primary-only, no secondary; zero prefix {:?} {:?}, declared {} at {:?}, body {:?}, tail {:?} {:?}; no event/export authority",
+                            item.slot.ordinal, item.slot.view_range, item.slot.label.range,
+                            item.local_primary_ordinal, item.primary.record_range,
+                            item.zero_prefix_field.range, item.zero_prefix_field.bytes,
+                            item.declared_count, item.declared_count_range, item.event_range,
+                            item.tail.range, item.tail.bytes
+                        ));
+                    }
                     for item in &sequence.ordinary {
                         details.push(format!(
                             "Ordinary unit {}: view {:?}, label {:?}, local pair {} {:?}/{:?}; existing-bounds probe {:?} (no source event authority)",
@@ -171,10 +201,12 @@ impl Source120Bridge<'_> {
         let mut matched = 0;
         let mut unsupported = 0;
         let mut no_event_data = 0;
+        let mut primary_only = 0;
         for candidate in &self.candidates {
             if let Ok(sequence) = &candidate.association {
                 sequences += 1;
                 tracks += sequence.ordinary.len();
+                primary_only += sequence.primary_only.len();
                 no_event_data += sequence.no_event_data.len();
                 for item in &sequence.ordinary {
                     if item.existing_bounds_probe.is_ok() {
@@ -185,18 +217,43 @@ impl Source120Bridge<'_> {
                 }
             }
         }
-        format!("Incomplete source-layout semantic bridge: {sequences} sequence associations, {tracks} ordinary pair bindings, {no_event_data} retained zero-event tracks without pairs; existing event-bound probes matched {matched}, refused {unsupported}; {} candidate associations refused. Source event/conductor authority, readiness and export capability remain unestablished.", self.candidates.len() - sequences)
+        let additional = if primary_only == 0 {
+            String::new()
+        } else {
+            format!(
+                "; {primary_only} primary-only ordinary bindings without event/export authority"
+            )
+        };
+        format!("Incomplete source-layout semantic bridge: {sequences} sequence associations, {tracks} ordinary pair bindings, {no_event_data} retained zero-event tracks without pairs; existing event-bound probes matched {matched}, refused {unsupported}; {} candidate associations refused. Source event/conductor authority, readiness and export capability remain unestablished.{additional}", self.candidates.len() - sequences)
     }
 }
 
 pub(crate) fn associate_project_120(bytes: &[u8]) -> Result<Source120Bridge<'_>, ObservationError> {
+    associate_project_120_mode(bytes, false)
+}
+
+/// Broader diagnostic ownership only. Export callers retain the paired-only entry point.
+pub(crate) fn associate_semantic_project_120(
+    bytes: &[u8],
+) -> Result<Source120Bridge<'_>, ObservationError> {
+    associate_project_120_mode(bytes, true)
+}
+
+fn associate_project_120_mode(
+    bytes: &[u8],
+    allow_primary_only: bool,
+) -> Result<Source120Bridge<'_>, ObservationError> {
     let observations = observe_project_120(bytes)?;
     let root = parse_root_record_stream(bytes).map_err(ObservationError::Root)?;
     let mut candidates: Vec<_> = observations
         .candidates
         .into_iter()
         .map(|observation| {
-            let association = associate_candidate(bytes, &root.records, &observation);
+            let association = if allow_primary_only {
+                associate_candidate_mode(bytes, &root.records, &observation, true)
+            } else {
+                associate_candidate(bytes, &root.records, &observation)
+            };
             CandidateAssociation {
                 observation,
                 association,
@@ -335,6 +392,15 @@ fn associate_candidate<'a>(
     records: &[FramedRecord<'a>],
     candidate: &Observed120Candidate<'a>,
 ) -> Result<Source120SequenceAssociation<'a>, AssociationRefusal> {
+    associate_candidate_mode(bytes, records, candidate, false)
+}
+
+fn associate_candidate_mode<'a>(
+    bytes: &'a [u8],
+    records: &[FramedRecord<'a>],
+    candidate: &Observed120Candidate<'a>,
+    allow_primary_only: bool,
+) -> Result<Source120SequenceAssociation<'a>, AssociationRefusal> {
     let bounds = || AssociationRefusal::Bounds;
     let following = records
         .get(candidate.record_index.checked_add(1).ok_or_else(bounds)?)
@@ -345,7 +411,7 @@ fn associate_candidate<'a>(
     }
     let mut cursor = candidate.record_index.checked_add(2).ok_or_else(bounds)?;
     let metadata = associate_sparse_metadata(bytes, records, candidate, &mut cursor)?;
-    let mut pairs = Vec::new();
+    let mut units = Vec::new();
     let terminal = loop {
         let primary = records
             .get(cursor)
@@ -353,20 +419,29 @@ fn associate_candidate<'a>(
         if primary.record_type.value == 0 {
             break primary;
         }
-        let secondary = records
+        let next = records
             .get(cursor.checked_add(1).ok_or_else(bounds)?)
             .ok_or(AssociationRefusal::IncompleteNeighborhood)?;
-        if primary.record_type.value != 2
-            || secondary.record_type.value != 0x29
-            || primary.record_range.end != secondary.record_range.start
-        {
+        if primary.record_type.value != 2 || primary.record_range.end != next.record_range.start {
             return Err(AssociationRefusal::IncompleteNeighborhood);
         }
-        pairs.push(Source120Pair {
-            primary: primary.clone(),
-            secondary: secondary.clone(),
-        });
-        cursor = cursor.checked_add(2).ok_or_else(bounds)?;
+        if next.record_type.value == 0x29 {
+            // A present real pair remains paired, including existing zero-prefix fixtures.
+            units.push(Source120Unit::Paired(Source120Pair {
+                primary: primary.clone(),
+                secondary: next.clone(),
+            }));
+            cursor = cursor.checked_add(2).ok_or_else(bounds)?;
+        } else if allow_primary_only
+            && units.len() >= 2
+            && matches!(next.record_type.value, 2 | 0)
+            && supported_primary_only(primary)
+        {
+            units.push(Source120Unit::PrimaryOnly(primary.clone()));
+            cursor = cursor.checked_add(1).ok_or_else(bounds)?;
+        } else {
+            return Err(AssociationRefusal::IncompleteNeighborhood);
+        }
     };
     let count = usize::from(candidate.count.value);
     let start = candidate.candidate_range.start;
@@ -419,19 +494,33 @@ fn associate_candidate<'a>(
         );
     }
     let consuming_count = count - states.iter().filter(|state| state.is_some()).count();
-    if pairs.len() != consuming_count {
+    if units.len() != consuming_count {
         return Err(AssociationRefusal::Cardinality {
             slots: consuming_count,
-            pairs: pairs.len(),
+            pairs: units.len(),
         });
     }
+    // One independently witnessed interruption is the bounded scope, not a format maximum.
+    if units
+        .iter()
+        .filter(|u| matches!(u, Source120Unit::PrimaryOnly(_)))
+        .count()
+        > 1
+    {
+        return Err(AssociationRefusal::IncompleteNeighborhood);
+    }
     let mut slots = slots.into_iter();
-    let mut pairs = pairs.into_iter().enumerate();
+    let mut units = units.into_iter().enumerate();
     let slot0 = slots.next().ok_or_else(bounds)?;
     let slot1 = slots.next().ok_or_else(bounds)?;
-    let (_, pair0) = pairs.next().ok_or_else(bounds)?;
-    let (_, pair1) = pairs.next().ok_or_else(bounds)?;
+    let (_, Source120Unit::Paired(pair0)) = units.next().ok_or_else(bounds)? else {
+        return Err(AssociationRefusal::IncompleteNeighborhood);
+    };
+    let (_, Source120Unit::Paired(pair1)) = units.next().ok_or_else(bounds)? else {
+        return Err(AssociationRefusal::IncompleteNeighborhood);
+    };
     let mut ordinary = Vec::new();
+    let mut primary_only = Vec::new();
     let mut no_event_data = Vec::new();
     for (slot, state) in slots.zip(states) {
         if let Some(state_context) = state {
@@ -440,14 +529,42 @@ fn associate_candidate<'a>(
                 state_context,
             });
         } else {
-            let (local_pair_ordinal, pair) = pairs.next().ok_or_else(bounds)?;
-            let existing_bounds_probe = pair.probe_existing_bounds();
-            ordinary.push(OrdinaryBinding {
-                local_pair_ordinal,
-                slot,
-                pair,
-                existing_bounds_probe,
-            });
+            let (local_primary_ordinal, unit) = units.next().ok_or_else(bounds)?;
+            match unit {
+                Source120Unit::Paired(pair) => {
+                    let existing_bounds_probe = pair.probe_existing_bounds();
+                    ordinary.push(OrdinaryBinding {
+                        local_pair_ordinal: local_primary_ordinal,
+                        slot,
+                        pair,
+                        existing_bounds_probe,
+                    });
+                }
+                Source120Unit::PrimaryOnly(primary) => {
+                    // supported_primary_only already proves these bounded slice geometries.
+                    let payload = primary.payload.bytes;
+                    let base = primary.payload.range.start;
+                    let tail_start = primary.payload.range.end - 7;
+                    primary_only.push(PrimaryOnlyBinding {
+                        slot,
+                        local_primary_ordinal,
+                        zero_prefix_field: LocatedBytes {
+                            bytes: &payload[10..14],
+                            range: base + 10..base + 14,
+                        },
+                        declared_count: u32::from_be_bytes(
+                            payload[2..6].try_into().map_err(|_| bounds())?,
+                        ),
+                        declared_count_range: base + 2..base + 6,
+                        event_range: base + 14..tail_start,
+                        tail: LocatedBytes {
+                            bytes: &payload[payload.len() - 7..],
+                            range: tail_start..primary.payload.range.end,
+                        },
+                        primary,
+                    });
+                }
+            }
         }
     }
     Ok(Source120SequenceAssociation {
@@ -467,8 +584,19 @@ fn associate_candidate<'a>(
             },
         ],
         ordinary,
+        primary_only,
         no_event_data,
     })
+}
+
+/// CCA-038 envelope only; no event decoder or terminal semantics are introduced.
+fn supported_primary_only(primary: &FramedRecord<'_>) -> bool {
+    let payload = primary.payload.bytes;
+    payload.len() >= 21
+        && payload[..2] == [0, 1]
+        && payload[10..14] == [0; 4]
+        && payload[payload.len() - 7] == 0xff
+        && payload[payload.len() - 3..] == [0xff, 0x2f, 0]
 }
 
 #[cfg(test)]
