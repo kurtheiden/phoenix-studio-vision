@@ -327,9 +327,10 @@ impl MidiDataByte {
     }
 }
 
-/// Validated complete length-seven SysEx payload; bytes include final F7.
+/// Validated complete SysEx payload. Public construction retains length seven;
+/// the private owned-120 constructor admits only the evidenced lengths 8/10.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BoundedSysExPayload([u8; 7]);
+pub struct BoundedSysExPayload(Vec<u8>);
 impl BoundedSysExPayload {
     pub fn new(bytes: &[u8]) -> Result<Self, SmfSerializeError> {
         let payload: [u8; 7] = bytes
@@ -338,9 +339,24 @@ impl BoundedSysExPayload {
         if payload[6] != 0xf7 || payload[..6].iter().any(|b| *b > 127) {
             return Err(SmfSerializeError::InvalidSysExPayload);
         }
-        Ok(Self(payload))
+        Ok(Self(payload.to_vec()))
     }
-    pub fn as_bytes(&self) -> &[u8; 7] {
+    /// Only the owned 120 handoff may construct the newly evidenced lengths.
+    pub(crate) fn framed120(bytes: &[u8]) -> Result<Self, SmfSerializeError> {
+        if !matches!(bytes.len(), 8 | 10)
+            || bytes.last() != Some(&0xf7)
+            || bytes[..bytes.len() - 1].iter().any(|b| *b > 127)
+        {
+            return Err(SmfSerializeError::InvalidSysExPayload);
+        }
+        Ok(Self(bytes.to_vec()))
+    }
+    /// A private source proof supplies the six bytes; no generic byte-slice
+    /// constructor or serializer normalization is added.
+    pub(crate) fn from_source_framed07(proof: &crate::sysex166::SourceFramedSysEx07) -> Self {
+        Self(proof.midi_payload().to_vec())
+    }
+    pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }
@@ -461,7 +477,7 @@ pub fn encode_midi_vlq(value: u32) -> Result<Vec<u8>, SmfSerializeError> {
 pub fn serialize_channel_message(message: &ChannelMessage) -> Vec<u8> {
     match message {
         ChannelMessage::SysEx { payload } => {
-            let mut bytes = vec![0xf0, 7];
+            let mut bytes = vec![0xf0, payload.as_bytes().len() as u8];
             bytes.extend_from_slice(payload.as_bytes());
             bytes
         }
@@ -982,6 +998,51 @@ fn make_track_chunk(payload: Vec<u8>) -> Result<SerializedTrack, SmfSerializeErr
     bytes.extend_from_slice(&payload_length.to_be_bytes());
     bytes.extend_from_slice(&payload);
     Ok(SerializedTrack { bytes })
+}
+
+/// One caller-proved variable-length SysEx event, in the same named-track/chunk
+/// contract. Source framing must be decoded upstream; this supplies no authority.
+pub(crate) fn serialize_named_sysex_track(
+    name: &[u8],
+    tick: u32,
+    payload: &[u8],
+) -> Result<SerializedTrack, SmfSerializeError> {
+    if payload.len() < 2
+        || payload.last() != Some(&0xf7)
+        || payload[..payload.len() - 1].iter().any(|b| *b > 127)
+    {
+        return Err(SmfSerializeError::InvalidSysExPayload);
+    }
+    let length =
+        u32::try_from(payload.len()).map_err(|_| SmfSerializeError::InvalidSysExPayload)?;
+    let mut bytes = vec![0];
+    bytes.extend(serialize_track_name(name)?);
+    bytes.extend(encode_midi_vlq(tick)?);
+    bytes.push(0xf0);
+    bytes.extend(encode_midi_vlq(length)?);
+    bytes.extend(payload);
+    bytes.push(0);
+    bytes.extend(serialize_end_of_track());
+    make_track_chunk(bytes)
+}
+
+/// Prefix a proved SysEx at zero ahead of the existing explicit-status musical
+/// schedule. No sorting across the prefix or initialization message synthesis.
+pub(crate) fn serialize_named_sysex_prefix_track(
+    name: &[u8],
+    payload: &[u8],
+    events: &[ScheduledEvent],
+) -> Result<SerializedTrack, SmfSerializeError> {
+    let sysex = serialize_named_sysex_track(name, 0, payload)?;
+    let music = serialize_named_musical_track(name, events)?;
+    let name_end = 1 + serialize_track_name(name)?.len();
+    let s = sysex.as_bytes();
+    let m = music.as_bytes();
+    let mut body = m[8..8 + name_end].to_vec();
+    // Drop only the synthesized source-independent EOT of the prefix chunk.
+    body.extend_from_slice(&s[8 + name_end..s.len() - 4]);
+    body.extend_from_slice(&m[8 + name_end..]);
+    make_track_chunk(body)
 }
 
 #[cfg(test)]

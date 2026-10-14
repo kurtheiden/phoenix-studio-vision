@@ -261,6 +261,15 @@ pub fn build_bounded_sequence_manifest(
         if walk.consumed_range != routing.event_range || walk.items.is_empty() {
             return Err(refusal("event walk", "incomplete or empty"));
         }
+        let sysex = if walk.items.iter().any(|item| {
+            matches!(item,
+            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::SysEx(_)))
+        }) {
+            crate::sysex166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal, &walk)
+                .map_err(|e| refusal("SysEx framing", e))?
+        } else {
+            vec![]
+        };
         let mut events = Vec::new();
         let mut ordinal = 0;
         let mut patches = 0;
@@ -269,7 +278,15 @@ pub fn build_bounded_sequence_manifest(
                 MixedEventItem::Event(e) => {
                     events.push(match &e.event {
                         MixedEventKind::SysEx(s) => {
-                            DecodedExportEvent::from_sysex(e.position, ordinal, s)
+                            let proof = sysex
+                                .iter()
+                                .find(|proof| {
+                                    let p = proof.provenance();
+                                    p.logical_source_ordinal == ordinal
+                                        && p.representation_range == s.representation_range
+                                })
+                                .ok_or_else(|| refusal("SysEx framing", "missing owned proof"))?;
+                            DecodedExportEvent::from_source_framed_sysex07(proof.clone())
                         }
                         MixedEventKind::Note(n) => {
                             DecodedExportEvent::from_note(e.position, ordinal, n)

@@ -997,10 +997,16 @@ fn sysex_handoff_preserves_payload_ticks_source_order_and_channelled_notes() {
             .collect::<Vec<_>>(),
         [(0, 0), (0, 1), (0, 2), (2, 3)]
     );
-    let DecodedExportEventKind::SysEx { payload } = &e[1].kind else {
+    let DecodedExportEventKind::SourceFramedSysEx07(proof) = &e[1].kind else {
         panic!()
     };
-    assert_eq!(payload, &[0, 0x41, 0x32, 0, 12, 93, 0xf7]);
+    assert_eq!(proof.midi_payload(), &[0x41, 0x32, 0, 12, 93, 0xf7]);
+    assert_eq!(
+        proof.provenance().counted_payload,
+        [0, 0x41, 0x32, 0, 12, 93, 0xf7]
+    );
+    assert_eq!(proof.provenance().framing_value, 0);
+    assert_eq!(proof.provenance().logical_source_ordinal, 1);
     let scheduled = phoenix::midi_export::adapt_track(
         e,
         Some(phoenix::midi_export::ChannelAssignment {
@@ -1019,7 +1025,7 @@ fn sysex_handoff_preserves_payload_ticks_source_order_and_channelled_notes() {
     assert_eq!(sys.len(), 2);
     assert_eq!(
         serialize_channel_message(&sys[0].message),
-        [0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7]
+        [0xf0, 6, 0x41, 0x32, 0, 12, 93, 0xf7]
     );
     let output = assemble_bounded_sequence(&manifest).unwrap();
     let conductor_len = u32::from_be_bytes(output[18..22].try_into().unwrap()) as usize;
@@ -1031,8 +1037,8 @@ fn sysex_handoff_preserves_payload_ticks_source_order_and_channelled_notes() {
     let mut expected = vec![0, 0xff, 3, 5];
     expected.extend(b"Other");
     expected.extend([
-        0, 0x93, 60, 100, 0, 0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7, 0, 0xf0, 7, 0, 0x41, 0x32, 0,
-        12, 92, 0xf7, 2, 0x93, 61, 101, 2, 0x83, 60, 40, 3, 0x83, 61, 41, 0, 0xff, 0x2f, 0,
+        0, 0x93, 60, 100, 0, 0xf0, 6, 0x41, 0x32, 0, 12, 93, 0xf7, 0, 0xf0, 6, 0x41, 0x32, 0, 12,
+        92, 0xf7, 2, 0x93, 61, 101, 2, 0x83, 60, 40, 3, 0x83, 61, 41, 0, 0xff, 0x2f, 0,
     ]);
     assert_eq!(&output[start + 8..], expected);
 }
@@ -1057,4 +1063,33 @@ fn sysex_handoff_does_not_waive_mute_terminal_conductor_or_ownership() {
     let pair = &s.track_pairs[0];
     b.drain(pair.primary.record_range.start..pair.secondary.record_range.end);
     assert_eq!(refused(&b).stage, "ownership");
+}
+
+#[test]
+fn source_framed_sysex07_owned_handoff_refuses_unsupported_and_late_invalid_records() {
+    let sx = [0, 0xf0, 7, 0, 0x41, 0x32, 0, 12, 93, 0xf7];
+    for stream in [
+        [
+            vec![0, 0xf0, 7, 1, 0x41, 0x32, 0, 12, 93, 0xf7],
+            NOTE.to_vec(),
+        ]
+        .concat(),
+        sx.to_vec(),
+        [
+            sx.to_vec(),
+            vec![0, 0xf0, 7, 1, 0x41, 0x32, 0, 12, 92, 0xf7],
+            NOTE.to_vec(),
+        ]
+        .concat(),
+    ] {
+        let b = synthetic(&stream);
+        assert_eq!(refused(&b).stage, "SysEx framing");
+    }
+    for stream in [
+        vec![0, 0xf0, 7, 0, 0x41, 0x32, 0, 12, 93],
+        [sx.to_vec(), vec![0, 0xb0, 10, 127]].concat(),
+        vec![0, 0xf0, 7, 0, 0x41, 128, 0, 12, 93, 0xf7],
+    ] {
+        assert!(build_bounded_sequence_manifest(&synthetic(&stream), 0, 480).is_err());
+    }
 }

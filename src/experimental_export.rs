@@ -48,6 +48,8 @@ pub struct ExperimentalReport {
     pub limitations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_scope166: Option<crate::experimental166::SelectedScope166>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial120: Option<crate::experimental120::Partial120Accounting>,
 }
 /// Immutable plan; callers cannot supply events, routing, identity or omissions.
 #[derive(Debug)]
@@ -57,6 +59,7 @@ pub struct ExperimentalPlan {
     pub(crate) report: ExperimentalReport,
     pub(crate) midi: Vec<u8>,
     pub(crate) selection166: Option<Vec<crate::experimental166::TrackIdentity166>>,
+    pub(crate) partial120: bool,
 }
 impl ExperimentalPlan {
     pub fn report(&self) -> &ExperimentalReport {
@@ -260,7 +263,7 @@ pub(crate) fn build(
         .result
         .err()
         .ok_or_else(|| err("already verified; use normal export"))?;
-    let report=ExperimentalReport{label:LABEL.into(),source_sha256:format!("{:x}",Sha256::digest(source)),sequence_ordinal:ordinal,sequence_range:proof.range(),source_name:String::from_utf8_lossy(proof.name()).into_owned(),verified_refusal:format!("{verified_refusal:?}"),ppqn:conductor.ppqn,observed_initial_mpqn:tempo.mpqn(),observed_source_meter:meter_values,tracks,included_notes,omitted_known_notes:0,unresolved_semantic_event_count:None,regions,selected_scope166:None,limitations:vec![
+    let report=ExperimentalReport{label:LABEL.into(),source_sha256:format!("{:x}",Sha256::digest(source)),sequence_ordinal:ordinal,sequence_range:proof.range(),source_name:String::from_utf8_lossy(proof.name()).into_owned(),verified_refusal:format!("{verified_refusal:?}"),ppqn:conductor.ppqn,observed_initial_mpqn:tempo.mpqn(),observed_source_meter:meter_values,tracks,included_notes,omitted_known_notes:0,unresolved_semantic_event_count:None,regions,selected_scope166:None,partial120:None,limitations:vec![
         "Conditional local-timeline rendering, NOT a complete or verified recovery.".into(),
         "Only observed initial tempo/meter values used; complete map, applicability and synchronization are UNRESOLVED. No default tempo invented.".into(),
         "Conductor wrappers, terminal duration and other project metadata are not translated. Every framed region is identified by range/hash; unknown semantic event count is UNKNOWN.".into(),

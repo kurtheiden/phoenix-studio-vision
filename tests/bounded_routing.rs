@@ -665,6 +665,17 @@ fn zero_context_malformed_lengths_prefixes_and_repetition_refuse() {
 #[test]
 fn zero_context_is_not_authorized_for_other_compositions() {
     let events = zero_context_events(ZERO_CONTEXT);
+    // A new length-7 Controller bridge contains a context; it must not extend
+    // the separate controllers-only zero-prefix Note exception.
+    let mut context_controller = vec![2, 0xff, 0x60, 7, 0x57, 0x7f, 0, 1, 1, 2, 3, 3, 0xb2, 1, 2];
+    context_controller.extend(&events[4..]);
+    assert!(matches!(
+        result(&synthetic(3, &context_controller, true)),
+        Err(RoutingRefusal::ConflictingContext {
+            kind: ContextKind::Ff60,
+            ..
+        })
+    ));
     // No Controller, prior ordinary Note, or a second zero context: all refuse.
     let mut prior_note = NOTE.to_vec();
     prior_note.extend(&events);

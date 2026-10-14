@@ -70,6 +70,8 @@ pub struct DecodedExportEvent {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodedExportEventKind {
+    /// Private construction proves bounded Descriptor166 source framing.
+    SourceFramedSysEx07(Box<crate::sysex166::SourceFramedSysEx07>),
     SysEx {
         payload: Vec<u8>,
     },
@@ -84,7 +86,8 @@ pub enum DecodedExportEventKind {
         value: u8,
         has_opaque_context: bool,
     },
-    /// Channel established by the source status, independent of track routing.
+    /// Explicit channel: raw status-derived on generic handoff, or resolved
+    /// upstream by an owned Studio Vision 120 Instrument-association proof.
     MidiController {
         channel: u8,
         number: u8,
@@ -118,6 +121,15 @@ pub enum DecodedExportEventKind {
 }
 
 impl DecodedExportEvent {
+    pub(crate) fn from_source_framed_sysex07(proof: crate::sysex166::SourceFramedSysEx07) -> Self {
+        let p = proof.provenance();
+        Self {
+            absolute_position: p.absolute_tick,
+            source_ordinal: p.logical_source_ordinal,
+            source_range: Some(p.representation_range.clone()),
+            kind: DecodedExportEventKind::SourceFramedSysEx07(Box::new(proof)),
+        }
+    }
     pub fn from_sysex(
         absolute_position: u32,
         source_ordinal: u64,
@@ -415,6 +427,38 @@ pub fn adapt_track(
     timing_policy: TimingPolicy,
     patch_policy: PatchPolicy,
 ) -> Result<ExportTrackResult, MidiExportError> {
+    adapt_track_impl(
+        events,
+        channel_assignment,
+        timing_policy,
+        patch_policy,
+        false,
+    )
+}
+
+/// Called after owned 120 source decoding, accounting and routing checks.
+pub(crate) fn adapt_owned120_track(
+    events: &[DecodedExportEvent],
+    channel_assignment: Option<ChannelAssignment>,
+    timing_policy: TimingPolicy,
+    patch_policy: PatchPolicy,
+) -> Result<ExportTrackResult, MidiExportError> {
+    adapt_track_impl(
+        events,
+        channel_assignment,
+        timing_policy,
+        patch_policy,
+        true,
+    )
+}
+
+fn adapt_track_impl(
+    events: &[DecodedExportEvent],
+    channel_assignment: Option<ChannelAssignment>,
+    timing_policy: TimingPolicy,
+    patch_policy: PatchPolicy,
+    framed120: bool,
+) -> Result<ExportTrackResult, MidiExportError> {
     require_identity_timing(timing_policy)?;
     let channel_assignment = channel_assignment.ok_or(MidiExportError::UnknownChannel)?;
     let mut seen_ordinals = BTreeSet::new();
@@ -441,13 +485,37 @@ pub fn adapt_track(
             _ => channel_assignment.channel,
         };
         match event.kind {
+            DecodedExportEventKind::SourceFramedSysEx07(ref proof) => {
+                // This proof is not admission authority for any owned120 path.
+                let p = proof.provenance();
+                if framed120
+                    || event.absolute_position != p.absolute_tick
+                    || event.source_ordinal != p.logical_source_ordinal
+                    || event.source_range.as_ref() != Some(&p.representation_range)
+                {
+                    return Err(MidiExportError::UnsupportedEvent {
+                        source_ordinal: event.source_ordinal,
+                        family: "unbound Descriptor166 SysEx",
+                    });
+                }
+                scheduled_events.push(ScheduledEvent {
+                    absolute_tick: event.absolute_position,
+                    stable_ordinal: source_stable_ordinal,
+                    message: crate::smf::ChannelMessage::SysEx {
+                        payload: crate::smf::BoundedSysExPayload::from_source_framed07(proof),
+                    },
+                });
+            }
             DecodedExportEventKind::SysEx { ref payload } => {
-                let payload = crate::smf::BoundedSysExPayload::new(payload).map_err(|source| {
-                    MidiExportError::InvalidMidiValue {
-                        source_ordinal: Some(event.source_ordinal),
-                        source_range: event.source_range.clone(),
-                        source,
-                    }
+                let payload = if framed120 {
+                    crate::smf::BoundedSysExPayload::framed120(payload)
+                } else {
+                    crate::smf::BoundedSysExPayload::new(payload)
+                }
+                .map_err(|source| MidiExportError::InvalidMidiValue {
+                    source_ordinal: Some(event.source_ordinal),
+                    source_range: event.source_range.clone(),
+                    source,
                 })?;
                 scheduled_events.push(ScheduledEvent {
                     absolute_tick: event.absolute_position,

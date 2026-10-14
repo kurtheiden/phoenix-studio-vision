@@ -302,7 +302,11 @@ pub fn validate_bounded_routing_contexts(
             MixedEventItem::Event(e) => match &e.event {
                 // The bounded decoder already retains the status-derived
                 // Controller channel; this does not alter the track route.
-                MixedEventKind::MidiController(_) => {}
+                MixedEventKind::MidiController(c) => {
+                    if let Some(c) = &c.context {
+                        guard(&mut contexts, ContextKind::Ff60, &c.context.payload, i)?;
+                    }
+                }
                 MixedEventKind::Controller(c) => {
                     guard(&mut contexts, ContextKind::Controller, &c.context, i)?
                 }
@@ -350,7 +354,7 @@ pub fn validate_bounded_routing_contexts(
             },
         }
         let is_controller = matches!(item,
-            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::MidiController(_)));
+            MixedEventItem::Event(e) if matches!(&e.event, MixedEventKind::MidiController(c) if c.context.is_none()));
         controllers_only_before &= is_controller;
         saw_controller |= is_controller;
     }

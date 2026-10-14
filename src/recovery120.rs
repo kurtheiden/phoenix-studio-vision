@@ -41,6 +41,8 @@ pub struct RecoveredTrack120 {
     /// None for Tracks without events; never a synthetic channel assignment.
     pub channel_assignment: Option<ChannelAssignment>,
     pub handoff: Vec<DecodedExportEvent>,
+    pub pitch_provenance: Option<crate::instrument_transposition::InstrumentPitchProvenance>,
+    pub controller_targets: Vec<crate::controller_target120::ControllerTargetProvenance>,
     pub scheduled: Vec<ScheduledEvent>,
     pub counts: ExportCounts,
 }
@@ -203,11 +205,24 @@ fn recover<'a>(
                 )
             }
         };
+        let (effective_handoff, pitch_provenance) = match t.route() {
+            TrackRoute120::Single(r) => {
+                let controllers =
+                    crate::controller_target120::apply_targets(&handoff, &r.controller_targets)
+                        .map_err(|e| refusal("Controller target", at, e))?;
+                let (events, provenance) = r
+                    .transposition
+                    .handoff(&controllers)
+                    .map_err(|e| refusal("Instrument transposition", at, e))?;
+                (events, Some(provenance))
+            }
+            _ => (handoff.clone(), None),
+        };
         let (scheduled, provenance, track_counts) = if handoff.is_empty() {
             (Vec::new(), Vec::new(), ExportCounts::default())
         } else {
-            let a = midi_export::adapt_track(
-                &handoff,
+            let a = midi_export::adapt_owned120_track(
+                &effective_handoff,
                 channel_assignment,
                 TimingPolicy::Identity480,
                 PatchPolicy::StrictKnownOnly,
@@ -229,6 +244,11 @@ fn recover<'a>(
             name,
             channel_assignment,
             handoff,
+            pitch_provenance,
+            controller_targets: match t.route() {
+                TrackRoute120::Single(r) => r.controller_targets.clone(),
+                _ => vec![],
+            },
             scheduled,
             counts: track_counts,
         });
@@ -270,7 +290,7 @@ fn program_only(p: u8, pre: &[u8], post: &[u8]) -> Result<PatchTranslation, &'st
         Err("unsupported single-Instrument Patch translation")
     }
 }
-fn single_handoff(
+pub(crate) fn single_handoff(
     w: &crate::mixed_event::MixedEventWalk<'_>,
     at: Option<usize>,
 ) -> Result<Vec<DecodedExportEvent>, Recovery120Refusal> {
@@ -279,6 +299,9 @@ fn single_handoff(
     for item in &w.items {
         match item {
             MixedEventItem::Event(e) => out.push(match &e.event {
+                MixedEventKind::SysEx(s) if s.framing.is_some() => {
+                    DecodedExportEvent::from_sysex(e.position, ordinal, s)
+                }
                 MixedEventKind::SysEx(_) => {
                     return Err(refusal(
                         "event handoff",

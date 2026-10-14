@@ -952,6 +952,44 @@ impl AppService {
             report,
             midi,
             selection166: None,
+            partial120: false,
+        })
+    }
+
+    /// Explicit partial120 preview: whole failed Tracks are retained as unresolved
+    /// omissions, never silently truncated. Does not grant verified capability.
+    pub fn preview_experimental_partial120(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+    ) -> Result<
+        crate::experimental_export::ExperimentalPlan,
+        crate::experimental_export::ExperimentalExportError,
+    > {
+        use crate::experimental_export::{ExperimentalExportError as Error, ExperimentalPlan};
+        let session = self
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| Error("unknown session".into()))?;
+        let ordinal = session
+            .sequence_ordinals
+            .get(sequence_id)
+            .ok_or_else(|| Error("unknown sequence".into()))?;
+        let source =
+            fs::read(&session.source_path).map_err(|e| Error(format!("source unreadable: {e}")))?;
+        if source.len() != session.source_bytes.len()
+            || sha256_hex(&source) != session.source_sha256
+        {
+            return Err(Error("source identity changed".into()));
+        }
+        let (report, midi) = crate::experimental120::build(&source, *ordinal as usize)?;
+        Ok(ExperimentalPlan {
+            session_id: session_id.clone(),
+            sequence_id: sequence_id.clone(),
+            report,
+            midi,
+            selection166: None,
+            partial120: true,
         })
     }
 
@@ -1010,6 +1048,7 @@ impl AppService {
             report,
             midi,
             selection166: Some(selection.to_vec()),
+            partial120: false,
         })
     }
 
@@ -1040,14 +1079,18 @@ impl AppService {
         if request.collision_policy != CollisionPolicy::FailIfExists {
             return Err(Error("experimental export requires fail-if-exists".into()));
         }
-        let fresh = match &plan.selection166 {
-            Some(selection) => self.preview_experimental_selected166(
-                &request.session_id,
-                &request.sequence_id,
-                selection,
-            )?,
-            None => {
-                self.preview_experimental_sequence(&request.session_id, &request.sequence_id)?
+        let fresh = if plan.partial120 {
+            self.preview_experimental_partial120(&request.session_id, &request.sequence_id)?
+        } else {
+            match &plan.selection166 {
+                Some(selection) => self.preview_experimental_selected166(
+                    &request.session_id,
+                    &request.sequence_id,
+                    selection,
+                )?,
+                None => {
+                    self.preview_experimental_sequence(&request.session_id, &request.sequence_id)?
+                }
             }
         };
         if fresh.report != plan.report || fresh.midi != plan.midi {

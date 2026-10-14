@@ -132,6 +132,16 @@ pub(crate) fn verify(bytes: &[u8], ppqn: u16, expected: &[Events]) -> Result<(),
                     ended = true;
                 }
                 events.push((tick, ty, data));
+            } else if status == 0xf0 {
+                let n = t.vlq()? as usize;
+                let data = t.take(n)?.to_vec();
+                if data.len() < 2
+                    || data.last() != Some(&0xf7)
+                    || data[..data.len() - 1].iter().any(|b| *b > 127)
+                {
+                    return Err("invalid SysEx payload");
+                }
+                events.push((tick, status, data));
             } else {
                 let n = match status >> 4 {
                     8 | 9 | 10 | 11 | 14 => 2,

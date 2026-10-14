@@ -183,7 +183,8 @@ fn independent_readback_detects_truncation_corruption_and_extra_events() {
     assert!(crate::readback120::verify(&bytes, 480, &expected).is_err());
 }
 #[test]
-fn authentic_external_classification_and_eight_byte_identical_artifacts_when_available() {
+fn authentic_external_classification_and_eight_artifacts_change_only_proven_controller_targets_when_available(
+) {
     let source="/Users/kurtheiden/Documents/Phoenix Research/Authentic Studio Vision Projects/SCHOOL PROJECTS";
     let Ok(b) = std::fs::read(source) else {
         eprintln!("external authentic source unavailable");
@@ -220,7 +221,39 @@ fn authentic_external_classification_and_eight_byte_identical_artifacts_when_ava
             assert!(r.mechanically_verified());
             let path=format!("/Users/kurtheiden/Documents/Phoenix Research/Experimental MIDI Recovery/SCHOOL PROJECTS/SCHOOL - {name}.mid");
             let existing = std::fs::read(path).expect("validated persistent artifact");
-            assert_eq!(r.midi(), existing, "artifact {name}");
+            assert_eq!(r.midi().len(), existing.len(), "artifact size {name}");
+            let before = reference_smf::midi_tracks(&existing);
+            let after = reference_smf::midi_tracks(r.midi());
+            assert_eq!(before.len(), after.len());
+            for (index, (before, after)) in before.iter().zip(&after).enumerate() {
+                assert_eq!(before.len(), after.len(), "event count {name}/{index}");
+                let mut targets = if index == 0 {
+                    vec![]
+                } else {
+                    r.tracks()[index - 1].controller_targets.clone()
+                };
+                for (before, after) in before.iter().zip(after) {
+                    if before.1 >> 4 == 11 {
+                        assert_eq!((before.0, &before.2), (after.0, &after.2));
+                        if let Some(at) = targets.iter().position(|p| {
+                            p.position == before.0
+                                && p.encoded_status == before.1
+                                && before.2 == [p.controller_number, p.controller_value]
+                        }) {
+                            let p = targets.remove(at);
+                            assert_eq!(after.1, 0xb0 + p.resolved_channel - 1);
+                        } else {
+                            assert_eq!(before, after, "unproved Controller change {name}/{index}");
+                        }
+                    } else {
+                        assert_eq!(before, after, "non-Controller change {name}/{index}");
+                    }
+                }
+                assert!(
+                    targets.is_empty(),
+                    "lost Controller provenance {name}/{index}"
+                );
+            }
             good += 1;
         } else {
             assert!(row.result.is_err());
@@ -228,6 +261,8 @@ fn authentic_external_classification_and_eight_byte_identical_artifacts_when_ava
     }
     assert_eq!(good, 8);
 }
+
+use crate::reference_smf;
 
 #[test]
 fn explicit_program120_handoff_preserves_route_value_time_and_source_range() {

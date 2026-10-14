@@ -26,6 +26,7 @@ pub enum MultiPatchRefusal {
     EventWalk,
     UnsupportedEvent,
     UnsupportedTranslation,
+    ControllerTarget(crate::controller_target120::ControllerTargetRefusal),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,6 +76,7 @@ impl ResolvedMultiPatch {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundedMultiPatchTrack {
     patches: Vec<ResolvedMultiPatch>,
+    controller_targets: Vec<crate::controller_target120::ControllerTargetProvenance>,
 }
 impl BoundedMultiPatchTrack {
     pub fn patches(&self) -> &[ResolvedMultiPatch] {
@@ -112,6 +114,31 @@ pub fn decode_bounded_multi_patch_track(
     association_range: Range<usize>,
     event_range: Range<usize>,
 ) -> Result<BoundedMultiPatchTrack, MultiPatchRefusal> {
+    decode_impl(source, association_range, event_range, false).map(|v| v.0)
+}
+
+/// Experimental-only native-confirmed GS envelope plus completely decoded mixed
+/// suffix. Same ownership/list/table/translation guards as standalone Multi.
+pub(crate) fn native_gs_multi_handoff(
+    source: &[u8],
+    association_range: Range<usize>,
+    event_range: Range<usize>,
+) -> Result<
+    (
+        Vec<DecodedExportEvent>,
+        Vec<crate::controller_target120::ControllerTargetProvenance>,
+    ),
+    MultiPatchRefusal,
+> {
+    decode_impl(source, association_range, event_range, true)
+        .map(|(track, events)| (events, track.controller_targets))
+}
+fn decode_impl(
+    source: &[u8],
+    association_range: Range<usize>,
+    event_range: Range<usize>,
+    native_gs: bool,
+) -> Result<(BoundedMultiPatchTrack, Vec<DecodedExportEvent>), MultiPatchRefusal> {
     let root = parse_root_record_stream(source).map_err(|_| MultiPatchRefusal::Framing)?;
     let assoc = source
         .get(association_range.clone())
@@ -190,19 +217,69 @@ pub fn decode_bounded_multi_patch_track(
     }) {
         return Err(MultiPatchRefusal::Device);
     }
+    let walk_range = if native_gs {
+        let prefix = source
+            .get(event_range.start..event_range.start + 14)
+            .ok_or(MultiPatchRefusal::EventWalk)?;
+        if prefix
+            != [
+                0, 0xf0, 0x0b, 0, 0x41, 0x10, 0x42, 0x12, 0x40, 0, 0x7f, 0, 0x41, 0xf7,
+            ]
+        {
+            return Err(MultiPatchRefusal::EventWalk);
+        }
+        event_range.start + 14..event_range.end
+    } else {
+        event_range.clone()
+    };
     let walk = walk_bounded_mixed_events(
         source,
         MixedEventBounds {
-            event_range: event_range.clone(),
+            event_range: walk_range.clone(),
         },
         Default::default(),
     )
     .map_err(|_| MultiPatchRefusal::EventWalk)?;
-    if walk.consumed_range != event_range || walk.items.is_empty() {
+    if walk.consumed_range != walk_range || walk.items.is_empty() {
         return Err(MultiPatchRefusal::EventWalk);
     }
+    if native_gs {
+        let declared = u32::from_be_bytes(
+            root.records[primary].payload.bytes[2..6]
+                .try_into()
+                .map_err(|_| MultiPatchRefusal::EventWalk)?,
+        );
+        if usize::try_from(declared).ok() != walk.items.len().checked_add(1) {
+            return Err(MultiPatchRefusal::EventWalk);
+        }
+    }
+    let mut export_events = Vec::new();
+    let controller_targets = if native_gs {
+        crate::controller_target120::ControllerAssociation120::from_records(
+            &root.records,
+            association_range.clone(),
+            assoc,
+        )
+        .and_then(|lookup| lookup.collect(&walk, 1))
+        .map_err(MultiPatchRefusal::ControllerTarget)?
+    } else {
+        vec![]
+    };
     let mut patches = Vec::new();
     for (ordinal, item) in walk.items.iter().enumerate() {
+        if native_gs {
+            if let MixedEventItem::Event(e) = item {
+                if let crate::mixed_event::MixedEventKind::MidiController(c) = &e.event {
+                    export_events.push(DecodedExportEvent::from_midi_controller(
+                        e.position,
+                        (ordinal + 1) as u64,
+                        c,
+                    ));
+                    continue;
+                }
+                return Err(MultiPatchRefusal::UnsupportedEvent);
+            }
+        }
         let MixedEventItem::Patch(event) = item else {
             return Err(MultiPatchRefusal::UnsupportedEvent);
         };
@@ -262,7 +339,7 @@ pub fn decode_bounded_multi_patch_track(
         let entry_start = association_range.start + 1 + usize::from(selector) * 2;
         patches.push(ResolvedMultiPatch {
             position: event.position,
-            source_ordinal: ordinal as u64,
+            source_ordinal: (ordinal + usize::from(native_gs)) as u64,
             representation_range: core.representation_range.clone(),
             selector,
             association_range: association_range.clone(),
@@ -279,6 +356,19 @@ pub fn decode_bounded_multi_patch_track(
             post_name_context: post.to_vec(),
             translation,
         });
+        export_events.push(patches.last().unwrap().export_event());
     }
-    Ok(BoundedMultiPatchTrack { patches })
+    let export_events = if native_gs {
+        crate::controller_target120::apply_targets(&export_events, &controller_targets)
+            .map_err(MultiPatchRefusal::ControllerTarget)?
+    } else {
+        export_events
+    };
+    Ok((
+        BoundedMultiPatchTrack {
+            patches,
+            controller_targets,
+        },
+        export_events,
+    ))
 }

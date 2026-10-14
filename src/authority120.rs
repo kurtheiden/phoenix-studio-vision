@@ -33,16 +33,20 @@ pub enum Authority120Refusal {
     Channel,
     Context(String),
     MultiPatch(String),
+    InstrumentTransposition(crate::instrument_transposition::TranspositionRefusal),
+    ControllerTarget(crate::controller_target120::ControllerTargetRefusal),
 }
 
 /// An owned routing observation, bound by its enclosing source/Track proof.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SingleRoute120 {
+    pub controller_targets: Vec<crate::controller_target120::ControllerTargetProvenance>,
     pub association_range: Range<usize>,
     pub instrument_row: u8,
     pub routing_record_range: Range<usize>,
     pub device_record_range: Range<usize>,
     pub channel: u8,
+    pub transposition: crate::instrument_transposition::InstrumentTransposition,
     pub contexts: Vec<ValidatedContext>,
 }
 
@@ -182,7 +186,7 @@ fn prove_sequence<'a>(
     })
 }
 
-fn prove_track<'a>(
+pub(crate) fn prove_track<'a>(
     source: &'a [u8],
     records: &[FramedRecord<'a>],
     s: &Source120SequenceAssociation<'a>,
@@ -298,13 +302,14 @@ fn reconcile(
                 match &e.event {
                     MixedEventKind::ContextMediatedNote(_) => 1,
                     MixedEventKind::DoubleContextMediatedNote(_) => 2,
+                    MixedEventKind::MidiController(c) => usize::from(c.context.is_some()),
+                    MixedEventKind::SysEx(s) if s.framing.is_some() => 0,
                     MixedEventKind::SysEx(_) => {
                         return Err(Authority120Refusal::UnsupportedAccounting)
                     }
                     MixedEventKind::Note(_)
                     | MixedEventKind::Program(_)
                     | MixedEventKind::Controller(_)
-                    | MixedEventKind::MidiController(_)
                     | MixedEventKind::PitchBend { .. }
                     | MixedEventKind::ChannelPressure { .. } => 0,
                 },
@@ -336,7 +341,7 @@ fn reconcile(
     Ok(contexts)
 }
 
-fn single_route(
+pub(crate) fn single_route(
     records: &[FramedRecord<'_>],
     range: Range<usize>,
     a: &[u8],
@@ -393,6 +398,20 @@ fn single_route(
     let contexts = validate_bounded_routing_contexts(walk, i)
         .map_err(|e| Authority120Refusal::Context(format!("{e:?}")))?;
     Ok(SingleRoute120 {
+        controller_targets: crate::controller_target120::ControllerAssociation120::from_records(
+            records,
+            range.clone(),
+            a,
+        )
+        .and_then(|lookup| lookup.collect(walk, 0))
+        .map_err(Authority120Refusal::ControllerTarget)?,
+        transposition:
+            crate::instrument_transposition::InstrumentTransposition::from_selected_record(
+                selected,
+                range.clone(),
+                i,
+            )
+            .map_err(Authority120Refusal::InstrumentTransposition)?,
         association_range: range,
         instrument_row: i,
         routing_record_range: selected.record_range.clone(),

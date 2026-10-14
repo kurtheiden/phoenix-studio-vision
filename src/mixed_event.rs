@@ -75,13 +75,15 @@ pub enum MixedEventKind<'a> {
     DoubleContextMediatedNote(BoundedDoubleContextMediatedNoteEntry<'a>),
 }
 
-/// Exact evidenced F0/07 source representation; payload includes final F7.
+/// Evidenced bounded SysEx representation; exported payload includes final F7.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundedSysExEntry<'a> {
     pub representation_range: Range<usize>,
     pub timing_delta: LocatedVlq<'a>,
     pub status: LocatedByte,
     pub payload_length: LocatedByte,
+    /// CCA-064 counted, non-exported framing byte; absent for CCA-017 F0/07.
+    pub framing: Option<LocatedByte>,
     pub payload: LocatedBytes<'a>,
 }
 
@@ -100,12 +102,20 @@ pub struct BoundedProgramEntry<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundedMidiController<'a> {
     pub representation_range: Range<usize>,
+    /// Evidenced length-7 FF60 bridge; the successor delta remains separate.
+    pub context: Option<BoundedControllerContext<'a>>,
     pub timing_delta: LocatedVlq<'a>,
     pub status: LocatedByte,
     pub explicit_status: bool,
     pub channel: u8,
     pub controller_number: LocatedByte,
     pub controller_value: LocatedByte,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedControllerContext<'a> {
+    pub leading_timing: LocatedVlq<'a>,
+    pub context: BoundedFf60Context<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -308,7 +318,7 @@ pub fn walk_bounded_mixed_events(
     bounds: MixedEventBounds,
     timing_basis: MixedEventTimingBasis,
 ) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
-    walk_mixed_events(bytes, bounds, timing_basis, false)
+    walk_mixed_events(bytes, bounds, timing_basis, false, false)
 }
 
 /// Ownership and single-Instrument applicability are established by authority120.
@@ -318,7 +328,120 @@ pub(crate) fn walk_bounded_120_single_events(
     bounds: MixedEventBounds,
     timing_basis: MixedEventTimingBasis,
 ) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
-    walk_mixed_events(bytes, bounds, timing_basis, true)
+    walk_mixed_events(bytes, bounds, timing_basis, true, true)
+}
+
+/// Called only after bounded 120 ownership is established. Program authority
+/// stays unchanged for prefix recovery; routing is independently checked later.
+pub(crate) fn walk_bounded_120_prefix_events(
+    bytes: &[u8],
+    bounds: MixedEventBounds,
+    timing_basis: MixedEventTimingBasis,
+) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
+    walk_mixed_events(bytes, bounds, timing_basis, false, true)
+}
+
+fn decode_framed_sysex120(
+    bytes: &[u8],
+    cursor: usize,
+    status_offset: usize,
+    end: usize,
+) -> Result<(BoundedSysExEntry<'_>, usize), MixedEventWalkError> {
+    let length_offset = status_offset + 1;
+    let length = *bytes
+        .get(length_offset)
+        .filter(|_| length_offset < end)
+        .ok_or(MixedEventWalkError::EventPastBound {
+            cursor,
+            required_end: length_offset + 1,
+            event_end: end,
+        })?;
+    if !matches!(length, 9 | 11) {
+        return Err(MixedEventWalkError::MalformedSysEx {
+            cursor,
+            offset: length_offset,
+        });
+    }
+    let framing_offset = length_offset + 1;
+    let next = framing_offset.checked_add(usize::from(length)).ok_or(
+        MixedEventWalkError::EventPastBound {
+            cursor,
+            required_end: usize::MAX,
+            event_end: end,
+        },
+    )?;
+    if next > end {
+        return Err(MixedEventWalkError::EventPastBound {
+            cursor,
+            required_end: next,
+            event_end: end,
+        });
+    }
+    if bytes[framing_offset] != 0 {
+        return Err(MixedEventWalkError::MalformedSysEx {
+            cursor,
+            offset: framing_offset,
+        });
+    }
+    let payload_start = framing_offset + 1;
+    for (index, value) in bytes[payload_start..next - 1].iter().enumerate() {
+        if *value > 127 {
+            return Err(MixedEventWalkError::MalformedSysEx {
+                cursor,
+                offset: payload_start + index,
+            });
+        }
+    }
+    if bytes[next - 1] != 0xf7 {
+        return Err(MixedEventWalkError::MalformedSysEx {
+            cursor,
+            offset: next - 1,
+        });
+    }
+    // A complete, explicit Controller must follow at the current cursor. No
+    // terminal SysEx, compact successor, lookahead scan or resynchronization.
+    let timing =
+        decode_7bit_be_vlq(bytes, next, end).map_err(|source| MixedEventWalkError::TimingVlq {
+            cursor: next,
+            source,
+        })?;
+    let offset = next + timing.bytes_consumed;
+    let observed = *bytes.get(offset).filter(|_| offset < end).ok_or(
+        MixedEventWalkError::MissingDispatchByte {
+            cursor: next,
+            offset,
+        },
+    )?;
+    if !(0xb0..=0xbf).contains(&observed) {
+        return Err(MixedEventWalkError::UnsupportedSysExSuccessor {
+            cursor,
+            offset,
+            observed,
+        });
+    }
+    Ok((
+        BoundedSysExEntry {
+            representation_range: cursor..next,
+            timing_delta: located_vlq(bytes, cursor, status_offset, cursor)?,
+            status: LocatedByte {
+                value: 0xf0,
+                offset: status_offset,
+            },
+            payload_length: LocatedByte {
+                value: length,
+                offset: length_offset,
+            },
+            framing: Some(LocatedByte {
+                value: 0,
+                offset: framing_offset,
+            }),
+            payload: LocatedBytes {
+                bytes: &bytes[payload_start..next],
+                range: payload_start..next,
+            },
+        },
+        next,
+    ))
 }
 
 fn walk_mixed_events(
@@ -326,6 +449,7 @@ fn walk_mixed_events(
     bounds: MixedEventBounds,
     timing_basis: MixedEventTimingBasis,
     explicit_program: bool,
+    framed_sysex120: bool,
 ) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
     let start = bounds.event_range.start;
     let end = bounds.event_range.end;
@@ -456,6 +580,21 @@ fn walk_mixed_events(
                     )
                 }
             },
+            0xf0 if framed_sysex120
+                && (explicit_program || bytes.get(timing_end + 1) != Some(&7)) =>
+            {
+                let (entry, next) = decode_framed_sysex120(bytes, cursor, timing_end, end)?;
+                let position = add_position(previous_position, entry.timing_delta.value, cursor)?;
+                (
+                    MixedEventItem::Event(Box::new(PositionedEvent {
+                        position,
+                        event: MixedEventKind::SysEx(entry),
+                    })),
+                    next,
+                    position,
+                    state,
+                )
+            }
             0xf0 if !explicit_program => {
                 let next =
                     timing_end
@@ -532,6 +671,7 @@ fn walk_mixed_events(
                                 value: 7,
                                 offset: length_offset,
                             },
+                            framing: None,
                             payload: LocatedBytes {
                                 bytes: &bytes[payload_start..next],
                                 range: payload_start..next,
@@ -703,6 +843,7 @@ fn decode_midi_controller(
     let position = add_position(previous_position, timing_delta.value, cursor)?;
     let controller = BoundedMidiController {
         representation_range: cursor..next,
+        context: None,
         timing_delta,
         status,
         explicit_status,
@@ -1119,6 +1260,46 @@ fn decode_context_mediated_note(
     let following_timing = located_vlq(bytes, after_context, event_end, cursor)?;
     let following_offset = following_timing.range.end;
 
+    // Independently correlated in Sweeper and Reservist Revolt. Only this
+    // length/prefix and an explicit Controller successor qualify. Context and
+    // successor intervals advance the clock once each; compact state is then
+    // established by the unchanged Controller decoder, never by the context.
+    if context.payload_length.value == 7
+        && context.payload.bytes.starts_with(&[0x57, 0x7f, 0])
+        && matches!(
+            bytes
+                .get(following_offset)
+                .filter(|_| following_offset < event_end),
+            Some(0xb0..=0xbf)
+        )
+    {
+        let context_position = add_position(previous_position, leading_timing.value, cursor)?;
+        let (mut item, next, position, state) = decode_midi_controller(
+            bytes,
+            after_context,
+            following_offset,
+            event_end,
+            context_position,
+            LocatedByte {
+                value: bytes[following_offset],
+                offset: following_offset,
+            },
+            true,
+        )?;
+        let MixedEventItem::Event(event) = &mut item else {
+            unreachable!()
+        };
+        let MixedEventKind::MidiController(controller) = &mut event.event else {
+            unreachable!()
+        };
+        controller.representation_range.start = cursor;
+        controller.context = Some(BoundedControllerContext {
+            leading_timing,
+            context,
+        });
+        return Ok((item, next, position, state));
+    }
+
     if bytes
         .get(following_offset)
         .copied()
@@ -1410,3 +1591,11 @@ fn bend_item(position: u32, decoded: DecodedPitchBendEntry<'_>) -> MixedEventIte
 #[cfg(test)]
 #[path = "explicit_program120_tests.rs"]
 mod explicit_program120_tests;
+
+#[cfg(test)]
+#[path = "ff60_controller_bridge_tests.rs"]
+mod ff60_controller_bridge_tests;
+
+#[cfg(test)]
+#[path = "sysex120_tests.rs"]
+mod sysex120_tests;

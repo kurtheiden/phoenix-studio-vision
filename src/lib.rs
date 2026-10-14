@@ -16,6 +16,8 @@ pub mod comparison;
 pub mod compatibility;
 pub mod compatibility_profiles;
 pub mod controller;
+pub mod controller_target120;
+pub mod experimental120;
 pub mod experimental166;
 pub mod experimental_export;
 pub(crate) mod export_handoff;
@@ -23,6 +25,7 @@ pub(crate) mod export_handoff;
 pub(crate) mod identification;
 #[allow(dead_code)]
 pub(crate) mod inspection;
+pub mod instrument_transposition;
 pub mod json_transport;
 pub mod meter;
 pub mod midi_export;
@@ -40,5 +43,10 @@ pub mod saved_mute;
 mod semantic_layout120;
 pub mod sequence_container;
 pub mod smf;
+pub mod sysex166;
 pub mod tempo;
 pub mod track7;
+
+#[cfg(test)]
+#[path = "../tests/support/reference_smf.rs"]
+mod reference_smf;
