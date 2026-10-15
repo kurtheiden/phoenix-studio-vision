@@ -395,11 +395,11 @@ enum RecoveryWorkspaceTab: String, CaseIterable {
 
 /// Display-only grouping; underlying warning records remain untouched.
 enum RecoveryDetailsPresentation {
-    static let technicalTitle = "Programmer Stuff"
+    static let technicalTitle = "Technical Details"
     static let technicalExplanation = "Most users will never need this information."
     static let helpTitle = "Questions about recovery"
     static let cautionsQuestion = "Why are there cautions? Are my recovered files safe to use in my DAW?"
-    static let cautionsAnswer = "Yes. If Phoenix recovered a Sequence to MIDI, the resulting MIDI file is safe to open in your DAW. A caution can mean Phoenix found additional non-musical project information that it retained in the recovery diagnostics."
+    static let cautionsAnswer = "Recovered MIDI files can be opened in your DAW. Review the recovery warnings: they describe limitations or information that was not translated. Successful MIDI export does not establish complete project recovery or original playback fidelity."
     static let fidelityNote = "This does not establish original instrument sounds or historical playback fidelity, or recover information Phoenix did not export."
     static let blockedQuestion = "What about Sequences labeled \"Not yet recoverable\"?"
     static let blockedAnswer = "This means Phoenix found something in the Sequence that it cannot yet safely recover. Phoenix leaves that Sequence blocked rather than guessing or discarding musical information."

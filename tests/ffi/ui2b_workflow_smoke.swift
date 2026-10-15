@@ -238,8 +238,8 @@ actor ProbeCore: PhoenixCoreServing {
         let originalCautions = cautions
         check(RecoveryDetailsPresentation.cautionMessages(cautions) == ["Same caution","Different caution"],"Exact caution dedup / distinct retained")
         check(cautions == originalCautions && cautions.count == 3,"Underlying diagnostic records untouched")
-        check(RecoveryDetailsPresentation.technicalTitle == "Programmer Stuff" && RecoveryDetailsPresentation.technicalExplanation == "Most users will never need this information.","Secondary technical disclosure copy")
-        check(RecoveryDetailsPresentation.cautionsAnswer.contains("safe to open in your DAW") && RecoveryDetailsPresentation.cautionsAnswer.contains("non-musical"),"Bounded caution explanation")
+        check(RecoveryDetailsPresentation.technicalTitle == "Technical Details" && RecoveryDetailsPresentation.technicalExplanation == "Most users will never need this information.","Secondary technical disclosure copy")
+        check(RecoveryDetailsPresentation.cautionsAnswer.contains("can be opened in your DAW") && RecoveryDetailsPresentation.cautionsAnswer.contains("not translated"),"Bounded caution explanation")
         check(RecoveryDetailsPresentation.fidelityNote.contains("does not establish") && RecoveryDetailsPresentation.fidelityNote.contains("historical playback fidelity"),"No historical fidelity guarantee")
         check(RecoveryDetailsPresentation.blockedQuestion.contains("Not yet recoverable") && RecoveryDetailsPresentation.blockedAnswer.contains("rather than guessing or discarding musical information"),"Blocked recovery explanation")
         check(RecoveryDetailsPresentation.contact == "soundzilla@yahoo.com","Copyable developer contact")

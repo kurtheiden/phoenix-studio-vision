@@ -73,7 +73,7 @@ private struct ProjectInspectionView: View {
     @ObservedObject var model: AppModel
     let inspection: ProjectInspection
     @State private var resultsExpanded = true
-    @State private var programmerStuffExpanded = false
+    @State private var technicalDetailsExpanded = false
 
     private var selectedSequence: SequenceViewData? {
         inspection.sequences.first { $0.sequenceID == model.selectedSequenceID }
@@ -81,6 +81,7 @@ private struct ProjectInspectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            PhoenixWorkspaceBrand()
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center, spacing: 20) {
                     Text(inspection.displayName).font(.title.weight(.semibold))
@@ -90,6 +91,13 @@ private struct ProjectInspectionView: View {
                         .disabled(!model.canOpenProject)
                         .controlSize(.small)
                         .fixedSize()
+                }
+                if let source = model.inspectedSourceURL {
+                    Text(source.path)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        .help(source.path)
+                        .accessibilityLabel("Source project path: \(source.path)")
                 }
                 Text(inspection.recognizedStudioVision
                      ? "Studio Vision project" : "File not recognized as a supported Studio Vision project")
@@ -136,13 +144,15 @@ private struct ProjectInspectionView: View {
             HStack {
                 Text("Sequences").font(.headline)
                 Spacer()
-                Text("\(model.selectedRecoveryCount) selected").foregroundStyle(.secondary)
+                Text("\(model.selectedRecoveryCount) checked for recovery").foregroundStyle(.secondary)
                 Button("Select All Recoverable") { model.selectAllRecoverable() }
                     .disabled(model.isExporting || inspection.recoverableSequenceCount == 0)
                 Button("Clear Selection") { model.clearRecoverySelection() }
                     .disabled(model.isExporting || model.selectedRecoveryCount == 0)
             }
             .controlSize(.small)
+            Text("Click a row to inspect it. Check its box to include it in recovery.")
+                .font(.caption).foregroundStyle(.secondary)
             if inspection.sequences.isEmpty {
                 VStack(spacing: 12) {
                     Label("No sequences found", systemImage: "music.note.list").font(.headline)
@@ -186,14 +196,16 @@ private struct ProjectInspectionView: View {
             Divider()
             HStack(alignment: .center, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(model.selectedRecoveryCount == 0 ? "Select sequences to recover" : "\(model.selectedRecoveryCount) selected")
+                    Text("Sequence inspection")
                         .font(.headline)
                     if let sequence = selectedSequence {
+                        Text(sequence.presentationName(ordinal: (inspection.sequences.firstIndex { $0.sequenceID == sequence.sequenceID } ?? 0) + 1))
+                            .font(.callout.weight(.medium))
                         Text(sequence.isExportEligible ? "Ready to recover" : "Not yet recoverable")
                             .font(.callout)
                         Text(sequence.recoveryExplanation).font(.callout).foregroundStyle(.secondary)
                         if let tracks = sequence.musicalTrackCount {
-                            Text("\(tracks) tracks").font(.caption).foregroundStyle(.secondary)
+                            Text("\(tracks) project sequence tracks").font(.caption).foregroundStyle(.secondary)
                         }
                     } else {
                         Text("Sequences not yet recoverable remain visible.")
@@ -222,6 +234,8 @@ private struct ProjectInspectionView: View {
 
     private var detailsWorkspace: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Label("Recovery limitations", systemImage: "info.circle").font(.headline)
+            Text(RecoveryDetailsPresentation.fidelityNote)
             if !inspection.warnings.isEmpty {
                 Text("Recovery notes").font(.headline)
                 ForEach(RecoveryDetailsPresentation.cautionMessages(inspection.warnings), id: \.self) { message in
@@ -248,7 +262,7 @@ private struct ProjectInspectionView: View {
 
             Divider()
             Text(RecoveryDetailsPresentation.technicalExplanation).foregroundStyle(.secondary)
-            DisclosureGroup(RecoveryDetailsPresentation.technicalTitle, isExpanded: $programmerStuffExpanded) {
+            DisclosureGroup(RecoveryDetailsPresentation.technicalTitle, isExpanded: $technicalDetailsExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
                     if let sequence = selectedSequence {
                         Text("Selected sequence diagnostic").font(.headline)
@@ -270,7 +284,7 @@ private struct ProjectInspectionView: View {
                 }
                 .textSelection(.enabled)
             }
-            .onChange(of: programmerStuffExpanded) { expanded in
+            .onChange(of: technicalDetailsExpanded) { expanded in
                 if expanded { model.loadDiagnosticsIfNeeded() }
             }
 
@@ -306,6 +320,10 @@ private struct BatchRecoveryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Label("MIDI recovery", systemImage: "music.note.list")
+                .font(.title2.weight(.semibold))
+            Text(RecoveryDetailsPresentation.fidelityNote)
+                .font(.callout).foregroundStyle(.secondary)
             Text("Most recent recovery · \(batch.snapshot.sourceURL.lastPathComponent)")
                 .font(.caption).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.middle).help(batch.snapshot.sourceURL.path)
@@ -380,8 +398,12 @@ private struct BatchRecoveryView: View {
             switch entry.outcome {
             case .succeeded(let result):
                 Text(URL(fileURLWithPath: result.outputPath).lastPathComponent)
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.callout.weight(.medium)).textSelection(.enabled)
                     .lineLimit(1).truncationMode(.middle).help(result.outputPath)
+                Text("\(result.musicalTrackCount) musical tracks · \(result.totalSMFTrackCount) SMF tracks · \(result.counts.notes) notes")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("\(result.untranslatedMetadataCount) untranslated metadata items")
+                    .font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(result.warnings.enumerated()), id: \.offset) { _, warning in
                     Text(warning.message).font(.caption)
                 }
@@ -397,6 +419,31 @@ private struct BatchRecoveryView: View {
                 Text("Recovery stopped before this sequence was attempted.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+/// Shared identity stays visible while switching between inspection and results.
+private struct PhoenixWorkspaceBrand: View {
+    private let logo = PhoenixStartupPresentation.loadImage()
+    private let phoenixPurple = Color(red: 0.27, green: 0.20, blue: 0.55)
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let logo {
+                Image(nsImage: logo).resizable().scaledToFit()
+                    .frame(width: 56, height: 56).accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Phoenix").font(.title2.weight(.semibold))
+                Text("Studio Vision MIDI Recovery").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(phoenixPurple.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2).fill(phoenixPurple).frame(width: 3).padding(.vertical, 12)
         }
     }
 }
