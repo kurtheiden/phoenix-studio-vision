@@ -383,7 +383,14 @@ fn authenticated_corpus_predicate_results() {
         }
         if name == "xForm" {
             assert!(rows.iter().any(|r| r.structural_ordinal == s
-                && matches!(r.result, Err(RoutingRefusal::IncompleteEventWalk(_)))));
+                && r.descriptor_ordinal == 10
+                && matches!(
+                    r.result,
+                    Err(RoutingRefusal::ConflictingContext {
+                        kind: ContextKind::Ff60,
+                        ..
+                    })
+                )));
         }
         if name == "Sequence I" {
             assert!(rows

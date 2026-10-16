@@ -310,6 +310,22 @@ pub fn validate_bounded_routing_contexts(
                 MixedEventKind::Controller(c) => {
                     guard(&mut contexts, ContextKind::Controller, &c.context, i)?
                 }
+                MixedEventKind::ContextMediatedController(c) => {
+                    // Retain the existing FF60 guard: representation decoding
+                    // does not authorize the newly recognized context prefix.
+                    guard(
+                        &mut contexts,
+                        ContextKind::Ff60,
+                        &c.context.context.payload,
+                        i,
+                    )?;
+                    guard(
+                        &mut contexts,
+                        ContextKind::Controller,
+                        &c.controller.context,
+                        i,
+                    )?;
+                }
                 MixedEventKind::ContextMediatedNote(c) => {
                     let payload = c.context.payload.bytes;
                     // This exception applies only after source MIDI Controllers,

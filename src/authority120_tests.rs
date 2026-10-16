@@ -54,6 +54,18 @@ fn fixture(events: &[u8], raw: u32, pairs: usize, absent: bool) -> Vec<u8> {
 fn note() -> Vec<u8> {
     vec![0, 0x90, 60, 100, 64, 0x81, 0x70]
 }
+
+#[test]
+fn representation_only_ff60_ff41_has_no_120_authority() {
+    let events = [
+        4, 255, 96, 7, 35, 96, 0, 114, 108, 131, 76, 1, 255, 65, 5, 0, 1, 0, 1, 58,
+    ];
+    // Even a matching raw count cannot promote this 166-derived representation.
+    assert_eq!(
+        result(&fixture(&events, 2, 3, false)).unwrap_err(),
+        Authority120Refusal::UnsupportedAccounting
+    );
+}
 fn result(b: &[u8]) -> Result<SequenceProof120<'_>, Authority120Refusal> {
     prove_project120(b).unwrap().remove(0).result
 }

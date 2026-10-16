@@ -33,7 +33,9 @@ fn family_counts(result: &phoenix::mixed_event::MixedEventWalk<'_>) -> [usize; 5
                 MixedEventKind::Note(_)
                 | MixedEventKind::ContextMediatedNote(_)
                 | MixedEventKind::DoubleContextMediatedNote(_) => counts[0] += 1,
-                MixedEventKind::Controller(_) | MixedEventKind::MidiController(_) => counts[2] += 1,
+                MixedEventKind::Controller(_)
+                | MixedEventKind::ContextMediatedController(_)
+                | MixedEventKind::MidiController(_) => counts[2] += 1,
                 MixedEventKind::ChannelPressure { .. } => counts[3] += 1,
                 MixedEventKind::PitchBend { .. } => counts[4] += 1,
             },
@@ -1158,7 +1160,7 @@ fn authentic_composition_extensions_complete_only_the_audited_tracks() {
             }
         }
     }
-    assert_eq!(failures, [(0, 8)]);
+    assert!(failures.is_empty()); // CCA-068 closes the last representation refusal.
     assert!(matches!(
         project.sequences[8].track_associations,
         phoenix::sequence_container::TrackAssociations::Unresolved {
@@ -1664,23 +1666,12 @@ fn authentic_remaining_forms_have_exact_successes_and_failure_frontiers() {
         }
         per_sequence.push(n);
     }
-    assert_eq!(complete, 131);
+    assert_eq!(complete, 132);
     assert_eq!(
         (per_sequence[9], per_sequence[11], per_sequence[17]),
         (5, 6, 2)
     );
-    assert_eq!(
-        failures,
-        vec![(
-            0,
-            8,
-            MixedEventWalkError::PatchContextMismatch {
-                cursor: 0xc490,
-                offset: 0xc49c,
-                observed: Some(0xff)
-            }
-        ),]
-    );
+    assert!(failures.is_empty());
 }
 
 #[test]

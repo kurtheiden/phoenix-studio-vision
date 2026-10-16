@@ -303,6 +303,9 @@ fn reconcile(
                     MixedEventKind::ContextMediatedNote(_) => 1,
                     MixedEventKind::DoubleContextMediatedNote(_) => 2,
                     MixedEventKind::MidiController(c) => usize::from(c.context.is_some()),
+                    MixedEventKind::ContextMediatedController(_) => {
+                        return Err(Authority120Refusal::UnsupportedAccounting)
+                    }
                     MixedEventKind::SysEx(s) if s.framing.is_some() => 0,
                     MixedEventKind::SysEx(_) => {
                         return Err(Authority120Refusal::UnsupportedAccounting)

@@ -474,7 +474,7 @@ fn authentic_inventory_and_policy_readiness_are_separate() {
         }
     }
     let expected_counts = [
-        ("xForm", (1, 11, 1)),
+        ("xForm", (1, 12, 0)),
         ("Bells for her", (2, 10, 2)),
         ("Situation", (0, 6, 0)),
         ("Sequence D", (0, 5, 1)),

@@ -328,6 +328,13 @@ pub(crate) fn single_handoff(
                 MixedEventKind::Controller(n) => {
                     DecodedExportEvent::from_controller(e.position, ordinal, n)
                 }
+                MixedEventKind::ContextMediatedController(_) => {
+                    return Err(refusal(
+                        "event handoff",
+                        at,
+                        "FF60/FF41 is representation-only",
+                    ))
+                }
                 MixedEventKind::MidiController(n) => {
                     DecodedExportEvent::from_midi_controller(e.position, ordinal, n)
                 }

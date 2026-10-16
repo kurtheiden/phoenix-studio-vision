@@ -409,6 +409,7 @@ fn authorized_school_event_meter() {
                                     | MixedEventKind::ContextMediatedNote(_)
                                     | MixedEventKind::DoubleContextMediatedNote(_) => 0,
                                     MixedEventKind::Controller(_)
+                                    | MixedEventKind::ContextMediatedController(_)
                                     | MixedEventKind::MidiController(_) => 2,
                                     MixedEventKind::ChannelPressure { .. } => 3,
                                     MixedEventKind::PitchBend { .. } => 4,

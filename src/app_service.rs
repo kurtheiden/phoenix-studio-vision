@@ -2599,9 +2599,9 @@ fn inventory_families(
                 | MixedEventKind::DoubleContextMediatedNote(_) => {
                     present[1] = true;
                 }
-                MixedEventKind::Controller(_) | MixedEventKind::MidiController(_) => {
-                    present[2] = true
-                }
+                MixedEventKind::Controller(_)
+                | MixedEventKind::ContextMediatedController(_)
+                | MixedEventKind::MidiController(_) => present[2] = true,
                 MixedEventKind::ChannelPressure { .. } => present[3] = true,
                 MixedEventKind::PitchBend { .. } => present[4] = true,
                 MixedEventKind::SysEx(_) => present[5] = true,

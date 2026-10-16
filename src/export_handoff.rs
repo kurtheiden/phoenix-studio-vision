@@ -406,6 +406,12 @@ pub(crate) fn build_conversion_ready_sequence(
                                 &controller,
                             )
                         }
+                        MixedEventKind::ContextMediatedController(_) => {
+                            return Err(ConversionReadyError::PolicyMismatch(
+                                "FF60/FF41 is not authorized by authenticated profile evidence"
+                                    .into(),
+                            ));
+                        }
                         MixedEventKind::ChannelPressure { entry, .. } => {
                             DecodedExportEvent::from_channel_pressure(
                                 positioned.position,
@@ -557,6 +563,11 @@ fn omission_inventory(
                     ))
                 }
                 MixedEventKind::Program(_) => present[0] = true,
+                MixedEventKind::ContextMediatedController(_) => {
+                    return Err(ConversionReadyError::PolicyMismatch(
+                        "FF60/FF41 omission is not authorized".into(),
+                    ))
+                }
             },
         }
     }

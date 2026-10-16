@@ -62,6 +62,8 @@ pub enum MixedEventKind<'a> {
     /// Canonical project Program tag; channel is supplied by proven 120 routing.
     Program(BoundedProgramEntry<'a>),
     Controller(BoundedControllerRecord<'a>),
+    /// Representation only; no routing or export authority for this context.
+    ContextMediatedController(BoundedContextMediatedController<'a>),
     MidiController(BoundedMidiController<'a>),
     ChannelPressure {
         entry: ChannelPressureEntry<'a>,
@@ -116,6 +118,14 @@ pub struct BoundedMidiController<'a> {
 pub struct BoundedControllerContext<'a> {
     pub leading_timing: LocatedVlq<'a>,
     pub context: BoundedFf60Context<'a>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundedContextMediatedController<'a> {
+    pub representation_range: Range<usize>,
+    pub context: BoundedControllerContext<'a>,
+    /// Retains the separate successor timing and exact FF41 record bounds.
+    pub controller: BoundedControllerRecord<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1259,6 +1269,60 @@ fn decode_context_mediated_note(
     let (context, after_context) = decode_ff60_context(bytes, context_start, event_end, cursor)?;
     let following_timing = located_vlq(bytes, after_context, event_end, cursor)?;
     let following_offset = following_timing.range.end;
+
+    // CCA-068: a single framed context followed by an explicit FF41 Controller.
+    // Keep the ordinary Controller's exact range/timing and None continuation
+    // state; the enclosing representation owns the additional context interval.
+    if context.payload_length.value == 7
+        && context.payload.bytes.starts_with(&[0x23, 0x60, 0])
+        && following_offset
+            .checked_add(2)
+            .filter(|end| *end <= event_end)
+            .and_then(|end| bytes.get(following_offset..end))
+            == Some(&[0xff, 0x41])
+    {
+        let context_position = add_position(previous_position, leading_timing.value, cursor)?;
+        let (item, next, position, state) = dispatch_ff(
+            bytes,
+            after_context,
+            following_offset,
+            event_end,
+            context_position,
+        )?;
+        let MixedEventItem::Event(event) = item else {
+            unreachable!()
+        };
+        let MixedEventKind::Controller(controller) = event.event else {
+            unreachable!()
+        };
+        for field in [controller.controller_number, controller.controller_value] {
+            if field.value > 0x7f {
+                return Err(MixedEventWalkError::HighBitData {
+                    cursor,
+                    offset: field.offset,
+                    observed: field.value,
+                });
+            }
+        }
+        return Ok((
+            MixedEventItem::Event(Box::new(PositionedEvent {
+                position,
+                event: MixedEventKind::ContextMediatedController(
+                    BoundedContextMediatedController {
+                        representation_range: cursor..next,
+                        context: BoundedControllerContext {
+                            leading_timing,
+                            context,
+                        },
+                        controller,
+                    },
+                ),
+            })),
+            next,
+            position,
+            state,
+        ));
+    }
 
     // Independently correlated in Sweeper and Reservist Revolt. Only this
     // length/prefix and an explicit Controller successor qualify. Context and
