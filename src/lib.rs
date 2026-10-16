@@ -7,6 +7,7 @@ pub mod authority120;
 pub mod bounded_conductor;
 pub mod bounded_multi_patch;
 pub mod bounded_patch_translation;
+pub mod bounded_prelude166;
 pub mod bounded_routing;
 pub mod bounded_sequence;
 pub mod bounded_terminal;

@@ -46,8 +46,12 @@ pub struct BoundedConductorManifest {
     tempo: InitialTempoEvent,
     meter: InitialMeterEvent,
     record_ranges: [Range<usize>; 4],
+    preludes: Vec<crate::bounded_prelude166::PreludeCoverage>,
 }
 impl BoundedConductorManifest {
+    pub fn preludes(&self) -> &[crate::bounded_prelude166::PreludeCoverage] {
+        &self.preludes
+    }
     pub fn tempo(&self) -> &InitialTempoEvent {
         &self.tempo
     }
@@ -185,9 +189,8 @@ pub fn build_bounded_sequence_manifest(
     {
         return Err(refusal("ownership", "nonexhaustive ordinal binding"));
     }
-    if !sequence.prelude_records.is_empty() {
-        return Err(refusal("conductor prelude", "unsupported records"));
-    }
+    let preludes = crate::bounded_prelude166::classify_prelude_coverage(bytes, sequence_ordinal)
+        .map_err(|e| refusal("conductor prelude", e))?;
     if sequence.terminal_record.payload.bytes != [255; 8] {
         return Err(refusal("sequence terminal", "unsupported content"));
     }
@@ -216,6 +219,7 @@ pub fn build_bounded_sequence_manifest(
         &bytes[meter.event_range.clone()],
     )?;
     let conductor = BoundedConductorManifest {
+        preludes,
         tempo,
         meter,
         record_ranges: [
