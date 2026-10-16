@@ -1213,7 +1213,11 @@ fn experiment073_control_edit_routes_and_complete_native_streams() {
             phoenix::bounded_sequence::build_bounded_sequence_manifest(&b, 0, 480)
                 .unwrap_err()
                 .stage,
-            "sequence terminal"
+            if i == 1 {
+                "translation"
+            } else {
+                "conductor coverage"
+            }
         );
         // Mismatch must fail even after the newly admitted context is retained.
         let context = route

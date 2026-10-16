@@ -102,8 +102,13 @@ pub struct BoundedSequenceManifest {
     ppqn: u16,
     conductor: BoundedConductorManifest,
     tracks: Vec<BoundedTrackManifest>,
+    terminal_coverage: Option<crate::bounded_terminal166::TerminalCoverage>,
 }
 impl BoundedSequenceManifest {
+    /// None denotes the unchanged legacy eight-FF acceptance path.
+    pub fn terminal_coverage(&self) -> Option<&crate::bounded_terminal166::TerminalCoverage> {
+        self.terminal_coverage.as_ref()
+    }
     pub fn sequence_range(&self) -> Range<usize> {
         self.sequence_range.clone()
     }
@@ -191,9 +196,14 @@ pub fn build_bounded_sequence_manifest(
     }
     let preludes = crate::bounded_prelude166::classify_prelude_coverage(bytes, sequence_ordinal)
         .map_err(|e| refusal("conductor prelude", e))?;
-    if sequence.terminal_record.payload.bytes != [255; 8] {
-        return Err(refusal("sequence terminal", "unsupported content"));
-    }
+    let terminal_coverage = if sequence.terminal_record.payload.bytes == [255; 8] {
+        None
+    } else {
+        Some(
+            crate::bounded_terminal166::classify_terminal_coverage(bytes, sequence_ordinal)
+                .map_err(|e| refusal("sequence terminal", e))?,
+        )
+    };
     let tempo = decode_bounded_initial_tempo(
         bytes,
         InitialTempoBounds {
@@ -346,6 +356,7 @@ pub fn build_bounded_sequence_manifest(
         sequence_range: sequence.sequence_range.clone(),
         name: sequence.sequence_name.bytes.bytes.to_vec(),
         ppqn: division,
+        terminal_coverage,
         conductor,
         tracks,
     };

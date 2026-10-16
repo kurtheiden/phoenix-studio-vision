@@ -11,6 +11,7 @@ pub mod bounded_prelude166;
 pub mod bounded_routing;
 pub mod bounded_sequence;
 pub mod bounded_terminal;
+pub mod bounded_terminal166;
 mod c_abi;
 pub mod channel_pressure;
 pub mod comparison;

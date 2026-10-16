@@ -306,7 +306,7 @@ fn authenticated_eight_patch_neighborhoods_match_native_when_available() {
         phoenix::bounded_sequence::build_bounded_sequence_manifest(&b, 0, 480)
             .unwrap_err()
             .stage,
-        "sequence terminal"
+        "translation"
     );
     assert_eq!(
         format!("{:x}", Sha256::digest(std::fs::read(path).unwrap())),

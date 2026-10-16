@@ -288,7 +288,7 @@ fn authenticated_seven_records_and_controlled_pitch_interventions() {
     assert!(classify(&b, 14).is_err());
 }
 #[test]
-fn experiment073_preludes_pass_but_terminal_and_authority_stay_blocked() {
+fn experiment073_preludes_and_terminals_pass_but_authority_stays_blocked() {
     for (name, hash, header) in [
         (
             "CCA073 CONTROL",
@@ -311,7 +311,14 @@ fn experiment073_preludes_pass_but_terminal_and_authority_stay_blocked() {
             q.iter().map(|p| p.pitches().len()).collect::<Vec<_>>(),
             [14, 10]
         );
-        assert_eq!(manifest(&b, 0, 480).unwrap_err().stage, "sequence terminal");
+        assert_eq!(
+            manifest(&b, 0, 480).unwrap_err().stage,
+            if header == 1 {
+                "translation"
+            } else {
+                "conductor coverage"
+            }
+        );
         let mut app = phoenix::app_service::AppService::new();
         let response = app
             .inspect_project(phoenix::app_contract::InspectProjectRequest {
