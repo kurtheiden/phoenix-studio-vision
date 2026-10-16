@@ -311,7 +311,7 @@ fn authenticated_xform_next_gates_and_legacy_r() {
         (
             "CCA073 CONTROL",
             "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132",
-            "translation",
+            "Patch",
         ),
         (
             "CCA073 EDIT",

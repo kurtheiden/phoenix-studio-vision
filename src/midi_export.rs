@@ -70,6 +70,8 @@ pub struct DecodedExportEvent {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DecodedExportEventKind {
+    /// Ordinary Descriptor166 FF41 with immutable, same-source routing proof.
+    RoutingValidatedController166(Box<crate::controller166::RoutingValidatedController>),
     /// Private construction proves bounded Descriptor166 source framing.
     SourceFramedSysEx07(Box<crate::sysex166::SourceFramedSysEx07>),
     SysEx {
@@ -565,6 +567,40 @@ fn adapt_track_impl(
                 }
                 counts.notes += 1;
                 counts.generated_note_offs += 1;
+            }
+            DecodedExportEventKind::RoutingValidatedController166(ref proof) => {
+                let p = proof.provenance();
+                if framed120
+                    || event.absolute_position != p.absolute_tick
+                    || event.source_ordinal != p.logical_source_ordinal
+                    || event.source_range.as_ref() != Some(&p.representation_range)
+                    || channel_assignment.provenance != ChannelAssignmentProvenance::ParsedRouting
+                    || channel
+                        != MidiChannel::new(p.channel).map_err(|source| {
+                            MidiExportError::InvalidMidiValue {
+                                source_ordinal: Some(event.source_ordinal),
+                                source_range: event.source_range.clone(),
+                                source,
+                            }
+                        })?
+                {
+                    return Err(MidiExportError::UnsupportedEvent {
+                        source_ordinal: event.source_ordinal,
+                        family: "unbound Descriptor166 FF41",
+                    });
+                }
+                scheduled_events.push(ScheduledEvent {
+                    absolute_tick: event.absolute_position,
+                    stable_ordinal: source_stable_ordinal,
+                    message: crate::smf::ChannelMessage::ControlChange {
+                        channel,
+                        controller: midi_data(event, p.number)?,
+                        value: midi_data(event, p.value)?,
+                    },
+                });
+                // Only this privately qualified context is accounted for. The
+                // generic opaque Controller branch below remains unchanged.
+                counts.controllers += 1;
             }
             DecodedExportEventKind::Controller {
                 number,

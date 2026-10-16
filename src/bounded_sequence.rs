@@ -284,6 +284,15 @@ pub fn build_bounded_sequence_manifest(
         } else {
             vec![]
         };
+        let controllers = if walk.items.iter().any(|item| {
+            matches!(item,
+            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::Controller(_)))
+        }) {
+            crate::controller166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
+                .map_err(|e| refusal("translation", e))?
+        } else {
+            vec![]
+        };
         let mut events = Vec::new();
         let mut ordinal = 0;
         let mut patches = 0;
@@ -302,6 +311,15 @@ pub fn build_bounded_sequence_manifest(
                                 .ok_or_else(|| refusal("SysEx framing", "missing owned proof"))?;
                             DecodedExportEvent::from_source_framed_sysex07(proof.clone())
                         }
+                        MixedEventKind::Controller(c) => controllers
+                            .iter()
+                            .find(|proof| {
+                                let p = proof.provenance();
+                                p.logical_source_ordinal == ordinal
+                                    && p.representation_range == c.record_range
+                            })
+                            .ok_or_else(|| refusal("translation", "missing Controller proof"))?
+                            .decoded_export_event(),
                         MixedEventKind::Note(n) => {
                             DecodedExportEvent::from_note(e.position, ordinal, n)
                         }

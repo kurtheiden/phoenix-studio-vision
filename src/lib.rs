@@ -18,6 +18,7 @@ pub mod comparison;
 pub mod compatibility;
 pub mod compatibility_profiles;
 pub mod controller;
+pub mod controller166;
 pub mod controller_target120;
 pub mod experimental120;
 pub mod experimental166;

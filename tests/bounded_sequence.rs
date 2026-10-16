@@ -672,9 +672,17 @@ fn pressure_bend_handoff_does_not_waive_mute_conductor_or_ownership() {
 }
 
 #[test]
-fn parsed_controller_has_no_translation_in_this_contract() {
-    let b = synthetic(&[0, 255, 65, 5, 0, 1, 0, 7, 64]);
-    assert_eq!(refused(&b).stage, "translation");
+fn accounted_ordinary_controller_has_bounded_translation() {
+    let mut b = synthetic(&[0, 255, 65, 5, 0, 1, 0, 7, 64]);
+    let at = parse_project_166(&b).unwrap().sequences[0].track_pairs[0]
+        .primary
+        .payload
+        .range
+        .start
+        + 2;
+    b[at..at + 4].copy_from_slice(&1u32.to_be_bytes());
+    let m = build_bounded_sequence_manifest(&b, 0, 480).unwrap();
+    assert_eq!(m.tracks()[0].events().len(), 1);
 }
 #[test]
 fn complete_conductor_envelope_is_guarded() {
@@ -983,11 +991,7 @@ fn authentic_pressure_bend_populations_keep_independent_first_blockers() {
             build_bounded_sequence_manifest(&bytes, sequence, 480)
                 .unwrap_err()
                 .stage,
-            if sequence == 1 {
-                "Patch"
-            } else {
-                "translation"
-            }
+            "Patch"
         );
     }
 }
