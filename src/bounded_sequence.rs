@@ -71,8 +71,12 @@ pub struct BoundedTrackManifest {
     mute: SavedMuteEvidence,
     secondary_range: Range<usize>,
     events: Vec<DecodedExportEvent>,
+    program_only_patches: Vec<crate::program_only166::ProgramOnlyPatch>,
 }
 impl BoundedTrackManifest {
+    pub fn program_only_patches(&self) -> &[crate::program_only166::ProgramOnlyPatch] {
+        &self.program_only_patches
+    }
     pub fn source_ordinal(&self) -> usize {
         self.source_ordinal
     }
@@ -296,6 +300,7 @@ pub fn build_bounded_sequence_manifest(
         let mut events = Vec::new();
         let mut ordinal = 0;
         let mut patches = 0;
+        let mut program_only_patches = Vec::new();
         for item in &walk.items {
             match item {
                 MixedEventItem::Event(e) => {
@@ -333,20 +338,37 @@ pub fn build_bounded_sequence_manifest(
                     });
                 }
                 MixedEventItem::PatchToNote(n) => {
-                    let patch = classified
+                    let evidence = classified
                         .patches
                         .get(patches)
                         .filter(|p| p.source_ordinal == ordinal)
-                        .ok_or_else(|| refusal("translation", "missing Patch accounting"))?
-                        .result
-                        .as_ref()
-                        .map_err(|e| refusal("Patch", e))?;
-                    events.push(patch.decoded_export_event());
-                    events.push(DecodedExportEvent::from_note_body(
-                        n.first_note_position,
-                        ordinal + 1,
-                        &n.first_note,
-                    ));
+                        .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
+                    match &evidence.result {
+                        Ok(patch) => {
+                            events.push(patch.decoded_export_event());
+                            events.push(DecodedExportEvent::from_note_body(
+                                n.first_note_position,
+                                ordinal + 1,
+                                &n.first_note,
+                            ));
+                        }
+                        Err(original) => {
+                            let proof = crate::program_only166::qualify_track(
+                                bytes,
+                                sequence_ordinal,
+                                binding.pair_ordinal,
+                            )
+                            .map_err(|_| refusal("Patch", original))?;
+                            let p = proof.provenance();
+                            if p.logical_source_ordinal != ordinal
+                                || p.composition_range != n.representation_range
+                            {
+                                return Err(refusal("Patch", original));
+                            }
+                            events.extend(proof.decoded_export_events());
+                            program_only_patches.push(proof);
+                        }
+                    }
                     patches += 1;
                 }
                 MixedEventItem::Patch(_) => {
@@ -359,6 +381,7 @@ pub fn build_bounded_sequence_manifest(
             return Err(refusal("translation", "incomplete accounting"));
         }
         tracks.push(BoundedTrackManifest {
+            program_only_patches,
             source_ordinal: binding.pair_ordinal,
             descriptor_ordinal: binding.descriptor_ordinal,
             routing: routing.clone(),

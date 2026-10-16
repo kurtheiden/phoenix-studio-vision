@@ -38,6 +38,7 @@ mod observed_layout120;
 pub mod opening;
 pub mod patch;
 pub mod pitch_bend;
+pub mod program_only166;
 mod prologue_inspection;
 mod readback120;
 pub mod recovery120;
