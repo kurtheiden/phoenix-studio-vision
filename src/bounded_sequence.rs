@@ -73,8 +73,12 @@ pub struct BoundedTrackManifest {
     events: Vec<DecodedExportEvent>,
     program_only_patches: Vec<crate::program_only166::ProgramOnlyPatch>,
     terminal_programs: Vec<crate::terminal_program166::TerminalProgram>,
+    bank_patches: Vec<crate::bank_patch166_handoff::OwnedBankPatch>,
 }
 impl BoundedTrackManifest {
+    pub fn bank_patches(&self) -> &[crate::bank_patch166_handoff::OwnedBankPatch] {
+        &self.bank_patches
+    }
     pub fn terminal_programs(&self) -> &[crate::terminal_program166::TerminalProgram] {
         &self.terminal_programs
     }
@@ -306,6 +310,7 @@ pub fn build_bounded_sequence_manifest(
         let mut patches = 0;
         let mut program_only_patches = Vec::new();
         let mut terminal_programs = Vec::new();
+        let mut bank_patches = Vec::new();
         for item in &walk.items {
             match item {
                 MixedEventItem::Event(e) => {
@@ -358,20 +363,32 @@ pub fn build_bounded_sequence_manifest(
                             ));
                         }
                         Err(original) => {
-                            let proof = crate::program_only166::qualify_track(
+                            if let Ok(proof) = crate::program_only166::qualify_track(
                                 bytes,
                                 sequence_ordinal,
                                 binding.pair_ordinal,
-                            )
-                            .map_err(|_| refusal("Patch", original))?;
-                            let p = proof.provenance();
-                            if p.logical_source_ordinal != ordinal
-                                || p.composition_range != n.representation_range
-                            {
-                                return Err(refusal("Patch", original));
+                            ) {
+                                let p = proof.provenance();
+                                if p.logical_source_ordinal != ordinal
+                                    || p.composition_range != n.representation_range
+                                {
+                                    return Err(refusal("Patch", original));
+                                }
+                                events.extend(proof.decoded_export_events());
+                                program_only_patches.push(proof);
+                            } else {
+                                let proof = crate::bank_patch166_handoff::qualify_current(
+                                    bytes,
+                                    sequence_ordinal,
+                                    binding.pair_ordinal,
+                                    item,
+                                    routing,
+                                    ordinal,
+                                )
+                                .map_err(|_| refusal("Patch", original))?;
+                                events.extend(proof.decoded_export_events());
+                                bank_patches.push(proof);
                             }
-                            events.extend(proof.decoded_export_events());
-                            program_only_patches.push(proof);
                         }
                     }
                     patches += 1;
@@ -410,6 +427,7 @@ pub fn build_bounded_sequence_manifest(
         tracks.push(BoundedTrackManifest {
             program_only_patches,
             terminal_programs,
+            bank_patches,
             source_ordinal: binding.pair_ordinal,
             descriptor_ordinal: binding.descriptor_ordinal,
             routing: routing.clone(),

@@ -404,13 +404,13 @@ fn authenticated_all598_native594_and_instrument_reassignment() {
         assert_eq!(
             e.stage,
             if association == 1 {
-                "Patch"
+                "translation"
             } else {
                 "conductor coverage"
             }
         );
         if association == 1 {
-            assert!(e.detail.contains("NonzeroPosition"));
+            assert!(e.detail.contains("unsupported parsed event"));
         }
         assert_eq!(format!("{:x}", Sha256::digest(read(name, hash))), hash);
     }

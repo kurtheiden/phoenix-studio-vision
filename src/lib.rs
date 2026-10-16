@@ -4,6 +4,7 @@ pub mod analysis;
 pub mod app_contract;
 pub mod app_service;
 pub mod authority120;
+pub mod bank_patch166_handoff;
 pub mod bounded_conductor;
 pub mod bounded_multi_patch;
 pub mod bounded_patch_translation;

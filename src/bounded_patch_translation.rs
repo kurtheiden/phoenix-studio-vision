@@ -12,8 +12,9 @@ use crate::mixed_event::{
 use crate::routing_evidence::RoutingEvidenceError;
 use std::ops::Range;
 
-/// Separately qualified Descriptor166 bank translation. This capability is not
-/// consumed by the production sequence builder or its legacy CC0 classifier.
+/// Separately qualified Descriptor166 bank translation. The bounded sequence
+/// builder consumes only exactly bound Patch-to-Note proofs; the legacy CC0
+/// classifier remains independent.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoundedBankPatch<'a> {
     source: MixedEventItem<'a>,
