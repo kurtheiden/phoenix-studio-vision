@@ -49,6 +49,7 @@ pub mod sequence_container;
 pub mod smf;
 pub mod sysex166;
 pub mod tempo;
+pub mod terminal_program166;
 pub mod track7;
 
 #[cfg(test)]

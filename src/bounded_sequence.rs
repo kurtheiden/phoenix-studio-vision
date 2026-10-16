@@ -72,8 +72,12 @@ pub struct BoundedTrackManifest {
     secondary_range: Range<usize>,
     events: Vec<DecodedExportEvent>,
     program_only_patches: Vec<crate::program_only166::ProgramOnlyPatch>,
+    terminal_programs: Vec<crate::terminal_program166::TerminalProgram>,
 }
 impl BoundedTrackManifest {
+    pub fn terminal_programs(&self) -> &[crate::terminal_program166::TerminalProgram] {
+        &self.terminal_programs
+    }
     pub fn program_only_patches(&self) -> &[crate::program_only166::ProgramOnlyPatch] {
         &self.program_only_patches
     }
@@ -301,6 +305,7 @@ pub fn build_bounded_sequence_manifest(
         let mut ordinal = 0;
         let mut patches = 0;
         let mut program_only_patches = Vec::new();
+        let mut terminal_programs = Vec::new();
         for item in &walk.items {
             match item {
                 MixedEventItem::Event(e) => {
@@ -371,8 +376,30 @@ pub fn build_bounded_sequence_manifest(
                     }
                     patches += 1;
                 }
-                MixedEventItem::Patch(_) => {
-                    return Err(refusal("Patch", "unsupported standalone Patch"))
+                MixedEventItem::Patch(patch) => {
+                    let evidence = classified
+                        .patches
+                        .get(patches)
+                        .filter(|p| {
+                            p.source_ordinal == ordinal
+                                && p.source_range == patch.patch.representation_range
+                        })
+                        .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
+                    let proof = crate::terminal_program166::qualify_track(
+                        bytes,
+                        sequence_ordinal,
+                        binding.pair_ordinal,
+                    )
+                    .map_err(|_| refusal("Patch", "unsupported standalone Patch"))?;
+                    let p = proof.provenance();
+                    if p.logical_source_ordinal != evidence.source_ordinal
+                        || p.representation_range != patch.patch.representation_range
+                    {
+                        return Err(refusal("Patch", "unsupported standalone Patch"));
+                    }
+                    events.push(proof.decoded_export_event());
+                    terminal_programs.push(proof);
+                    patches += 1;
                 }
             }
             ordinal += item.logical_event_count() as u64;
@@ -382,6 +409,7 @@ pub fn build_bounded_sequence_manifest(
         }
         tracks.push(BoundedTrackManifest {
             program_only_patches,
+            terminal_programs,
             source_ordinal: binding.pair_ordinal,
             descriptor_ordinal: binding.descriptor_ordinal,
             routing: routing.clone(),
