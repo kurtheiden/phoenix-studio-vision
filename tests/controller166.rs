@@ -273,18 +273,12 @@ fn generic_opaque_context_and_proof_binding_guards_remain() {
     .is_err());
 }
 #[test]
-fn ff60_controller_and_context_note_are_not_translated() {
+fn opaque_and_ff60_controllers_are_not_translated() {
     for (events, n) in [
         (vec![0, 0xb0, 7, 64], 1),
         (
             vec![
                 4, 255, 96, 7, 35, 96, 0, 114, 108, 131, 76, 1, 255, 65, 5, 0, 1, 0, 1, 58,
-            ],
-            2,
-        ),
-        (
-            vec![
-                4, 255, 96, 7, 35, 96, 0, 114, 108, 131, 76, 1, 144, 60, 100, 64, 12,
             ],
             2,
         ),
@@ -404,13 +398,13 @@ fn authenticated_all598_native594_and_instrument_reassignment() {
         assert_eq!(
             e.stage,
             if association == 1 {
-                "translation"
+                "Patch"
             } else {
                 "conductor coverage"
             }
         );
         if association == 1 {
-            assert!(e.detail.contains("unsupported parsed event"));
+            assert!(e.detail.contains("NonzeroPosition"));
         }
         assert_eq!(format!("{:x}", Sha256::digest(read(name, hash))), hash);
     }

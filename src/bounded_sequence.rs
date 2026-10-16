@@ -74,8 +74,12 @@ pub struct BoundedTrackManifest {
     program_only_patches: Vec<crate::program_only166::ProgramOnlyPatch>,
     terminal_programs: Vec<crate::terminal_program166::TerminalProgram>,
     bank_patches: Vec<crate::bank_patch166_handoff::OwnedBankPatch>,
+    context_notes: Vec<crate::context_note166::OwnedContextNote>,
 }
 impl BoundedTrackManifest {
+    pub fn context_notes(&self) -> &[crate::context_note166::OwnedContextNote] {
+        &self.context_notes
+    }
     pub fn bank_patches(&self) -> &[crate::bank_patch166_handoff::OwnedBankPatch] {
         &self.bank_patches
     }
@@ -305,6 +309,15 @@ pub fn build_bounded_sequence_manifest(
         } else {
             vec![]
         };
+        let context_notes = if walk.items.iter().any(|item| {
+            matches!(item,
+            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::ContextMediatedNote(_)))
+        }) {
+            crate::context_note166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
+                .map_err(|e| refusal("translation", e))?
+        } else {
+            vec![]
+        };
         let mut events = Vec::new();
         let mut ordinal = 0;
         let mut patches = 0;
@@ -334,6 +347,18 @@ pub fn build_bounded_sequence_manifest(
                                     && p.representation_range == c.record_range
                             })
                             .ok_or_else(|| refusal("translation", "missing Controller proof"))?
+                            .decoded_export_event(),
+                        MixedEventKind::ContextMediatedNote(n) => context_notes
+                            .iter()
+                            .find(|proof| {
+                                let p = proof.provenance();
+                                p.logical_source_ordinal == ordinal
+                                    && p.composition_range == n.representation_range
+                                    && p.composition_bytes == bytes[n.representation_range.clone()]
+                                    && p.absolute_tick == e.position
+                                    && proof.routing() == routing
+                            })
+                            .ok_or_else(|| refusal("translation", "missing context Note proof"))?
                             .decoded_export_event(),
                         MixedEventKind::Note(n) => {
                             DecodedExportEvent::from_note(e.position, ordinal, n)
@@ -428,6 +453,7 @@ pub fn build_bounded_sequence_manifest(
             program_only_patches,
             terminal_programs,
             bank_patches,
+            context_notes,
             source_ordinal: binding.pair_ordinal,
             descriptor_ordinal: binding.descriptor_ordinal,
             routing: routing.clone(),

@@ -991,11 +991,7 @@ fn authentic_pressure_bend_populations_keep_independent_first_blockers() {
             build_bounded_sequence_manifest(&bytes, sequence, 480)
                 .unwrap_err()
                 .stage,
-            if sequence == 1 {
-                "Patch"
-            } else {
-                "translation"
-            }
+            "Patch"
         );
     }
 }

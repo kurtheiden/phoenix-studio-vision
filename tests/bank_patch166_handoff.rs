@@ -373,8 +373,8 @@ fn authenticated_five_compositions_match_native_bank_program_note_and_ending() {
         assert!(qualify(&b, 0, pair).is_err());
     }
     let err = manifest(&b, 0, 480).unwrap_err();
-    assert_eq!(err.stage, "translation");
-    assert!(err.detail.contains("unsupported parsed event"));
+    assert_eq!(err.stage, "Patch");
+    assert!(err.detail.contains("NonzeroPosition"));
     let mut app = phoenix::app_service::AppService::new();
     let r = app
         .inspect_project(phoenix::app_contract::InspectProjectRequest {
