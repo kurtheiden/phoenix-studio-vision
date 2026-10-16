@@ -300,7 +300,7 @@ fn authenticated_eight_patch_neighborhoods_match_native_when_available() {
     assert_eq!(banks, 13);
     assert!(matches!(
         qualify(&b, 0, 8),
-        Err(BankPatchRefusal::Routing(_))
+        Err(BankPatchRefusal::UnsupportedPlacement)
     ));
     assert_eq!(
         phoenix::bounded_sequence::build_bounded_sequence_manifest(&b, 0, 480)

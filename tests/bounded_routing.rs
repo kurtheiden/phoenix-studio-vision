@@ -326,7 +326,7 @@ fn authenticated_corpus_predicate_results() {
         "Sequence R",
     ];
     let expected_counts = [
-        (12, 0, 1),
+        (13, 0, 0),
         (12, 2, 0),
         (6, 0, 0),
         (5, 1, 0),
@@ -382,15 +382,14 @@ fn authenticated_corpus_predicate_results() {
             assert_eq!(refused, 0, "{name}");
         }
         if name == "xForm" {
-            assert!(rows.iter().any(|r| r.structural_ordinal == s
-                && r.descriptor_ordinal == 10
-                && matches!(
-                    r.result,
-                    Err(RoutingRefusal::ConflictingContext {
-                        kind: ContextKind::Ff60,
-                        ..
-                    })
-                )));
+            let route = rows
+                .iter()
+                .find(|r| r.structural_ordinal == s && r.descriptor_ordinal == 10)
+                .unwrap()
+                .result
+                .as_ref()
+                .unwrap();
+            assert_eq!(route.midi_channel, 15);
         }
         if name == "Sequence I" {
             assert!(rows
@@ -404,7 +403,7 @@ fn authenticated_corpus_predicate_results() {
         }
     }
     assert_eq!(matched_expected, 8);
-    assert_eq!(forms, [86, 17]);
+    assert_eq!(forms, [87, 17]);
     println!("Authenticated F={} Z={}", forms[0], forms[1]);
 }
 
@@ -463,7 +462,7 @@ fn bounded_success_leaves_existing_readiness_and_profile_evidence_unchanged() {
         .routing_channel_resolutions(&before.session_id)
         .unwrap();
     let rows = decode_bounded_routing(&std::fs::read(BASELINE).unwrap()).unwrap();
-    assert_eq!(rows.iter().filter(|r| r.result.is_ok()).count(), 103);
+    assert_eq!(rows.iter().filter(|r| r.result.is_ok()).count(), 104);
     assert_eq!(
         before
             .sequences
@@ -891,4 +890,410 @@ fn six_to_eight_keeps_routing_ownership_and_coverage_refusals() {
         result(&synthetic(3, &incomplete, true)),
         Err(RoutingRefusal::IncompleteEventWalk(_))
     ));
+}
+
+fn assignment_note_context(length: usize) -> Vec<u8> {
+    let mut e = vec![4, 255, 96, length as u8, 35, 96, 0];
+    e.resize(4 + length, 17);
+    e.push(5);
+    e.extend(&NOTE[1..]);
+    e
+}
+fn assignment_controller_context(instrument: u8) -> Vec<u8> {
+    vec![
+        4, 255, 96, 7, 35, 96, 0, 17, 18, 19, 20, 5, 255, 65, 5, 0, instrument, 0, 1, 58,
+    ]
+}
+
+#[test]
+fn assignment_contexts_are_descriptor166_only_and_preserve_provenance() {
+    use phoenix::mixed_event::{walk_bounded_mixed_events, MixedEventBounds};
+    for e in [
+        assignment_note_context(6),
+        assignment_note_context(7),
+        assignment_controller_context(1),
+    ] {
+        let b = synthetic(3, &e, true);
+        let route = result(&b).unwrap();
+        assert_eq!(route.instrument_candidate, 1);
+        assert_eq!(route.midi_channel, 16);
+        let context = &route.validated_contexts[0];
+        assert_eq!(context.kind, ContextKind::Ff60);
+        assert_eq!(context.bytes, &b[context.range.clone()]);
+        assert_eq!(&context.bytes[..3], &[35, 96, 0]);
+        assert_eq!(route.event_range, route.consumed_range);
+        let w = walk_bounded_mixed_events(
+            &b,
+            MixedEventBounds {
+                event_range: route.event_range.clone(),
+            },
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(w.logical_event_count(), 1);
+        // The public shared helper still protects owned120 from this authority.
+        assert!(phoenix::bounded_routing::validate_bounded_routing_contexts(&w, 1).is_err());
+    }
+    let e = assignment_controller_context(2);
+    let mut b = synthetic(3, &e, true);
+    let l = label(&b);
+    b[l - 31] = 2;
+    // A different selected Instrument supplies the channel, never the prefix.
+    let p = phoenix::sequence_container::parse_root_record_stream(&b).unwrap();
+    let at = p
+        .records
+        .iter()
+        .filter(|r| r.record_type.value == 16)
+        .nth(2)
+        .unwrap()
+        .payload
+        .range
+        .start
+        + 27;
+    b[at] = 2;
+    let route = result(&b).unwrap();
+    assert_eq!((route.instrument_candidate, route.midi_channel), (2, 3));
+    assert_eq!(route.validated_contexts[1].bytes, [0, 2, 0]);
+}
+
+#[test]
+fn assignment_controller_mismatch_and_unsupported_neighbors_refuse() {
+    assert!(matches!(
+        result(&synthetic(3, &assignment_controller_context(2), true)),
+        Err(RoutingRefusal::ConflictingContext {
+            kind: ContextKind::Controller,
+            ..
+        })
+    ));
+    for n in [5, 8, 9] {
+        assert!(result(&synthetic(3, &assignment_note_context(n), true)).is_err());
+    }
+    for index in [4, 5, 6] {
+        let mut e = assignment_note_context(7);
+        e[index] ^= 1;
+        assert!(result(&synthetic(3, &e, true)).is_err());
+    }
+    let mut implicit = assignment_note_context(7);
+    implicit.remove(12);
+    assert!(result(&synthetic(3, &implicit, true)).is_err());
+    let mut midi = assignment_controller_context(1);
+    midi.truncate(12);
+    midi.extend([0xb2, 1, 58]);
+    assert!(result(&synthetic(3, &midi, true)).is_err());
+    let mut six = assignment_controller_context(1);
+    six[3] = 6;
+    six.remove(10);
+    assert!(result(&synthetic(3, &six, true)).is_err());
+    let mut trailing = assignment_note_context(7);
+    trailing.push(0x7f);
+    assert!(matches!(
+        result(&synthetic(3, &trailing, true)),
+        Err(RoutingRefusal::IncompleteEventWalk(_))
+    ));
+}
+
+#[test]
+fn assignment_context_does_not_authorize_double_or_patch_contexts() {
+    let mut double = assignment_note_context(6);
+    double.truncate(10);
+    double.extend([0, 255, 96, 7, 87, 127, 0, 1, 1, 2, 3]);
+    double.extend(NOTE);
+    assert!(result(&synthetic(3, &double, true)).is_err());
+    let mut patch = assignment_note_context(7);
+    patch.truncate(11);
+    patch.extend([0, 255, 124, 7, 0, 0, 0, 0, 0, 0, 8]);
+    patch.extend(NOTE);
+    assert!(result(&synthetic(3, &patch, true)).is_err());
+}
+
+#[test]
+fn assignment_context_keeps_ownership_and_table_guards() {
+    let b = synthetic(3, &assignment_note_context(7), true);
+    let mut bad = b.clone();
+    let l = label(&b);
+    bad[l - 31] = 0;
+    assert!(matches!(
+        result(&bad),
+        Err(RoutingRefusal::UnsupportedNumericScope)
+    ));
+    let project = parse_project_166(&b).unwrap();
+    let terminal = project.sequences[0].terminal_record.record_range.start;
+    let mut extra = Vec::new();
+    let mut primary = vec![0; 14];
+    primary.extend(NOTE);
+    primary.extend([255, 0, 0, 0, 255, 47, 0]);
+    record(&mut extra, 2, &primary);
+    record(&mut extra, 41, &[]);
+    let mut bad = b.clone();
+    bad.splice(terminal..terminal, extra);
+    assert_eq!(result(&bad), Err(RoutingRefusal::AmbiguousOwnership));
+    let root = phoenix::sequence_container::parse_root_record_stream(&b).unwrap();
+    let at = root
+        .records
+        .iter()
+        .filter(|r| r.record_type.value == 16)
+        .nth(1)
+        .unwrap()
+        .payload
+        .range
+        .start;
+    for (offset, value) in [(25, 2), (27, 16), (26, 99)] {
+        let mut bad = b.clone();
+        bad[at + offset] = value;
+        assert!(result(&bad).is_err());
+    }
+}
+
+#[path = "support/reference_smf.rs"]
+mod assignment_reference_smf;
+
+#[test]
+fn experiment073_control_edit_routes_and_complete_native_streams() {
+    use phoenix::mixed_event::{
+        walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind,
+    };
+    use sha2::{Digest, Sha256};
+    let base = "/Volumes/Extreme Pro 2TB/Applications/SheepShaver/Shared/";
+    let mut sources = Vec::new();
+    let mut native = Vec::new();
+    for (source, hash, midi, midi_hash, i, channel) in [
+        (
+            "CCA073 CONTROL",
+            "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132",
+            "073 CTRL xForm.mid",
+            "872272ce43c389474fdb408416ad2406fa9a63de5e1d8bb94e0f6bbced7a1241",
+            1,
+            15,
+        ),
+        (
+            "CCA073 EDIT",
+            "3f12c7bb9371d76dd4d4da081ccf347101cd5d4f187fd039a9562665d87d0c87",
+            "073 EDIT xForm.mid",
+            "50eeb37411243e3c8083b8c86d499ee1f5b755444f0024d7b72fbeb182567145",
+            6,
+            3,
+        ),
+    ] {
+        let b = std::fs::read(format!("{base}{source}"))
+            .expect("returned Experiment073 source required");
+        let m = std::fs::read(format!("{base}{midi}"))
+            .expect("returned native Experiment073 MIDI required");
+        assert_eq!(format!("{:x}", Sha256::digest(&b)), hash);
+        assert_eq!(format!("{:x}", Sha256::digest(&m)), midi_hash);
+        let routes = decode_bounded_routing(&b).unwrap();
+        let route = routes
+            .iter()
+            .find(|r| r.structural_ordinal == 0 && r.descriptor_ordinal == 10)
+            .unwrap()
+            .result
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            (route.instrument_candidate, route.midi_channel),
+            (i, channel)
+        );
+        assert!(routes
+            .iter()
+            .filter(|r| r.structural_ordinal == 0)
+            .all(|r| r.result.is_ok()));
+        assert_eq!(route.validated_contexts.len(), 448);
+        let contexts: Vec<_> = route
+            .validated_contexts
+            .iter()
+            .filter(|c| c.kind == ContextKind::Ff60)
+            .collect();
+        assert_eq!(
+            contexts.iter().map(|c| c.bytes.len()).collect::<Vec<_>>(),
+            [7, 7, 6, 7]
+        );
+        assert_eq!(
+            contexts.iter().map(|c| c.bytes.clone()).collect::<Vec<_>>(),
+            vec![
+                vec![35, 96, 0, 114, 120, 160, 90],
+                vec![35, 96, 0, 120, 120, 138, 109],
+                vec![35, 96, 0, 141, 141, 45],
+                vec![35, 96, 0, 114, 108, 131, 76]
+            ]
+        );
+        for c in &route.validated_contexts {
+            assert_eq!(c.bytes, &b[c.range.clone()]);
+        }
+        let w = walk_bounded_mixed_events(
+            &b,
+            MixedEventBounds {
+                event_range: route.event_range.clone(),
+            },
+            Default::default(),
+        )
+        .unwrap();
+        assert_eq!(w.logical_event_count(), 1409);
+        let project = parse_project_166(&b).unwrap();
+        let pair = &project.sequences[0].track_pairs[8];
+        assert_eq!(
+            u32::from_be_bytes(pair.primary.payload.bytes[2..6].try_into().unwrap()),
+            1413
+        );
+        let mut expected = Vec::new();
+        let mut counts = [0; 3];
+        for (ordinal, item) in w.items.iter().enumerate() {
+            let MixedEventItem::Event(e) = item else {
+                panic!()
+            };
+            let pos = e.position;
+            let order = ordinal * 2;
+            let mut note = |p, v, r, d| {
+                expected.push((pos, order, 0x90 | (channel - 1), vec![p, v]));
+                expected.push((pos + d, order + 1, 0x80 | (channel - 1), vec![p, r]));
+                counts[0] += 1;
+            };
+            match &e.event {
+                MixedEventKind::Note(n) => note(
+                    n.pitch.value,
+                    n.attack_velocity.value,
+                    n.release_velocity.value,
+                    n.duration.value,
+                ),
+                MixedEventKind::ContextMediatedNote(n) => note(
+                    n.note.pitch.value,
+                    n.note.attack_velocity.value,
+                    n.note.release_velocity.value,
+                    n.note.duration.value,
+                ),
+                MixedEventKind::Controller(c) => {
+                    expected.push((
+                        pos,
+                        order,
+                        0xb0 | (channel - 1),
+                        vec![c.controller_number.value, c.controller_value.value],
+                    ));
+                    counts[1] += 1;
+                }
+                MixedEventKind::ContextMediatedController(c) => {
+                    expected.push((
+                        pos,
+                        order,
+                        0xb0 | (channel - 1),
+                        vec![
+                            c.controller.controller_number.value,
+                            c.controller.controller_value.value,
+                        ],
+                    ));
+                    counts[1] += 1;
+                }
+                MixedEventKind::PitchBend { entry, .. } => {
+                    expected.push((
+                        pos,
+                        order,
+                        0xe0 | (channel - 1),
+                        vec![entry.pitch_lsb.value, entry.pitch_msb.value],
+                    ));
+                    counts[2] += 1;
+                }
+                _ => panic!(),
+            }
+        }
+        assert_eq!(counts, [159, 444, 806]);
+        expected.sort_by_key(|e| (e.0, e.1));
+        let expected: Vec<_> = expected.into_iter().map(|(t, _, s, d)| (t, s, d)).collect();
+        let tracks = assignment_reference_smf::midi_tracks(&m);
+        let actual: Vec<_> = tracks[9]
+            .iter()
+            .filter(|(_, s, _)| *s >= 128 && *s < 240)
+            .map(|(t, s, d)| {
+                if *s >> 4 == 9 && d[1] == 0 {
+                    (*t, 0x80 | (*s & 15), vec![d[0], 64])
+                } else {
+                    (*t, *s, d.clone())
+                }
+            })
+            .collect();
+        assert_eq!(actual.len(), 1568);
+        assert_eq!(expected, actual);
+        assert_eq!(
+            phoenix::bounded_sequence::build_bounded_sequence_manifest(&b, 0, 480)
+                .unwrap_err()
+                .stage,
+            "conductor prelude"
+        );
+        // Mismatch must fail even after the newly admitted context is retained.
+        let context = route
+            .validated_contexts
+            .iter()
+            .find(|c| c.kind == ContextKind::Controller)
+            .unwrap();
+        let mut bad = b.clone();
+        bad[context.range.start + 1] = if i == 1 { 6 } else { 1 };
+        assert!(matches!(
+            decode_bounded_routing(&bad)
+                .unwrap()
+                .iter()
+                .find(|r| r.structural_ordinal == 0 && r.descriptor_ordinal == 10)
+                .unwrap()
+                .result,
+            Err(RoutingRefusal::ConflictingContext {
+                kind: ContextKind::Controller,
+                ..
+            })
+        ));
+        assert_eq!(
+            format!(
+                "{:x}",
+                Sha256::digest(std::fs::read(format!("{base}{source}")).unwrap())
+            ),
+            hash
+        );
+        sources.push(b);
+        native.push(tracks);
+    }
+    for (index, (control, edit)) in native[0].iter().zip(&native[1]).enumerate() {
+        if index != 9 {
+            assert_eq!(control, edit);
+        }
+    }
+    // Compare complete source objects/provenance after only the evidenced
+    // Controller-association rewrite is normalized in memory.
+    let p = parse_project_166(&sources[0]).unwrap();
+    let bounds = p.sequences[0]
+        .validated_track_event_bounds(8)
+        .unwrap()
+        .event_range;
+    let c = walk_bounded_mixed_events(
+        &sources[0],
+        MixedEventBounds {
+            event_range: bounds.clone(),
+        },
+        Default::default(),
+    )
+    .unwrap();
+    let e = walk_bounded_mixed_events(
+        &sources[1],
+        MixedEventBounds {
+            event_range: bounds.clone(),
+        },
+        Default::default(),
+    )
+    .unwrap();
+    let mut normalized = sources[1].clone();
+    for item in &e.items {
+        if let MixedEventItem::Event(e) = item {
+            let context = match &e.event {
+                MixedEventKind::Controller(c) => Some(&c.context),
+                MixedEventKind::ContextMediatedController(c) => Some(&c.controller.context),
+                _ => None,
+            };
+            if let Some(context) = context {
+                assert_eq!(context.bytes, [0, 6, 0]);
+                normalized[context.range.start + 1] = 1;
+            }
+        }
+    }
+    let normalized = walk_bounded_mixed_events(
+        &normalized,
+        MixedEventBounds {
+            event_range: bounds,
+        },
+        Default::default(),
+    )
+    .unwrap();
+    assert_eq!(c, normalized);
 }

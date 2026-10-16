@@ -229,7 +229,7 @@ fn resolve(
             "incomplete consumption".into(),
         ));
     }
-    let contexts = validate_bounded_routing_contexts(&walk, i)?;
+    let contexts = validate_routing_contexts(&walk, i, true)?;
     let range = |r: crate::compatibility::ByteRange| r.start() as usize..r.end_exclusive() as usize;
     Ok(BoundedRoutingResolution {
         pair_ordinal: binding.pair_ordinal,
@@ -265,6 +265,16 @@ fn resolve(
 pub fn validate_bounded_routing_contexts(
     walk: &MixedEventWalk<'_>,
     i: u8,
+) -> Result<Vec<ValidatedContext>, RoutingRefusal> {
+    // Shared with owned120: Descriptor166 experiment authority must not cross
+    // this boundary. Only the Descriptor166 resolver enables the new cases.
+    validate_routing_contexts(walk, i, false)
+}
+
+fn validate_routing_contexts(
+    walk: &MixedEventWalk<'_>,
+    i: u8,
+    descriptor166: bool,
 ) -> Result<Vec<ValidatedContext>, RoutingRefusal> {
     if i == 0 {
         return Err(RoutingRefusal::UnsupportedNumericScope);
@@ -311,14 +321,23 @@ pub fn validate_bounded_routing_contexts(
                     guard(&mut contexts, ContextKind::Controller, &c.context, i)?
                 }
                 MixedEventKind::ContextMediatedController(c) => {
-                    // Retain the existing FF60 guard: representation decoding
-                    // does not authorize the newly recognized context prefix.
-                    guard(
-                        &mut contexts,
-                        ContextKind::Ff60,
-                        &c.context.context.payload,
-                        i,
-                    )?;
+                    let context = &c.context.context;
+                    // CCA-073/074: unchanged context follows the selected
+                    // Instrument, with the separately retained FF41 association
+                    // required to agree below. Not an arbitrary FF60 rule.
+                    if descriptor166
+                        && context.payload_length.value == 7
+                        && context.payload.bytes.len() == 7
+                        && context.payload.bytes.starts_with(&[0x23, 0x60, 0])
+                    {
+                        contexts.push(ValidatedContext {
+                            kind: ContextKind::Ff60,
+                            range: context.payload.range.clone(),
+                            bytes: context.payload.bytes.to_vec(),
+                        });
+                    } else {
+                        guard(&mut contexts, ContextKind::Ff60, &context.payload, i)?;
+                    }
                     guard(
                         &mut contexts,
                         ContextKind::Controller,
@@ -338,7 +357,12 @@ pub fn validate_bounded_routing_contexts(
                         && payload.starts_with(&[0x57, 0, 0])
                         && payload[3] == payload[4]
                         && c.note.status.map(|s| s.value) == Some(0x90);
-                    if zero_context {
+                    let assignment_context = descriptor166
+                        && matches!(c.context.payload_length.value, 6 | 7)
+                        && payload.len() == usize::from(c.context.payload_length.value)
+                        && payload.starts_with(&[0x23, 0x60, 0])
+                        && c.note.status.map(|s| s.value) == Some(0x90);
+                    if zero_context || assignment_context {
                         contexts.push(ValidatedContext {
                             kind: ContextKind::Ff60,
                             range: c.context.payload.range.clone(),

@@ -158,7 +158,7 @@ fn ff60_ff41_refuses_unsupported_neighbors_truncation_and_overflow() {
 }
 
 #[test]
-fn ff60_ff41_does_not_expand_descriptor166_routing() {
+fn ff60_ff41_keeps_shared_owned120_context_guard() {
     use phoenix::bounded_routing::{
         validate_bounded_routing_contexts, ContextKind, RoutingRefusal,
     };
@@ -248,15 +248,15 @@ fn authentic_xform_track9_walk_and_native_events_when_available() {
     let raw = u32::from_be_bytes(b[0xb15c..0xb160].try_into().unwrap()) as usize;
     assert_eq!(w.logical_event_count() + contexts, raw);
     assert_eq!(raw, 1413);
-    assert!(bounded_routing::decode_bounded_routing(&b)
-        .unwrap()
+    let routing = bounded_routing::decode_bounded_routing(&b).unwrap();
+    let route = routing
         .iter()
-        .any(|r| r.structural_ordinal == 0
-            && r.descriptor_ordinal == 10
-            && matches!(
-                r.result,
-                Err(bounded_routing::RoutingRefusal::ConflictingContext { .. })
-            )));
+        .find(|r| r.structural_ordinal == 0 && r.descriptor_ordinal == 10)
+        .unwrap()
+        .result
+        .as_ref()
+        .unwrap();
+    assert_eq!(route.midi_channel, 15);
     assert_eq!(
         bounded_sequence::build_bounded_sequence_manifest(&b, 0, 480)
             .unwrap_err()

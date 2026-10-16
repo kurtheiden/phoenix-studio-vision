@@ -721,16 +721,16 @@ fn one_unacceptable_track_refuses_the_whole_native_sequence() {
     );
 }
 #[test]
-fn representation_only_ff60_ff41_cannot_grant_export_authority() {
+fn routed_ff60_ff41_still_cannot_grant_export_authority() {
     let b = synthetic(&[
         4, 255, 96, 7, 35, 96, 0, 114, 108, 131, 76, 1, 255, 65, 5, 0, 1, 0, 1, 58,
     ]);
-    // Otherwise-admitted conductor/terminal/mute geometry cannot waive routing.
+    // Routing now passes, but conductor/terminal/mute geometry cannot waive translation.
     assert_eq!(
         build_bounded_sequence_manifest(&b, 0, 480)
             .unwrap_err()
             .stage,
-        "routing"
+        "translation"
     );
     assert_application_refusal(&b);
 }
