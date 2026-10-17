@@ -389,8 +389,8 @@ fn authenticated_composition_and_native_order_with_remaining_refusals() {
         assert!(qualify(&b, 0, pair).is_err(), "pair {pair} broadened");
     }
     let err = manifest(&b, 0, 480).unwrap_err();
-    assert_eq!(err.stage, "Patch");
-    assert!(err.detail.contains("unsupported standalone Patch"));
+    assert_eq!(err.stage, "translation");
+    assert!(err.detail.contains("unsupported parsed event"));
     let mut app = phoenix::app_service::AppService::new();
     let response = app
         .inspect_project(phoenix::app_contract::InspectProjectRequest {

@@ -314,7 +314,7 @@ fn experiment073_preludes_and_terminals_pass_but_authority_stays_blocked() {
         assert_eq!(
             manifest(&b, 0, 480).unwrap_err().stage,
             if header == 1 {
-                "Patch"
+                "translation"
             } else {
                 "conductor coverage"
             }

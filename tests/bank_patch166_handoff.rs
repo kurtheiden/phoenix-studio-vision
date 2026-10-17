@@ -252,7 +252,12 @@ fn malformed_unqualified_standalone_and_accounting_forms_stay_blocked() {
         assert!(qualify(&bad, 0, 0).is_err());
         let standalone = fixture(&patch(family, 37, true), 3);
         assert!(qualify(&standalone, 0, 0).is_err());
-        assert!(manifest(&standalone, 0, 480).is_err());
+        assert_eq!(
+            manifest(&standalone, 0, 480).unwrap().tracks()[0]
+                .standalone_banks()
+                .len(),
+            1
+        );
     }
     let mut e = NOTE.to_vec();
     e.extend(patch(2, 37, false));
@@ -373,8 +378,8 @@ fn authenticated_five_compositions_match_native_bank_program_note_and_ending() {
         assert!(qualify(&b, 0, pair).is_err());
     }
     let err = manifest(&b, 0, 480).unwrap_err();
-    assert_eq!(err.stage, "Patch");
-    assert!(err.detail.contains("unsupported standalone Patch"));
+    assert_eq!(err.stage, "translation");
+    assert!(err.detail.contains("unsupported parsed event"));
     let mut app = phoenix::app_service::AppService::new();
     let r = app
         .inspect_project(phoenix::app_contract::InspectProjectRequest {

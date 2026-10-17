@@ -76,8 +76,12 @@ pub struct BoundedTrackManifest {
     bank_patches: Vec<crate::bank_patch166_handoff::OwnedBankPatch>,
     context_notes: Vec<crate::context_note166::OwnedContextNote>,
     numeric_programs: Vec<crate::numeric_program166::NumericProgramPatch>,
+    standalone_banks: Vec<crate::standalone_bank166::OwnedStandaloneBankPatch>,
 }
 impl BoundedTrackManifest {
+    pub fn standalone_banks(&self) -> &[crate::standalone_bank166::OwnedStandaloneBankPatch] {
+        &self.standalone_banks
+    }
     pub fn numeric_programs(&self) -> &[crate::numeric_program166::NumericProgramPatch] {
         &self.numeric_programs
     }
@@ -329,6 +333,7 @@ pub fn build_bounded_sequence_manifest(
         let mut terminal_programs = Vec::new();
         let mut bank_patches = Vec::new();
         let mut numeric_programs = Vec::new();
+        let mut standalone_banks = Vec::new();
         for item in &walk.items {
             match item {
                 MixedEventItem::Event(e) => {
@@ -442,20 +447,32 @@ pub fn build_bounded_sequence_manifest(
                                 && p.source_range == patch.patch.representation_range
                         })
                         .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
-                    let proof = crate::terminal_program166::qualify_track(
+                    if let Some(proof) = crate::terminal_program166::qualify_track(
                         bytes,
                         sequence_ordinal,
                         binding.pair_ordinal,
                     )
-                    .map_err(|_| refusal("Patch", "unsupported standalone Patch"))?;
-                    let p = proof.provenance();
-                    if p.logical_source_ordinal != evidence.source_ordinal
-                        || p.representation_range != patch.patch.representation_range
-                    {
-                        return Err(refusal("Patch", "unsupported standalone Patch"));
+                    .ok()
+                    .filter(|proof| {
+                        let p = proof.provenance();
+                        p.logical_source_ordinal == evidence.source_ordinal
+                            && p.representation_range == patch.patch.representation_range
+                    }) {
+                        events.push(proof.decoded_export_event());
+                        terminal_programs.push(proof);
+                    } else {
+                        let proof = crate::standalone_bank166::qualify_current(
+                            bytes,
+                            sequence_ordinal,
+                            binding.pair_ordinal,
+                            item,
+                            routing,
+                            ordinal,
+                        )
+                        .map_err(|_| refusal("Patch", "unsupported standalone Patch"))?;
+                        events.push(proof.decoded_export_event());
+                        standalone_banks.push(proof);
                     }
-                    events.push(proof.decoded_export_event());
-                    terminal_programs.push(proof);
                     patches += 1;
                 }
             }
@@ -467,6 +484,7 @@ pub fn build_bounded_sequence_manifest(
         tracks.push(BoundedTrackManifest {
             program_only_patches,
             numeric_programs,
+            standalone_banks,
             terminal_programs,
             bank_patches,
             context_notes,

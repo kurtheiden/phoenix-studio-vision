@@ -1214,7 +1214,7 @@ fn experiment073_control_edit_routes_and_complete_native_streams() {
                 .unwrap_err()
                 .stage,
             if i == 1 {
-                "Patch"
+                "translation"
             } else {
                 "conductor coverage"
             }

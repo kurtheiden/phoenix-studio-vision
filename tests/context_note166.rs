@@ -470,9 +470,16 @@ fn authenticated_all29_and_native26_with_control_edit_routes() {
         assert_eq!((total, represented), (29, 26));
         assert_eq!(forms.into_values().collect::<Vec<_>>(), [1, 2, 2, 20, 4]);
         let e = manifest(&b, 0, 480).unwrap_err();
-        assert_eq!(e.stage, if edit { "conductor coverage" } else { "Patch" });
+        assert_eq!(
+            e.stage,
+            if edit {
+                "conductor coverage"
+            } else {
+                "translation"
+            }
+        );
         if !edit {
-            assert!(e.detail.contains("unsupported standalone Patch"));
+            assert!(e.detail.contains("unsupported parsed event"));
         }
         let mut app = phoenix::app_service::AppService::new();
         let r = app
