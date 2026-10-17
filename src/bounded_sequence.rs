@@ -75,10 +75,14 @@ pub struct BoundedTrackManifest {
     terminal_programs: Vec<crate::terminal_program166::TerminalProgram>,
     bank_patches: Vec<crate::bank_patch166_handoff::OwnedBankPatch>,
     context_notes: Vec<crate::context_note166::OwnedContextNote>,
+    context_controllers: Vec<crate::context_controller166::OwnedContextController>,
     numeric_programs: Vec<crate::numeric_program166::NumericProgramPatch>,
     standalone_banks: Vec<crate::standalone_bank166::OwnedStandaloneBankPatch>,
 }
 impl BoundedTrackManifest {
+    pub fn context_controllers(&self) -> &[crate::context_controller166::OwnedContextController] {
+        &self.context_controllers
+    }
     pub fn standalone_banks(&self) -> &[crate::standalone_bank166::OwnedStandaloneBankPatch] {
         &self.standalone_banks
     }
@@ -334,6 +338,7 @@ pub fn build_bounded_sequence_manifest(
         let mut bank_patches = Vec::new();
         let mut numeric_programs = Vec::new();
         let mut standalone_banks = Vec::new();
+        let mut context_controllers = Vec::new();
         for item in &walk.items {
             match item {
                 MixedEventItem::Event(e) => {
@@ -358,6 +363,20 @@ pub fn build_bounded_sequence_manifest(
                             })
                             .ok_or_else(|| refusal("translation", "missing Controller proof"))?
                             .decoded_export_event(),
+                        MixedEventKind::ContextMediatedController(_) => {
+                            let proof = crate::context_controller166::qualify_current(
+                                bytes,
+                                sequence_ordinal,
+                                binding.pair_ordinal,
+                                item,
+                                routing,
+                                ordinal,
+                            )
+                            .map_err(|e| refusal("context Controller", e))?;
+                            let event = proof.decoded_export_event();
+                            context_controllers.push(proof);
+                            event
+                        }
                         MixedEventKind::ContextMediatedNote(n) => context_notes
                             .iter()
                             .find(|proof| {
@@ -488,6 +507,7 @@ pub fn build_bounded_sequence_manifest(
             terminal_programs,
             bank_patches,
             context_notes,
+            context_controllers,
             source_ordinal: binding.pair_ordinal,
             descriptor_ordinal: binding.descriptor_ordinal,
             routing: routing.clone(),

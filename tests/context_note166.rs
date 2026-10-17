@@ -320,7 +320,12 @@ fn ending_overflow_and_excluded_compositions_remain_refused() {
     ];
     let b = fixture(&controller, 2);
     assert!(qualify(&b, 0, 0).unwrap().is_empty());
-    assert_eq!(manifest(&b, 0, 480).unwrap_err().stage, "translation");
+    assert_eq!(
+        manifest(&b, 0, 480).unwrap().tracks()[0]
+            .context_controllers()
+            .len(),
+        1
+    );
     let mut alternate = entry([87, 127, 0], 7, 0, 0);
     let at = alternate.len() - 6;
     alternate[at] = 0x91;
@@ -470,16 +475,9 @@ fn authenticated_all29_and_native26_with_control_edit_routes() {
         assert_eq!((total, represented), (29, 26));
         assert_eq!(forms.into_values().collect::<Vec<_>>(), [1, 2, 2, 20, 4]);
         let e = manifest(&b, 0, 480).unwrap_err();
-        assert_eq!(
-            e.stage,
-            if edit {
-                "conductor coverage"
-            } else {
-                "translation"
-            }
-        );
+        assert_eq!(e.stage, if edit { "conductor coverage" } else { "mute" });
         if !edit {
-            assert!(e.detail.contains("unsupported parsed event"));
+            assert_eq!(e.detail, "On");
         }
         let mut app = phoenix::app_service::AppService::new();
         let r = app

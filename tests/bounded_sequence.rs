@@ -733,12 +733,13 @@ fn routed_ff60_ff41_still_cannot_grant_export_authority() {
     let b = synthetic(&[
         4, 255, 96, 7, 35, 96, 0, 114, 108, 131, 76, 1, 255, 65, 5, 0, 1, 0, 1, 58,
     ]);
-    // Routing now passes, but conductor/terminal/mute geometry cannot waive translation.
+    // Routing passes, but conductor/terminal/mute geometry cannot waive the
+    // context Controller proof's declared-object accounting.
     assert_eq!(
         build_bounded_sequence_manifest(&b, 0, 480)
             .unwrap_err()
             .stage,
-        "translation"
+        "context Controller"
     );
     assert_application_refusal(&b);
 }
@@ -991,11 +992,7 @@ fn authentic_pressure_bend_populations_keep_independent_first_blockers() {
             build_bounded_sequence_manifest(&bytes, sequence, 480)
                 .unwrap_err()
                 .stage,
-            if sequence == 0 {
-                "translation"
-            } else {
-                "Patch"
-            }
+            if sequence == 0 { "mute" } else { "Patch" }
         );
     }
 }

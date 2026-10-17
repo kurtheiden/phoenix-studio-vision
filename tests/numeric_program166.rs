@@ -483,8 +483,8 @@ fn authenticated_track5_all_610_messages_and_next_refusal() {
         assert!(qualify(&b, 0, pair, 0).is_err());
     }
     let err = manifest(&b, 0, 480).unwrap_err();
-    assert_eq!(err.stage, "translation");
-    assert_eq!(err.detail, "\"unsupported parsed event\"");
+    assert_eq!(err.stage, "mute");
+    assert_eq!(err.detail, "On");
     let routes = phoenix::bounded_routing::decode_bounded_routing(&b).unwrap();
     let route = &routes
         .iter()

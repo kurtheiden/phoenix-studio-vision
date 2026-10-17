@@ -273,7 +273,7 @@ fn generic_opaque_context_and_proof_binding_guards_remain() {
     .is_err());
 }
 #[test]
-fn opaque_and_ff60_controllers_are_not_translated() {
+fn ordinary_qualifier_excludes_midi_and_context_mediated_controllers() {
     for (events, n) in [
         (vec![0, 0xb0, 7, 64], 1),
         (
@@ -285,7 +285,16 @@ fn opaque_and_ff60_controllers_are_not_translated() {
     ] {
         let b = fixture(&events, n);
         assert!(qualify_track(&b, 0, 0).unwrap().is_empty());
-        assert_eq!(manifest(&b, 0, 480).unwrap_err().stage, "translation");
+        if n == 2 {
+            assert_eq!(
+                manifest(&b, 0, 480).unwrap().tracks()[0]
+                    .context_controllers()
+                    .len(),
+                1
+            );
+        } else {
+            assert_eq!(manifest(&b, 0, 480).unwrap_err().stage, "translation");
+        }
     }
 }
 fn read(name: &str, hash: &str) -> Vec<u8> {
@@ -398,13 +407,13 @@ fn authenticated_all598_native594_and_instrument_reassignment() {
         assert_eq!(
             e.stage,
             if association == 1 {
-                "translation"
+                "mute"
             } else {
                 "conductor coverage"
             }
         );
         if association == 1 {
-            assert!(e.detail.contains("unsupported parsed event"));
+            assert_eq!(e.detail, "On");
         }
         assert_eq!(format!("{:x}", Sha256::digest(read(name, hash))), hash);
     }

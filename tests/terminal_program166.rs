@@ -396,8 +396,8 @@ fn authenticated_complete_track1_native_program_and_held_notes() {
         assert!(qualify(&b, 0, pair).is_err(), "broadened pair {pair}");
     }
     let err = manifest(&b, 0, 480).unwrap_err();
-    assert_eq!(err.stage, "translation");
-    assert!(err.detail.contains("unsupported parsed event"));
+    assert_eq!(err.stage, "mute");
+    assert_eq!(err.detail, "On");
     let mut app = phoenix::app_service::AppService::new();
     let r = app
         .inspect_project(phoenix::app_contract::InspectProjectRequest {

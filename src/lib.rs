@@ -18,6 +18,7 @@ pub mod channel_pressure;
 pub mod comparison;
 pub mod compatibility;
 pub mod compatibility_profiles;
+pub mod context_controller166;
 pub mod context_note166;
 pub mod controller;
 pub mod controller166;

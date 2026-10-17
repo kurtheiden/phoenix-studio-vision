@@ -261,7 +261,7 @@ fn authentic_xform_track9_walk_and_native_events_when_available() {
         bounded_sequence::build_bounded_sequence_manifest(&b, 0, 480)
             .unwrap_err()
             .stage,
-        "translation"
+        "mute"
     );
     let reference = "/Volumes/Extreme Pro 2TB/Applications/SheepShaver/Shared/MIDI Exports from SVP/xForm Multitrack";
     if let Ok(midi) = std::fs::read(reference) {

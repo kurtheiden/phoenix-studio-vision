@@ -516,8 +516,8 @@ fn authenticated_four_cores_and_three_native_sequences_with_muted_exclusion() {
         assert!(qualify(&b, 0, pair).is_err());
     }
     let e = manifest(&b, 0, 480).unwrap_err();
-    assert_eq!(e.stage, "translation");
-    assert!(e.detail.contains("unsupported parsed event"));
+    assert_eq!(e.stage, "mute");
+    assert_eq!(e.detail, "On");
     let route = phoenix::bounded_routing::decode_bounded_routing(&b)
         .unwrap()
         .into_iter()

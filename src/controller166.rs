@@ -41,6 +41,17 @@ pub struct RoutingValidatedController {
     provenance: ControllerProvenance,
 }
 impl RoutingValidatedController {
+    // Only an independently source-qualified owned composition can enter this
+    // bridge. Its outer proof retains the FF60 context and both raw objects;
+    // the existing adapter receives the ordinary FF41 record and final tick.
+    pub(crate) fn from_context_composition(
+        proof: &crate::context_controller166::OwnedContextController,
+    ) -> Self {
+        Self {
+            provenance: proof.controller_provenance().clone(),
+        }
+    }
+
     pub fn provenance(&self) -> &ControllerProvenance {
         &self.provenance
     }
