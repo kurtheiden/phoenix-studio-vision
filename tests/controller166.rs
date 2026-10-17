@@ -404,7 +404,7 @@ fn authenticated_all598_native594_and_instrument_reassignment() {
             }
         );
         if association == 1 {
-            assert!(e.detail.contains("NonzeroPosition"));
+            assert!(e.detail.contains("unsupported standalone Patch"));
         }
         assert_eq!(format!("{:x}", Sha256::digest(read(name, hash))), hash);
     }

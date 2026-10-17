@@ -397,7 +397,7 @@ fn authenticated_complete_track1_native_program_and_held_notes() {
     }
     let err = manifest(&b, 0, 480).unwrap_err();
     assert_eq!(err.stage, "Patch");
-    assert!(err.detail.contains("NonzeroPosition"));
+    assert!(err.detail.contains("unsupported standalone Patch"));
     let mut app = phoenix::app_service::AppService::new();
     let r = app
         .inspect_project(phoenix::app_contract::InspectProjectRequest {

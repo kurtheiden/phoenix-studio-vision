@@ -472,7 +472,7 @@ fn authenticated_all29_and_native26_with_control_edit_routes() {
         let e = manifest(&b, 0, 480).unwrap_err();
         assert_eq!(e.stage, if edit { "conductor coverage" } else { "Patch" });
         if !edit {
-            assert!(e.detail.contains("NonzeroPosition"));
+            assert!(e.detail.contains("unsupported standalone Patch"));
         }
         let mut app = phoenix::app_service::AppService::new();
         let r = app

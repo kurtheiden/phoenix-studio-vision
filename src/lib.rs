@@ -36,6 +36,7 @@ pub mod meter;
 pub mod midi_export;
 pub mod mixed_event;
 pub mod multitrack_export;
+pub mod numeric_program166;
 mod observed_layout120;
 pub mod opening;
 pub mod patch;

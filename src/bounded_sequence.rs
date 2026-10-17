@@ -75,8 +75,12 @@ pub struct BoundedTrackManifest {
     terminal_programs: Vec<crate::terminal_program166::TerminalProgram>,
     bank_patches: Vec<crate::bank_patch166_handoff::OwnedBankPatch>,
     context_notes: Vec<crate::context_note166::OwnedContextNote>,
+    numeric_programs: Vec<crate::numeric_program166::NumericProgramPatch>,
 }
 impl BoundedTrackManifest {
+    pub fn numeric_programs(&self) -> &[crate::numeric_program166::NumericProgramPatch] {
+        &self.numeric_programs
+    }
     pub fn context_notes(&self) -> &[crate::context_note166::OwnedContextNote] {
         &self.context_notes
     }
@@ -324,6 +328,7 @@ pub fn build_bounded_sequence_manifest(
         let mut program_only_patches = Vec::new();
         let mut terminal_programs = Vec::new();
         let mut bank_patches = Vec::new();
+        let mut numeric_programs = Vec::new();
         for item in &walk.items {
             match item {
                 MixedEventItem::Event(e) => {
@@ -401,6 +406,16 @@ pub fn build_bounded_sequence_manifest(
                                 }
                                 events.extend(proof.decoded_export_events());
                                 program_only_patches.push(proof);
+                            } else if let Ok(proof) = crate::numeric_program166::qualify_current(
+                                bytes,
+                                sequence_ordinal,
+                                binding.pair_ordinal,
+                                item,
+                                routing,
+                                ordinal,
+                            ) {
+                                events.extend(proof.decoded_export_events());
+                                numeric_programs.push(proof);
                             } else {
                                 let proof = crate::bank_patch166_handoff::qualify_current(
                                     bytes,
@@ -451,6 +466,7 @@ pub fn build_bounded_sequence_manifest(
         }
         tracks.push(BoundedTrackManifest {
             program_only_patches,
+            numeric_programs,
             terminal_programs,
             bank_patches,
             context_notes,
