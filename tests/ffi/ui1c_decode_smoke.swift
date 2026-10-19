@@ -217,3 +217,9 @@ for mode in [RecoveryInclusionPreference.includeMuted, .excludeMuted] {
 }
 check(exportPayload["recovery_inclusion"] == nil, "Legacy preference omitted")
 print("CCA-101 capability and preference encoding passed")
+
+// CCA-105: the new capability uses the same explicit inclusion contract.
+recoveryRow["bounded_export_capability"] = ["contract_id":"authenticated_jurrasic_recovery", "contract_revision":1, "display_label":"Jurrasic recovery"]
+check((try! decodeRow(recoveryRow)).supportsRecoveryInclusion, "Jurrasic capability enables scoped preference")
+recoveryRow["bounded_export_capability"] = ["contract_id":"authenticated_jurrasic_recovery", "contract_revision":2, "display_label":"Future"]
+check(!(try! decodeRow(recoveryRow)).isExportEligible, "Unknown Jurrasic revision refuses")

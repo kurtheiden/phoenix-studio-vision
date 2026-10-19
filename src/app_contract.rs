@@ -354,6 +354,13 @@ impl BoundedExportCapability {
             display_label: "Validated xForm recovery".into(),
         }
     }
+    pub(crate) fn jurrasic_recovery() -> Self {
+        Self {
+            contract_id: "authenticated_jurrasic_recovery".into(),
+            contract_revision: 1,
+            display_label: "Validated Jurrasic Park recovery".into(),
+        }
+    }
     pub(crate) fn validated120() -> Self {
         Self {
             contract_id: "source_layout120_bounded_sequence".into(),

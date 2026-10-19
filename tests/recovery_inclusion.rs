@@ -607,7 +607,7 @@ fn recovery_inclusion_does_not_change_profiles_or_application_authority() {
         xform.3.as_ref().unwrap().contract_id,
         "authenticated_xform_recovery"
     );
-    assert_eq!(before.iter().filter(|s| s.1 == Readiness::Ready).count(), 8);
+    assert_eq!(before.iter().filter(|s| s.1 == Readiness::Ready).count(), 9);
     let bells = phoenix::compatibility_profiles::bells_for_her_profile().unwrap();
     for descriptor in [3, 8] {
         assert!(matches!(
@@ -915,9 +915,16 @@ fn authenticated_jurrasic_park_complete_recovery_and_independent_readback() {
         .unwrap();
     assert_eq!(
         inspected.sequences[13].readiness,
-        phoenix::app_contract::Readiness::PartiallySupported
+        phoenix::app_contract::Readiness::Ready
     );
-    assert!(inspected.sequences[13].bounded_export_capability.is_none());
+    assert_eq!(
+        inspected.sequences[13]
+            .bounded_export_capability
+            .as_ref()
+            .unwrap()
+            .contract_id,
+        "authenticated_jurrasic_recovery"
+    );
 }
 
 #[test]

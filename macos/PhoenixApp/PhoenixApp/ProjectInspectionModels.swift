@@ -85,7 +85,7 @@ struct BoundedExportCapability: Decodable, Equatable {
     }
 
     var isRecognized: Bool {
-        (contractID == "descriptor166_bounded_sequence" || contractID == "source_layout120_bounded_sequence" || contractID == "authenticated_xform_recovery") && contractRevision == 1
+        (contractID == "descriptor166_bounded_sequence" || contractID == "source_layout120_bounded_sequence" || contractID == "authenticated_xform_recovery" || contractID == "authenticated_jurrasic_recovery") && contractRevision == 1
     }
 }
 
@@ -113,7 +113,8 @@ struct SequenceViewData: Decodable, Equatable {
     }
 
     var supportsRecoveryInclusion: Bool {
-        isExportEligible && boundedExportCapability?.contractID == "authenticated_xform_recovery"
+        isExportEligible && (boundedExportCapability?.contractID == "authenticated_xform_recovery"
+            || boundedExportCapability?.contractID == "authenticated_jurrasic_recovery")
             && boundedExportCapability?.contractRevision == 1
     }
     var isExportEligible: Bool {

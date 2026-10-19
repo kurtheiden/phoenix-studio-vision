@@ -20,7 +20,7 @@ func project(_ session: String, recovery: Bool = false) throws -> ProjectInspect
          "readiness_reason": ["severity": "informational", "display_detail": "Bounded fixture"],
          "musical_track_count": 2, "warning_count": 0, "export_capability": NSNull(),
          "bounded_export_capability": index < 8
-            ? ["contract_id": recovery && index < 2 ? "authenticated_xform_recovery" : "source_layout120_bounded_sequence", "contract_revision": 1, "display_label": "Bounded"] : NSNull(),
+            ? ["contract_id": recovery && index < 2 ? (index == 0 ? "authenticated_xform_recovery" : "authenticated_jurrasic_recovery") : "source_layout120_bounded_sequence", "contract_revision": 1, "display_label": "Bounded"] : NSNull(),
          "diagnostics_available": true]
     }
     let object: [String: Any] = ["session_id": session,
@@ -154,6 +154,15 @@ actor ProbeCore: PhoenixCoreServing {
                     destinationFolder: directory.path, filenameStem: mode.rawValue, recoveryInclusion: mode)
                 let midi = try Data(contentsOf: URL(fileURLWithPath: result.outputPath)); let count = mode == .includeMuted ? 14 : 13
                 check(result.totalSMFTrackCount == count && Int(midi[11]) == count, "Real bridge publishes requested mode")
+            }
+            let jurrasic = inspection.sequences[13]
+            check(jurrasic.supportsRecoveryInclusion, "Real Jurrasic capability decoded")
+            for mode in [RecoveryInclusionPreference.includeMuted, .excludeMuted] {
+                let result = try await real.exportSequence(sessionID: inspection.sessionID, sequenceID: jurrasic.sequenceID,
+                    destinationFolder: directory.path, filenameStem: "Jurrasic-" + mode.rawValue, recoveryInclusion: mode)
+                let midi = try Data(contentsOf: URL(fileURLWithPath: result.outputPath))
+                let count = mode == .includeMuted ? 6 : 5
+                check(result.totalSMFTrackCount == count && Int(midi[11]) == count, "Real Jurrasic bridge mode")
             }
             check(try Data(contentsOf: copy) == bytes && Data(contentsOf: original) == bytes, "Original and copy unchanged")
         }

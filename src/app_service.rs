@@ -70,7 +70,7 @@ struct SequenceAssessment {
 
 #[derive(Clone)]
 enum InspectedExportAuthority {
-    XFormRecovery {
+    AuthenticatedRecovery {
         selection: InspectedSequenceStructure,
         contract_revision: u32,
     },
@@ -92,7 +92,7 @@ enum InspectedExportAuthority {
 
 // Private immediate-preparation permission, minted only by fresh_authorization.
 enum FreshExportAuthorization {
-    XFormRecovery(Box<RecoverySequenceManifest>),
+    AuthenticatedRecovery(Box<RecoverySequenceManifest>),
     ExactProfile(Box<FreshValidatedSequence>),
     Bounded(Box<FreshBoundedAuthorization>),
 }
@@ -694,7 +694,7 @@ impl AppService {
                         .and_then(|structure| structure.sequences.get(ordinal as usize))
                         .filter(|selection| selection.structural_ordinal == ordinal)
                         .and_then(|selection| {
-                            if is_xform_control(
+                            if is_authenticated_recovery(
                                 &session.source_bytes,
                                 &session.source_sha256,
                                 selection,
@@ -711,7 +711,7 @@ impl AppService {
                                         == Some(selection.sequence_range)
                                 })
                                 .map(|_| {
-                                    InspectedExportAuthority::XFormRecovery {
+                                    InspectedExportAuthority::AuthenticatedRecovery {
                                         selection: selection.clone(),
                                         contract_revision: 1,
                                     }
@@ -879,7 +879,7 @@ impl AppService {
             && !assessment.is_some_and(|a| {
                 matches!(
                     a.authority,
-                    Some(InspectedExportAuthority::XFormRecovery { .. })
+                    Some(InspectedExportAuthority::AuthenticatedRecovery { .. })
                 )
             })
         {
@@ -897,16 +897,17 @@ impl AppService {
                     && sequence.export_capability.as_ref() == Some(capability)
                     && sequence.bounded_export_capability.is_none()
             }
-            Some(InspectedExportAuthority::XFormRecovery {
+            Some(InspectedExportAuthority::AuthenticatedRecovery {
                 contract_revision: 1,
-                ..
+                selection,
             }) => {
                 assessment.match_state == SequenceMatchState::NoMatch
                     && assessment.capability.is_none()
                     && assessment.resolved_policy.is_none()
                     && sequence.export_capability.is_none()
-                    && sequence.bounded_export_capability
-                        == Some(BoundedExportCapability::xform_recovery())
+                    && recovery_capability(selection).is_some_and(|cap| {
+                        sequence.bounded_export_capability.as_ref() == Some(&cap)
+                    })
             }
             Some(InspectedExportAuthority::Bounded {
                 contract_revision: 1,
@@ -933,7 +934,7 @@ impl AppService {
         let bounded_export_capability = sequence.bounded_export_capability.clone();
         let fresh = self.fresh_authorization(request, inclusion)?;
         let result = match fresh {
-            FreshExportAuthorization::XFormRecovery(manifest) => {
+            FreshExportAuthorization::AuthenticatedRecovery(manifest) => {
                 assemble_recovery_sequence(&manifest).map_err(|_| {
                     self.export_authorization_error(
                         request,
@@ -1255,7 +1256,7 @@ impl AppService {
         )
     }
 
-    /// Explicit preference is supported only by freshly authorized xForm recovery.
+    /// Explicit preference is supported only by freshly authorized recovery.
     #[allow(clippy::result_large_err)]
     pub fn export_sequence_with_recovery_inclusion(
         &self,
@@ -1819,7 +1820,7 @@ impl AppService {
                 }
                 return Ok(FreshExportAuthorization::ExactProfile(Box::new(fresh)));
             }
-            Some(InspectedExportAuthority::XFormRecovery {
+            Some(InspectedExportAuthority::AuthenticatedRecovery {
                 selection,
                 contract_revision,
             })
@@ -1912,9 +1913,9 @@ impl AppService {
         }
         if matches!(
             assessment.authority,
-            Some(InspectedExportAuthority::XFormRecovery { .. })
+            Some(InspectedExportAuthority::AuthenticatedRecovery { .. })
         ) {
-            if !is_xform_control(&bytes, &hash, fresh_selection) {
+            if !is_authenticated_recovery(&bytes, &hash, fresh_selection) {
                 return Err(fail(
                     "source_sequence_identity_changed",
                     "Fresh source is not the authenticated CONTROL selection.",
@@ -1938,7 +1939,9 @@ impl AppService {
                     "Fresh recovery range differs.",
                 ));
             }
-            return Ok(FreshExportAuthorization::XFormRecovery(Box::new(manifest)));
+            return Ok(FreshExportAuthorization::AuthenticatedRecovery(Box::new(
+                manifest,
+            )));
         }
         let manifest =
             build_bounded_sequence_manifest(&bytes, selection.structural_ordinal as usize, 480)
@@ -2802,14 +2805,28 @@ fn assess_export_precedence(
 
 const XFORM_CONTROL_SHA256: &str =
     "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132";
-fn is_xform_control(bytes: &[u8], hash: &str, selection: &InspectedSequenceStructure) -> bool {
+fn is_authenticated_recovery(
+    bytes: &[u8],
+    hash: &str,
+    selection: &InspectedSequenceStructure,
+) -> bool {
     bytes.len() == 211468
         && hash == XFORM_CONTROL_SHA256
-        && selection.structural_ordinal == 0
-        && selection.name_bytes == b"xForm"
-        && selection.pair_count == 13
-        && selection.descriptor_count == 15
-        && selection.tracks.len() == 13
+        && recovery_capability(selection).is_some()
+}
+// Private exact sequence identities. This is not a caller-supplied permit.
+fn recovery_capability(selection: &InspectedSequenceStructure) -> Option<BoundedExportCapability> {
+    match (
+        selection.structural_ordinal,
+        selection.name_bytes.as_slice(),
+        selection.pair_count,
+        selection.descriptor_count,
+        selection.tracks.len(),
+    ) {
+        (0, b"xForm", 13, 15, 13) => Some(BoundedExportCapability::xform_recovery()),
+        (13, b"Jurrasic Park", 7, 9, 7) => Some(BoundedExportCapability::jurrasic_recovery()),
+        _ => None,
+    }
 }
 fn recovery_mode(mode: RecoveryInclusionOption) -> RecoveryInclusion {
     match mode {
@@ -2819,21 +2836,21 @@ fn recovery_mode(mode: RecoveryInclusionOption) -> RecoveryInclusion {
 }
 
 fn project_sequence_readiness(summary: &mut SequenceSummary, assessment: &SequenceAssessment) {
-    if matches!(
-        assessment.authority,
-        Some(InspectedExportAuthority::XFormRecovery {
-            contract_revision: 1,
-            ..
-        })
-    ) {
-        summary.readiness = Readiness::Ready;
-        summary.readiness_reason = ReadinessReason::new(
-            ReadinessReasonCode::ValidatedBoundedSequence,
-            "This sequence satisfies authenticated recovery qualification.",
-        );
-        summary.export_capability = None;
-        summary.bounded_export_capability = Some(BoundedExportCapability::xform_recovery());
-        return;
+    if let Some(InspectedExportAuthority::AuthenticatedRecovery {
+        contract_revision: 1,
+        selection,
+    }) = &assessment.authority
+    {
+        if let Some(capability) = recovery_capability(selection) {
+            summary.readiness = Readiness::Ready;
+            summary.readiness_reason = ReadinessReason::new(
+                ReadinessReasonCode::ValidatedBoundedSequence,
+                "This sequence satisfies authenticated recovery qualification.",
+            );
+            summary.export_capability = None;
+            summary.bounded_export_capability = Some(capability);
+            return;
+        }
     }
 
     if matches!(
@@ -5080,55 +5097,67 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn xform_forged_descriptive_or_private_authority_never_publishes() {
+    fn authenticated_recovery_forged_authority_never_publishes() {
         let (mut service, source, inspection) = xform_service();
         let destination = portable_directory();
         let original = service.sessions[&inspection.session_id].clone();
-        let mut request = export_request(
-            inspection.session_id.clone(),
-            inspection.sequences[0].sequence_id.clone(),
-        );
-        request.destination_folder = destination.to_str().unwrap().into();
-        for mutation in 0..6 {
-            service
-                .sessions
-                .insert(inspection.session_id.clone(), original.clone());
-            let session = service.sessions.get_mut(&inspection.session_id).unwrap();
-            let assessment = session.assessments.get_mut(&request.sequence_id).unwrap();
-            match mutation {
-                0 => assessment.authority = None,
-                1 => {
-                    session.response.sequences[0].bounded_export_capability =
-                        Some(BoundedExportCapability::validated())
+        for ordinal in [0, 13] {
+            let mut request = export_request(
+                inspection.session_id.clone(),
+                inspection.sequences[ordinal].sequence_id.clone(),
+            );
+            request.destination_folder = destination.to_str().unwrap().into();
+            for mutation in 0..7 {
+                service
+                    .sessions
+                    .insert(inspection.session_id.clone(), original.clone());
+                let session = service.sessions.get_mut(&inspection.session_id).unwrap();
+                let assessment = session.assessments.get_mut(&request.sequence_id).unwrap();
+                match mutation {
+                    0 => assessment.authority = None,
+                    1 => {
+                        session.response.sequences[ordinal].bounded_export_capability =
+                            Some(BoundedExportCapability::validated())
+                    }
+                    2 => {
+                        let Some(InspectedExportAuthority::AuthenticatedRecovery {
+                            contract_revision,
+                            ..
+                        }) = &mut assessment.authority
+                        else {
+                            panic!()
+                        };
+                        *contract_revision = 2;
+                    }
+                    3 => assessment.match_state = SequenceMatchState::Rejected,
+                    4 => {
+                        let Some(InspectedExportAuthority::AuthenticatedRecovery {
+                            selection, ..
+                        }) = &mut assessment.authority
+                        else {
+                            panic!()
+                        };
+                        *selection = session.structure.as_ref().unwrap().sequences[1].clone();
+                    }
+                    5 => session.source_sha256 = "forged".into(),
+                    6 => {
+                        session.response.sequences[ordinal].bounded_export_capability =
+                            Some(if ordinal == 0 {
+                                BoundedExportCapability::jurrasic_recovery()
+                            } else {
+                                BoundedExportCapability::xform_recovery()
+                            })
+                    }
+                    _ => unreachable!(),
                 }
-                2 => {
-                    let Some(InspectedExportAuthority::XFormRecovery {
-                        contract_revision, ..
-                    }) = &mut assessment.authority
-                    else {
-                        panic!()
-                    };
-                    *contract_revision = 2;
-                }
-                3 => assessment.match_state = SequenceMatchState::Rejected,
-                4 => {
-                    let Some(InspectedExportAuthority::XFormRecovery { selection, .. }) =
-                        &mut assessment.authority
-                    else {
-                        panic!()
-                    };
-                    *selection = session.structure.as_ref().unwrap().sequences[1].clone();
-                }
-                5 => session.source_sha256 = "forged".into(),
-                _ => unreachable!(),
+                assert!(service
+                    .export_sequence_with_recovery_inclusion(
+                        request.clone(),
+                        RecoveryInclusionOption::ExcludeMuted
+                    )
+                    .is_err());
+                assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
             }
-            assert!(service
-                .export_sequence_with_recovery_inclusion(
-                    request.clone(),
-                    RecoveryInclusionOption::ExcludeMuted
-                )
-                .is_err());
-            assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
         }
         fs::remove_file(source).unwrap();
         fs::remove_dir(destination).unwrap();
