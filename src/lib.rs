@@ -50,6 +50,7 @@ pub mod routing_evidence;
 pub mod saved_mute;
 mod semantic_layout120;
 pub mod sequence_container;
+pub mod simultaneous_note166;
 pub mod smf;
 pub mod standalone_bank166;
 pub mod sysex166;

@@ -71,6 +71,7 @@ pub struct BoundedTrackManifest {
     mute: SavedMuteEvidence,
     secondary_range: Range<usize>,
     events: Vec<DecodedExportEvent>,
+    simultaneous_notes: Vec<crate::simultaneous_note166::OwnedSimultaneousNotes>,
     program_only_patches: Vec<crate::program_only166::ProgramOnlyPatch>,
     terminal_programs: Vec<crate::terminal_program166::TerminalProgram>,
     bank_patches: Vec<crate::bank_patch166_handoff::OwnedBankPatch>,
@@ -500,7 +501,16 @@ pub fn build_bounded_sequence_manifest(
         if events.len() != walk.logical_event_count() || patches != classified.patches.len() {
             return Err(refusal("translation", "incomplete accounting"));
         }
+        // Qualification failure supplies no exception. Existing preflight remains
+        // authoritative; older supported tracks need no new accounting contract.
+        let simultaneous_notes = crate::simultaneous_note166::qualify_track(
+            bytes,
+            sequence_ordinal,
+            binding.pair_ordinal,
+        )
+        .unwrap_or_default();
         tracks.push(BoundedTrackManifest {
+            simultaneous_notes,
             program_only_patches,
             numeric_programs,
             standalone_banks,
@@ -590,10 +600,11 @@ pub(crate) fn assemble_bounded_sequence_with_report(
             untranslated_metadata: adapted.untranslated_metadata,
         });
         tracks.push(
-            smf::serialize_named_musical_track_with_note_provenance(
+            smf::serialize_named_musical_track_with_owned_simultaneous_notes(
                 &name,
                 &adapted.scheduled_events,
                 &adapted.note_provenance,
+                &t.simultaneous_notes,
             )
             .map_err(|e| refusal("source ordering", e))?,
         );

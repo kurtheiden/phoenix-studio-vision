@@ -586,7 +586,7 @@ pub fn serialize_musical_track_with_ordering(
     events: &[ScheduledEvent],
     ordering: MusicalTrackOrdering,
 ) -> Result<SerializedTrack, SmfSerializeError> {
-    serialize_musical_track_payload(None, events, ordering, &[])
+    serialize_musical_track_payload(None, events, ordering, &[], &[])
 }
 
 /// Retained source representation of a decoded Note, keyed by its even attack
@@ -609,6 +609,24 @@ pub fn serialize_named_musical_track_with_note_provenance(
         events,
         MusicalTrackOrdering::SourceOrder,
         provenance,
+        &[],
+    )
+}
+
+/// Source-order serialization with privately qualified Descriptor166 simultaneous Notes.
+/// Every supplied proof must bind exactly; unused or duplicated proofs refuse.
+pub fn serialize_named_musical_track_with_owned_simultaneous_notes(
+    name: &[u8],
+    events: &[ScheduledEvent],
+    provenance: &[NoteSourceProvenance],
+    proofs: &[crate::simultaneous_note166::OwnedSimultaneousNotes],
+) -> Result<SerializedTrack, SmfSerializeError> {
+    serialize_musical_track_payload(
+        Some(name),
+        events,
+        MusicalTrackOrdering::SourceOrder,
+        provenance,
+        proofs,
     )
 }
 
@@ -618,7 +636,7 @@ pub fn serialize_named_musical_track_with_ordering(
     events: &[ScheduledEvent],
     ordering: MusicalTrackOrdering,
 ) -> Result<SerializedTrack, SmfSerializeError> {
-    serialize_musical_track_payload(Some(name), events, ordering, &[])
+    serialize_musical_track_payload(Some(name), events, ordering, &[], &[])
 }
 
 fn serialize_musical_track_payload(
@@ -626,6 +644,7 @@ fn serialize_musical_track_payload(
     events: &[ScheduledEvent],
     ordering: MusicalTrackOrdering,
     provenance: &[NoteSourceProvenance],
+    proofs: &[crate::simultaneous_note166::OwnedSimultaneousNotes],
 ) -> Result<SerializedTrack, SmfSerializeError> {
     if ordering == MusicalTrackOrdering::ExistingPriority
         && events
@@ -646,7 +665,7 @@ fn serialize_musical_track_payload(
         MusicalTrackOrdering::SourceOrder => {
             // Stable sort preserves the adapter's intra-Patch message sequence.
             ordered.sort_by_key(|event| (event.absolute_tick, event.stable_ordinal));
-            validate_source_order(&ordered, provenance)?;
+            validate_source_order(&ordered, provenance, proofs)?;
         }
     }
 
@@ -755,7 +774,21 @@ fn equivalent_duplicate(
 fn validate_source_order(
     events: &[ScheduledEvent],
     provenance: &[NoteSourceProvenance],
+    proofs: &[crate::simultaneous_note166::OwnedSimultaneousNotes],
 ) -> Result<(), SmfSerializeError> {
+    let mut previous_proof = None;
+    for proof in proofs {
+        if previous_proof.is_some_and(|ordinal| ordinal >= proof.first_ordinal())
+            || !proof.binds(events, provenance)
+        {
+            return Err(SmfSerializeError::AmbiguousSourceOrder {
+                tick: proof.first_tick(),
+                stable_ordinal: proof.first_ordinal(),
+            });
+        }
+        previous_proof = Some(proof.first_ordinal());
+    }
+    let mut used_proofs = std::collections::BTreeSet::new();
     let mut by_ordinal = std::collections::BTreeMap::<u64, Vec<&ScheduledEvent>>::new();
     for event in events {
         by_ordinal
@@ -799,14 +832,22 @@ fn validate_source_order(
             } if attack_velocity.get() > 0 => {
                 let key = (channel.get(), key.get());
                 if let Some((previous, duplicate)) = starts.get(&key) {
-                    // Exactly two equivalent starts are supported; a third
+                    // Exactly two evidenced starts are supported; a third
                     // cannot enter through this bounded exception.
-                    if *duplicate || !equivalent_duplicate(previous, event, &by_ordinal, provenance)
+                    let owned = proofs
+                        .iter()
+                        .find(|proof| proof.matches_attacks(previous, event));
+                    if *duplicate
+                        || (!equivalent_duplicate(previous, event, &by_ordinal, provenance)
+                            && owned.is_none())
                     {
                         return Err(SmfSerializeError::AmbiguousSourceOrder {
                             tick: event.absolute_tick,
                             stable_ordinal: event.stable_ordinal,
                         });
+                    }
+                    if let Some(proof) = owned {
+                        used_proofs.insert(proof.first_ordinal());
                     }
                     starts.insert(key, (event, true));
                 } else {
@@ -838,6 +879,15 @@ fn validate_source_order(
             }
             _ => {}
         }
+    }
+    if let Some(proof) = proofs
+        .iter()
+        .find(|p| !used_proofs.contains(&p.first_ordinal()))
+    {
+        return Err(SmfSerializeError::AmbiguousSourceOrder {
+            tick: proof.first_tick(),
+            stable_ordinal: proof.first_ordinal(),
+        });
     }
     Ok(())
 }
