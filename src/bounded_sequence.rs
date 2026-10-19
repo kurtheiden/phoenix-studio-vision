@@ -127,6 +127,83 @@ impl BoundedTrackManifest {
     }
 }
 
+/// Source-owned zero-object Descriptor166 record pair. No routing is inferred.
+/// Fields are private; recovery constructs this only from reparsed ownership.
+#[derive(Clone, Debug)]
+pub struct EmptyTrackManifest {
+    source_ordinal: usize,
+    descriptor_ordinal: usize,
+    descriptor_range: Range<usize>,
+    primary_range: Range<usize>,
+    secondary_range: Range<usize>,
+    event_range: Range<usize>,
+    label: Vec<u8>,
+}
+impl EmptyTrackManifest {
+    pub fn source_ordinal(&self) -> usize {
+        self.source_ordinal
+    }
+    pub fn descriptor_ordinal(&self) -> usize {
+        self.descriptor_ordinal
+    }
+    pub fn descriptor_range(&self) -> Range<usize> {
+        self.descriptor_range.clone()
+    }
+    pub fn primary_range(&self) -> Range<usize> {
+        self.primary_range.clone()
+    }
+    pub fn secondary_range(&self) -> Range<usize> {
+        self.secondary_range.clone()
+    }
+    pub fn event_range(&self) -> Range<usize> {
+        self.event_range.clone()
+    }
+    pub fn label(&self) -> &[u8] {
+        &self.label
+    }
+}
+
+fn qualify_empty_track(
+    sequence: &crate::sequence_container::SequenceContainer<'_>,
+    binding: &crate::sequence_container::TrackBinding,
+) -> Result<EmptyTrackManifest, ManifestRefusal> {
+    // build_manifest has independently verified exhaustive ordinal ownership.
+    let pair = &sequence.track_pairs[binding.pair_ordinal];
+    let descriptor = &sequence.descriptors[binding.descriptor_ordinal];
+    let bounds = pair
+        .validated_event_bounds()
+        .map_err(|e| refusal("empty track bounds", e))?;
+    let p = pair.primary.payload.bytes;
+    // Exact observed zero-object primary and secondary framing. The primary's
+    // four opaque context bytes are retained in its source range, not decoded.
+    let secondary = [
+        0, 1, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 4, 15, 255, 255, 255, 47,
+        197, 255, 255, 255,
+    ];
+    if !bounds.event_range.is_empty()
+        || p.len() != 21
+        || p[..10] != [0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+        || p[14..] != [255, 255, 255, 127, 255, 47, 0]
+        || pair.secondary.payload.bytes != secondary
+    {
+        return Err(refusal("empty track framing", binding.pair_ordinal));
+    }
+    let label = descriptor
+        .label
+        .as_ref()
+        .ok_or_else(|| refusal("empty track label", "unbounded"))?;
+    midi_export::adapt_text(label.bytes).map_err(|e| refusal("empty track label", e))?;
+    Ok(EmptyTrackManifest {
+        source_ordinal: binding.pair_ordinal,
+        descriptor_ordinal: binding.descriptor_ordinal,
+        descriptor_range: descriptor.range.clone(),
+        primary_range: pair.primary.record_range.clone(),
+        secondary_range: pair.secondary.record_range.clone(),
+        event_range: bounds.event_range,
+        label: label.bytes.to_vec(),
+    })
+}
+
 /// Construction capability, deliberately not convertible to an application
 /// export capability. No mutable access or caller-constructed proof is exposed.
 #[derive(Clone, Debug)]
@@ -136,6 +213,7 @@ pub struct BoundedSequenceManifest {
     ppqn: u16,
     conductor: BoundedConductorManifest,
     tracks: Vec<BoundedTrackManifest>,
+    empty_tracks: Vec<EmptyTrackManifest>,
     terminal_coverage: Option<crate::bounded_terminal166::TerminalCoverage>,
 }
 impl BoundedSequenceManifest {
@@ -174,6 +252,7 @@ pub enum RecoveryInclusion {
 pub enum RecoveryTrackDisposition {
     Included,
     ExcludedSavedMute,
+    AccountedEmpty,
 }
 
 /// Pure recovery ledger, deliberately distinct from application construction
@@ -188,10 +267,17 @@ impl RecoverySequenceManifest {
     pub fn inclusion(&self) -> RecoveryInclusion {
         self.inclusion
     }
-    /// All source tracks, including omitted descriptors, primary/secondary ranges,
+    /// Event-bearing source tracks, including omitted descriptors, primary/secondary ranges,
     /// event ranges, saved-mute evidence and fully translated events.
     pub fn tracks(&self) -> &[BoundedTrackManifest] {
         &self.manifest.tracks
+    }
+    /// Source-accounted zero-object tracks. No MIDI track or channel is invented.
+    pub fn empty_tracks(&self) -> &[EmptyTrackManifest] {
+        &self.manifest.empty_tracks
+    }
+    pub fn source_track_count(&self) -> usize {
+        self.tracks().len() + self.empty_tracks().len()
     }
     pub fn conductor(&self) -> &BoundedConductorManifest {
         &self.manifest.conductor
@@ -200,6 +286,13 @@ impl RecoverySequenceManifest {
         self.manifest.sequence_range()
     }
     pub fn disposition(&self, source_ordinal: usize) -> Option<RecoveryTrackDisposition> {
+        if self
+            .empty_tracks()
+            .iter()
+            .any(|t| t.source_ordinal == source_ordinal)
+        {
+            return Some(RecoveryTrackDisposition::AccountedEmpty);
+        }
         self.tracks()
             .iter()
             .find(|t| t.source_ordinal == source_ordinal)
@@ -365,7 +458,19 @@ fn build_manifest(
     let mutes = collect_saved_mute_evidence(bytes).map_err(|e| refusal("mute", e))?;
     let classified = classify_bounded_cc0_patches(bytes).map_err(|e| refusal("routing", e))?;
     let mut tracks = Vec::new();
+    let mut empty_tracks = Vec::new();
     for binding in bindings {
+        if inclusion.is_some() {
+            let pair = &sequence.track_pairs[binding.pair_ordinal];
+            let bounds = pair
+                .validated_event_bounds()
+                .map_err(|e| refusal("source accounting", e))?;
+            let declared = u32::from_be_bytes(pair.primary.payload.bytes[2..6].try_into().unwrap());
+            if declared == 0 || bounds.event_range.is_empty() {
+                empty_tracks.push(qualify_empty_track(sequence, binding)?);
+                continue;
+            }
+        }
         let mute = mutes
             .iter()
             .find(|r| {
@@ -640,6 +745,7 @@ fn build_manifest(
         terminal_coverage,
         conductor,
         tracks,
+        empty_tracks,
     };
     // Acceptance includes all adapter and source-order safety checks. This
     // prevents an accepted proof from hiding an unsupported value or tie.
@@ -683,7 +789,21 @@ fn assemble_with_inclusion(
     .map_err(|e| refusal("conductor serialization", e))?];
     let mut totals = conductor.counts.clone();
     let mut reports = Vec::new();
-    for t in &manifest.tracks {
+    for ordinal in 0..manifest.tracks.len() + manifest.empty_tracks.len() {
+        if manifest
+            .empty_tracks
+            .iter()
+            .any(|t| t.source_ordinal == ordinal)
+        {
+            // Explicit AccountedEmpty disposition: complete zero-object source
+            // ranges remain in the ledger; there is no routed MIDI part.
+            continue;
+        }
+        let t = manifest
+            .tracks
+            .iter()
+            .find(|t| t.source_ordinal == ordinal)
+            .ok_or_else(|| refusal("source accounting", "missing track ordinal"))?;
         let name =
             midi_export::adapt_text(&t.routing.label_bytes).map_err(|e| refusal("label", e))?;
         let channel =

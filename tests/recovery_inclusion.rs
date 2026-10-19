@@ -651,3 +651,329 @@ fn authenticated_edit_conductor_still_refuses_in_both_recovery_modes() {
         );
     }
 }
+
+fn empty_fixture() -> Vec<u8> {
+    let mut b = fixture(&[], 0);
+    let p = parse_project_166(&b).unwrap();
+    let pair = &p.sequences[0].track_pairs[0];
+    let tail = pair.validated_event_bounds().unwrap().tail_range;
+    let secondary = pair.secondary.record_range.clone();
+    b[tail].copy_from_slice(&[255, 255, 255, 127, 255, 47, 0]);
+    let payload = [
+        0, 1, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 4, 15, 255, 255, 255, 47,
+        197, 255, 255, 255,
+    ];
+    let mut record = vec![41, 0, 0, 0, 31];
+    record.extend(payload);
+    b.splice(secondary, record);
+    b
+}
+
+#[test]
+fn privately_qualified_empty_track_keeps_identity_and_has_no_midi_channel() {
+    let b = empty_fixture();
+    let p = parse_project_166(&b).unwrap();
+    for mode in [
+        RecoveryInclusion::IncludeMuted,
+        RecoveryInclusion::ExcludeMuted,
+    ] {
+        let m = build_recovery_sequence_manifest(&b, 0, 480, mode).unwrap();
+        assert_eq!(m.source_track_count(), 1);
+        assert!(m.tracks().is_empty());
+        assert_eq!(
+            m.disposition(0),
+            Some(RecoveryTrackDisposition::AccountedEmpty)
+        );
+        assert_eq!(m.disposition(1), None);
+        let e = &m.empty_tracks()[0];
+        assert_eq!(e.source_ordinal(), 0);
+        assert_eq!(e.descriptor_ordinal(), 2);
+        assert_eq!(e.descriptor_range(), p.sequences[0].descriptors[2].range);
+        assert_eq!(
+            e.primary_range(),
+            p.sequences[0].track_pairs[0].primary.record_range
+        );
+        assert_eq!(
+            e.secondary_range(),
+            p.sequences[0].track_pairs[0].secondary.record_range
+        );
+        assert!(e.event_range().is_empty());
+        assert_eq!(e.label(), b"Other");
+        let out = assemble_recovery_sequence(&m).unwrap();
+        assert_eq!(reference::midi_tracks(&out.smf_bytes).len(), 1);
+        assert!(out.report.tracks.is_empty());
+        assert_eq!(out.report.totals.notes, 0);
+    }
+    // The legacy construction route deliberately retains its previous refusal.
+    assert!(build_bounded_sequence_manifest(&b, 0, 480).is_err());
+}
+
+#[test]
+fn empty_track_rejects_contradictions_hidden_objects_and_unproven_framing() {
+    let b = empty_fixture();
+    let p = parse_project_166(&b).unwrap();
+    let pair = &p.sequences[0].track_pairs[0];
+    let primary = pair.primary.payload.range.start;
+    let secondary = pair.secondary.payload.range.start;
+    let tail = pair.validated_event_bounds().unwrap().tail_range.start;
+    let count = p.sequences[0].descriptor_count.offset;
+    for offset in (primary..primary + 10)
+        .chain(tail..tail + 7)
+        .chain(secondary..secondary + 31)
+        .chain(std::iter::once(count))
+    {
+        let mut forged = b.clone();
+        forged[offset] ^= 1;
+        assert!(
+            build_recovery_sequence_manifest(&forged, 0, 480, RecoveryInclusion::IncludeMuted)
+                .is_err(),
+            "accepted mutation at {offset}"
+        );
+        assert!(
+            build_recovery_sequence_manifest(&forged, 0, 480, RecoveryInclusion::ExcludeMuted)
+                .is_err()
+        );
+    }
+    // A syntactically valid Note cannot hide behind a zero-object declaration.
+    let hidden = fixture(&[0, 144, 60, 100, 64, 12], 0);
+    assert!(
+        build_recovery_sequence_manifest(&hidden, 0, 480, RecoveryInclusion::IncludeMuted).is_err()
+    );
+    let mut truncated = b;
+    truncated.truncate(secondary + 20);
+    assert!(
+        build_recovery_sequence_manifest(&truncated, 0, 480, RecoveryInclusion::IncludeMuted)
+            .is_err()
+    );
+}
+
+#[test]
+fn authenticated_jurrasic_park_complete_recovery_and_independent_readback() {
+    use phoenix::midi_export::*;
+    use phoenix::smf::ChannelMessage::*;
+    let b = control();
+    let project = parse_project_166(&b).unwrap();
+
+    for mode in [
+        RecoveryInclusion::IncludeMuted,
+        RecoveryInclusion::ExcludeMuted,
+    ] {
+        let m = build_recovery_sequence_manifest(&b, 13, 480, mode).unwrap();
+        assert_eq!(m.source_track_count(), 7);
+        assert_eq!(m.tracks().len(), 5);
+        assert_eq!(
+            m.empty_tracks()
+                .iter()
+                .map(|e| e.source_ordinal())
+                .collect::<Vec<_>>(),
+            vec![4, 6]
+        );
+        for e in m.empty_tracks() {
+            let pair = &project.sequences[13].track_pairs[e.source_ordinal()];
+            assert_eq!(e.primary_range(), pair.primary.record_range);
+            assert_eq!(e.secondary_range(), pair.secondary.record_range);
+            assert_eq!(
+                m.disposition(e.source_ordinal()),
+                Some(RecoveryTrackDisposition::AccountedEmpty)
+            );
+        }
+        assert_eq!(
+            m.disposition(0),
+            Some(if mode == RecoveryInclusion::IncludeMuted {
+                RecoveryTrackDisposition::Included
+            } else {
+                RecoveryTrackDisposition::ExcludedSavedMute
+            })
+        );
+        let out = assemble_recovery_sequence(&m).unwrap();
+        let readback = reference::midi_tracks(&out.smf_bytes);
+        let included = m
+            .tracks()
+            .iter()
+            .filter(|t| {
+                m.disposition(t.source_ordinal()) == Some(RecoveryTrackDisposition::Included)
+            })
+            .collect::<Vec<_>>();
+        let total = if mode == RecoveryInclusion::IncludeMuted {
+            6
+        } else {
+            5
+        };
+        assert_eq!(
+            &out.smf_bytes[..14],
+            &[77, 84, 104, 100, 0, 0, 0, 6, 0, 1, 0, total, 1, 224]
+        );
+        assert_eq!(readback.len(), total as usize);
+        assert_eq!(out.report.musical_track_count, included.len());
+        let message_counts = readback[1..]
+            .iter()
+            .map(|t| events(t, false).len())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            message_counts,
+            if mode == RecoveryInclusion::IncludeMuted {
+                vec![94, 261, 57, 347, 36]
+            } else {
+                vec![261, 57, 347, 36]
+            }
+        );
+        let tempo = readback[0].iter().find(|(_, s, _)| *s == 81).unwrap();
+        assert_eq!(tempo.0, 0);
+        let mpqn = m.conductor().tempo().mpqn();
+        assert_eq!(tempo.2, mpqn.to_be_bytes()[1..]);
+        let meter = readback[0].iter().find(|(_, s, _)| *s == 88).unwrap();
+        let source_meter = m.conductor().meter();
+        assert_eq!(meter.0, 0);
+        assert_eq!(
+            meter.2[..2],
+            [
+                source_meter.numerator.value,
+                source_meter.denominator_exponent.value
+            ]
+        );
+        for (index, t) in included.iter().enumerate() {
+            let adapted = adapt_track(
+                t.events(),
+                Some(ChannelAssignment {
+                    channel: phoenix::smf::MidiChannel::new(t.routing().midi_channel).unwrap(),
+                    provenance: ChannelAssignmentProvenance::ParsedRouting,
+                }),
+                TimingPolicy::Identity480,
+                PatchPolicy::StrictKnownOnly,
+            )
+            .unwrap();
+            let mut scheduled = adapted.scheduled_events;
+            scheduled.sort_by_key(|e| (e.absolute_tick, e.stable_ordinal));
+            let expected = scheduled
+                .iter()
+                .map(|e| {
+                    let (s, d) = match &e.message {
+                        NoteOn {
+                            channel,
+                            key,
+                            attack_velocity,
+                        } => (
+                            0x90 | (channel.get() - 1),
+                            vec![key.get(), attack_velocity.get()],
+                        ),
+                        NoteOff {
+                            channel,
+                            key,
+                            release_velocity,
+                        } => (
+                            0x80 | (channel.get() - 1),
+                            vec![key.get(), release_velocity.get()],
+                        ),
+                        ControlChange {
+                            channel,
+                            controller,
+                            value,
+                        } => (
+                            0xb0 | (channel.get() - 1),
+                            vec![controller.get(), value.get()],
+                        ),
+                        ProgramChange { channel, program } => {
+                            (0xc0 | (channel.get() - 1), vec![program.get()])
+                        }
+                        _ => panic!("unexpected message"),
+                    };
+                    (e.absolute_tick, s, d)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(events(&readback[index + 1], false), expected);
+            assert_eq!(
+                readback[index + 1]
+                    .iter()
+                    .find(|(_, s, _)| *s == 3)
+                    .unwrap()
+                    .2,
+                t.routing().label_bytes
+            );
+        }
+        if mode == RecoveryInclusion::IncludeMuted {
+            assert_eq!(out.report.totals.controllers, 210);
+            assert_eq!(out.report.totals.notes, 288);
+        }
+        println!(
+            "dispositions {:?}",
+            (0..7).map(|i| m.disposition(i)).collect::<Vec<_>>()
+        );
+        println!(
+            "Jurrasic {mode:?}: bytes={} totals={:?}",
+            out.smf_bytes.len(),
+            out.report.totals
+        );
+    }
+    let mut app = phoenix::app_service::AppService::new();
+    let inspected = app
+        .inspect_project(phoenix::app_contract::InspectProjectRequest {
+            contract_version: 1,
+            source_path: "/Volumes/Extreme Pro 2TB/Applications/SheepShaver/Shared/CCA073 CONTROL"
+                .into(),
+            diagnostics_level: phoenix::app_contract::DiagnosticsLevel::Summary,
+        })
+        .unwrap();
+    assert_eq!(
+        inspected.sequences[13].readiness,
+        phoenix::app_contract::Readiness::PartiallySupported
+    );
+    assert!(inspected.sequences[13].bounded_export_capability.is_none());
+}
+
+#[test]
+fn whole_project_empty_track_impact_keeps_other_refusals_and_authority() {
+    let b = control();
+    let expected = [
+        None,
+        Some(("Patch", "PayloadLength")),
+        Some(("Patch", "NonzeroPosition")),
+        Some(("conductor prelude", "UnmatchedOrAmbiguous")),
+        Some(("conductor prelude", "UnmatchedOrAmbiguous")),
+        None,
+        Some(("Patch", "PayloadLength")),
+        Some(("conductor prelude", "UnmatchedOrAmbiguous")),
+        Some(("ownership", "descriptor_count: 11, pair_count: 10")),
+        Some(("conductor prelude", "Routing")),
+        Some(("Patch", "PayloadLength")),
+        Some(("Patch", "PayloadLength")),
+        Some(("Patch", "unsupported standalone Patch")),
+        None,
+        Some(("Patch", "PayloadLength")),
+        None,
+        None,
+        None,
+    ];
+    let project = parse_project_166(&b).unwrap();
+    assert_eq!(project.sequences.len(), 18);
+    for mode in [
+        RecoveryInclusion::IncludeMuted,
+        RecoveryInclusion::ExcludeMuted,
+    ] {
+        let mut passed = Vec::new();
+        for (ordinal, expected) in expected.iter().enumerate() {
+            match (
+                build_recovery_sequence_manifest(&b, ordinal, 480, mode),
+                expected,
+            ) {
+                (Ok(m), None) => {
+                    assert_eq!(
+                        m.source_track_count(),
+                        project.sequences[ordinal].track_descriptors().len()
+                    );
+                    let result = assemble_recovery_sequence(&m).unwrap();
+                    assert_eq!(
+                        reference::midi_tracks(&result.smf_bytes).len(),
+                        result.report.total_smf_track_count
+                    );
+                    passed.push(ordinal);
+                }
+                (Err(e), Some((stage, detail))) => {
+                    assert_eq!(e.stage, *stage, "ordinal {ordinal}");
+                    assert!(e.detail.contains(detail), "ordinal {ordinal}: {e}");
+                }
+                (result, expected) => panic!("ordinal {ordinal}: {result:?} expected {expected:?}"),
+            }
+        }
+        assert_eq!(passed, vec![0, 5, 13, 15, 16, 17]);
+    }
+}
