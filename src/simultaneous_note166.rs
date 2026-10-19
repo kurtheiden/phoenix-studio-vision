@@ -75,8 +75,10 @@ pub enum SimultaneousNoteRefusal {
     Adaptation,
 }
 
-/// Qualifies only two adjacent ordinary Notes with identical nonzero attacks,
-/// consecutive logical ordinals and increasing, distinct positive end ticks.
+/// Qualifies only two adjacent ordinary Notes with simultaneous nonzero attacks
+/// on the same channel/key; each attack velocity remains exactly source-bound.
+/// Both Notes require consecutive logical ordinals and increasing, distinct
+/// positive end ticks.
 /// Other groups receive no proof and retain the existing serializer refusals.
 pub fn qualify_track(
     bytes: &[u8],
@@ -134,8 +136,10 @@ pub fn qualify_track(
         let (a, b) = (group[0], group[1]);
         let (pa, pb) = (&adapted.note_provenance[i], &adapted.note_provenance[i + 1]);
         if a[0].absolute_tick == b[0].absolute_tick
-            && a[0].message == b[0].message
-            && matches!(a[0].message, ChannelMessage::NoteOn { attack_velocity, .. } if attack_velocity.get() > 0)
+            && matches!((&a[0].message, &b[0].message),
+                (ChannelMessage::NoteOn { channel: ca, key: ka, attack_velocity: va },
+                 ChannelMessage::NoteOn { channel: cb, key: kb, attack_velocity: vb })
+                if ca == cb && ka == kb && va.get() > 0 && vb.get() > 0)
             && a[0].stable_ordinal.checked_add(2) == Some(b[0].stable_ordinal)
             && pa.source_range.start < pa.source_range.end
             && pa.source_range.end == pb.source_range.start
