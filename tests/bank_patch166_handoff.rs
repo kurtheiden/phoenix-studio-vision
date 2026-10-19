@@ -1,3 +1,5 @@
+#[path = "support/xform_application.rs"]
+mod xform_application;
 use phoenix::{
     bank_patch166_handoff::qualify_track as qualify,
     bounded_sequence::{assemble_bounded_sequence, build_bounded_sequence_manifest as manifest},
@@ -395,9 +397,5 @@ fn authenticated_five_compositions_match_native_bank_program_note_and_ending() {
         .find(|s| s.display_name == "xForm")
         .unwrap();
     assert!(row.export_capability.is_none());
-    assert!(row.bounded_export_capability.is_none());
-    assert_eq!(
-        row.readiness,
-        phoenix::app_contract::Readiness::PartiallySupported
-    );
+    xform_application::assert_capability(row, true);
 }

@@ -6,7 +6,16 @@ protocol PhoenixCoreServing: Sendable {
     func inspectProject(path: String) async throws -> ProjectInspection
     func getDiagnostics(sessionID: String) async throws -> DiagnosticsSummary
     func exportSequence(sessionID: String, sequenceID: String,
-                        destinationFolder: String, filenameStem: String) async throws -> ExportSequenceResult
+                        destinationFolder: String, filenameStem: String,
+                        recoveryInclusion: RecoveryInclusionPreference?) async throws -> ExportSequenceResult
+}
+
+// Existing callers omit preferences; only the scoped recovery route accepts them.
+extension PhoenixCoreServing {
+    func exportSequence(sessionID: String, sequenceID: String, destinationFolder: String, filenameStem: String) async throws -> ExportSequenceResult {
+        try await exportSequence(sessionID: sessionID, sequenceID: sequenceID, destinationFolder: destinationFolder,
+                                 filenameStem: filenameStem, recoveryInclusion: nil)
+    }
 }
 
 /// Destination naming only. Core still validates and publishes without overwrite.
@@ -62,6 +71,7 @@ final class AppModel: ObservableObject {
         let sourceURL: URL
         let destination: URL
         let filenameStem: String
+        let recoveryInclusion: RecoveryInclusionPreference?
     }
 
     enum ExportState: Equatable {
@@ -82,6 +92,7 @@ final class AppModel: ObservableObject {
         let sourceURL: URL
         let destination: URL
         let items: [RecoveryItem]
+        let recoveryInclusion: RecoveryInclusionPreference
     }
     enum RecoveryOutcome: Equatable {
         case succeeded(ExportSequenceResult)
@@ -131,6 +142,17 @@ final class AppModel: ObservableObject {
             return "\(successCount) \(successCount == 1 ? "sequence" : "sequences") recovered."
         }
     }
+    @Published private(set) var excludeMutedTracks = false
+    var canChangeRecoveryInclusion: Bool {
+        guard !isExporting, case .inspected(let inspection) = projectState else { return false }
+        return inspection.sequences.contains(where: \.supportsRecoveryInclusion)
+    }
+    func setExcludeMutedTracks(_ excluded: Bool) {
+        guard canChangeRecoveryInclusion else { return }
+        excludeMutedTracks = excluded
+    }
+    private var recoveryInclusion: RecoveryInclusionPreference { excludeMutedTracks ? .excludeMuted : .includeMuted }
+
     @Published private(set) var recoverySelection: Set<String> = []
     @Published var workspaceTab: RecoveryWorkspaceTab = .sequences
     @Published private(set) var batchRecovery: BatchRecovery?
@@ -206,6 +228,7 @@ final class AppModel: ObservableObject {
                 diagnosticsState = .notLoaded
                 inspectedSourceURL = url
                 workspaceTab = .sequences
+                excludeMutedTracks = false
                 projectState = .inspected(summary)
                 FileHandle.standardError.write(Data("UI1B_INSPECTED sequences=\(summary.sequenceCount)\n".utf8))
             } catch {
@@ -265,6 +288,7 @@ final class AppModel: ObservableObject {
             return RecoveryItem(sequence: sequence, ordinal: index + 1)
         }
         guard !items.isEmpty else { return }
+        let inclusion = recoveryInclusion
         let destination: URL
         if toRetainedDestination {
             guard let retained = retainedExportDestination else { return }
@@ -276,7 +300,7 @@ final class AppModel: ObservableObject {
         guard !isExporting, case .inspected(let current) = projectState,
               current.sessionID == inspection.sessionID else { return }
         let snapshot = RecoverySnapshot(id: UUID(), sessionID: inspection.sessionID,
-                                        sourceURL: sourceURL, destination: destination, items: items)
+                                        sourceURL: sourceURL, destination: destination, items: items, recoveryInclusion: inclusion)
         batchRecovery = BatchRecovery(snapshot: snapshot, currentIndex: 0, results: [], isRunning: true)
         // The actor-backed one-Sequence API retains all Core authorization and
         // publication gates. No Swift file writer or cached MIDI is involved.
@@ -288,7 +312,8 @@ final class AppModel: ObservableObject {
                 do {
                     let result = try await core.exportSequence(sessionID: snapshot.sessionID,
                         sequenceID: item.sequence.sequenceID, destinationFolder: snapshot.destination.path,
-                        filenameStem: ExportFilename.stem(for: item.sequence.displayName, ordinal: item.ordinal))
+                        filenameStem: ExportFilename.stem(for: item.sequence.displayName, ordinal: item.ordinal),
+                        recoveryInclusion: item.sequence.supportsRecoveryInclusion ? snapshot.recoveryInclusion : nil)
                     guard result.sessionID == snapshot.sessionID && result.sequenceID == item.sequence.sequenceID else {
                         throw RecoveryOperationError(category: "invalid_response", diagnosticCode: "receipt_identity_mismatch",
                             displayMessage: "Phoenix could not confirm this recovery result.", technicalMessage: "Receipt identity differs from the requested Sequence.")
@@ -330,6 +355,7 @@ final class AppModel: ObservableObject {
               let index = inspection.sequences.firstIndex(where: { $0.sequenceID == sequenceID }),
               inspection.sequences[index].isExportEligible else { return }
         let sequence = inspection.sequences[index]
+        let inclusion = sequence.supportsRecoveryInclusion ? recoveryInclusion : nil
 
         let destination: URL
         if let retainedDestination {
@@ -344,7 +370,8 @@ final class AppModel: ObservableObject {
             attemptID: UUID(), sessionID: inspection.sessionID, sequenceID: sequenceID,
             sequenceDisplayName: sequence.displayName, sourceURL: sourceURL,
             destination: destination,
-            filenameStem: ExportFilename.stem(for: sequence.displayName, ordinal: index + 1)
+            filenameStem: ExportFilename.stem(for: sequence.displayName, ordinal: index + 1),
+            recoveryInclusion: inclusion
         )
         currentExportAttemptID = context.attemptID
         exportState = .exporting(context)
@@ -354,7 +381,8 @@ final class AppModel: ObservableObject {
                     sessionID: context.sessionID,
                     sequenceID: context.sequenceID,
                     destinationFolder: context.destination.path,
-                    filenameStem: context.filenameStem
+                    filenameStem: context.filenameStem,
+                    recoveryInclusion: context.recoveryInclusion
                 )
                 guard currentExportAttemptID == context.attemptID else { return }
                 if case .inspected(let current) = projectState,

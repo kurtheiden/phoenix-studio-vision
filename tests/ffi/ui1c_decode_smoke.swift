@@ -203,3 +203,17 @@ check(school.recoverySummary == "15 sequences found · 8 recoverable · 7 not ye
 check(school.sequences[1].displayName.isEmpty && school.sequences[0].displayName == school.sequences[2].displayName, "UI2A empty/duplicate names retained")
 check(school.diagnosticsAvailable, "UI2A Details availability preserved")
 print("UI2A presentation model smoke passed")
+
+var recoveryRow = boundedRow
+recoveryRow["readiness"] = "ready"
+recoveryRow["bounded_export_capability"] = ["contract_id":"authenticated_xform_recovery", "contract_revision":1, "display_label":"Recovery"]
+check((try! decodeRow(recoveryRow)).supportsRecoveryInclusion, "New capability supports explicit inclusion")
+recoveryRow["bounded_export_capability"] = ["contract_id":"authenticated_xform_recovery", "contract_revision":2, "display_label":"Future"]
+check(!(try! decodeRow(recoveryRow)).isExportEligible, "Unknown recovery revision refuses")
+for mode in [RecoveryInclusionPreference.includeMuted, .excludeMuted] {
+    let request = ExportSequenceRequest(payload: .init(sessionID:"s",sequenceID:"q",destinationFolder:"/tmp",filenameStem:"xForm",collisionPolicy:.generateUniqueName,operationID:nil,recoveryInclusion:mode))
+    let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as! [String:Any]
+    check((object["payload"] as! [String:Any])["recovery_inclusion"] as? String == mode.rawValue, "Exact inclusion enum encoding")
+}
+check(exportPayload["recovery_inclusion"] == nil, "Legacy preference omitted")
+print("CCA-101 capability and preference encoding passed")

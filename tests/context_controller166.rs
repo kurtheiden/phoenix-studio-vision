@@ -1,3 +1,5 @@
+#[path = "support/xform_application.rs"]
+mod xform_application;
 use phoenix::{
     bounded_sequence::{assemble_bounded_sequence, build_bounded_sequence_manifest as manifest},
     context_controller166::qualify_at as qualify,
@@ -600,6 +602,6 @@ fn authenticated_control_edit_all1568_messages_and_next_mute_guard() {
             .find(|s| s.display_name == "xForm")
             .unwrap();
         assert!(seq.export_capability.is_none());
-        assert!(seq.bounded_export_capability.is_none());
+        xform_application::assert_capability(seq, row == 1);
     }
 }

@@ -5,6 +5,7 @@
 //! public single-sequence export destination transaction. It does not expose
 //! parser structures or own broader UI/FFI behavior.
 
+use crate::app_contract::RecoveryInclusionOption;
 use crate::app_contract::{
     ApiInfo, AppError, AppErrorCategory, AppOperation, BoundedExportCapability, CollisionPolicy,
     Diagnostics, DiagnosticsLevel, EventFamilySummary, ExportCounts as AppExportCounts,
@@ -14,7 +15,9 @@ use crate::app_contract::{
     WarningScope, WarningSeverity, CONTRACT_VERSION,
 };
 use crate::bounded_sequence::{
-    assemble_bounded_sequence_with_report, build_bounded_sequence_manifest, BoundedSequenceManifest,
+    assemble_bounded_sequence_with_report, assemble_recovery_sequence,
+    build_bounded_sequence_manifest, build_recovery_sequence_manifest, BoundedSequenceManifest,
+    RecoveryInclusion, RecoverySequenceManifest,
 };
 use crate::compatibility::{
     ByteRange, CompatibilityRegistry, EvidenceEventFamily, ParserProfileId, PatchEvidence,
@@ -67,6 +70,10 @@ struct SequenceAssessment {
 
 #[derive(Clone)]
 enum InspectedExportAuthority {
+    XFormRecovery {
+        selection: InspectedSequenceStructure,
+        contract_revision: u32,
+    },
     Layout120 {
         ordinal: u32,
         range: std::ops::Range<usize>,
@@ -85,6 +92,7 @@ enum InspectedExportAuthority {
 
 // Private immediate-preparation permission, minted only by fresh_authorization.
 enum FreshExportAuthorization {
+    XFormRecovery(Box<RecoverySequenceManifest>),
     ExactProfile(Box<FreshValidatedSequence>),
     Bounded(Box<FreshBoundedAuthorization>),
 }
@@ -686,6 +694,29 @@ impl AppService {
                         .and_then(|structure| structure.sequences.get(ordinal as usize))
                         .filter(|selection| selection.structural_ordinal == ordinal)
                         .and_then(|selection| {
+                            if is_xform_control(
+                                &session.source_bytes,
+                                &session.source_sha256,
+                                selection,
+                            ) {
+                                return build_recovery_sequence_manifest(
+                                    &session.source_bytes,
+                                    ordinal as usize,
+                                    480,
+                                    RecoveryInclusion::default(),
+                                )
+                                .ok()
+                                .filter(|m| {
+                                    owned_range(&m.sequence_range())
+                                        == Some(selection.sequence_range)
+                                })
+                                .map(|_| {
+                                    InspectedExportAuthority::XFormRecovery {
+                                        selection: selection.clone(),
+                                        contract_revision: 1,
+                                    }
+                                });
+                            }
                             build_bounded_sequence_manifest(
                                 &session.source_bytes,
                                 ordinal as usize,
@@ -803,6 +834,15 @@ impl AppService {
         &self,
         request: &ExportSequenceRequest,
     ) -> Result<PreparedExportSequence, AppError> {
+        self.prepare_export_with_inclusion(request, None)
+    }
+
+    #[allow(clippy::result_large_err)]
+    fn prepare_export_with_inclusion(
+        &self,
+        request: &ExportSequenceRequest,
+        inclusion: Option<RecoveryInclusionOption>,
+    ) -> Result<PreparedExportSequence, AppError> {
         if request.contract_version != CONTRACT_VERSION {
             return Err(self.error(
                 AppErrorCategory::InternalError,
@@ -835,6 +875,20 @@ impl AppService {
                 )
             })?;
         let assessment = session.assessments.get(&request.sequence_id);
+        if inclusion.is_some()
+            && !assessment.is_some_and(|a| {
+                matches!(
+                    a.authority,
+                    Some(InspectedExportAuthority::XFormRecovery { .. })
+                )
+            })
+        {
+            return Err(self.export_authorization_error(
+                request,
+                "unsupported_recovery_inclusion",
+                "This export authority does not support recovery inclusion preferences.",
+            ));
+        }
         let consistent = assessment.is_some_and(|assessment| match &assessment.authority {
             Some(InspectedExportAuthority::ExactProfile { capability, .. }) => {
                 assessment.match_state == SequenceMatchState::Matched
@@ -842,6 +896,17 @@ impl AppService {
                     && assessment.resolved_policy.is_some()
                     && sequence.export_capability.as_ref() == Some(capability)
                     && sequence.bounded_export_capability.is_none()
+            }
+            Some(InspectedExportAuthority::XFormRecovery {
+                contract_revision: 1,
+                ..
+            }) => {
+                assessment.match_state == SequenceMatchState::NoMatch
+                    && assessment.capability.is_none()
+                    && assessment.resolved_policy.is_none()
+                    && sequence.export_capability.is_none()
+                    && sequence.bounded_export_capability
+                        == Some(BoundedExportCapability::xform_recovery())
             }
             Some(InspectedExportAuthority::Bounded {
                 contract_revision: 1,
@@ -866,8 +931,17 @@ impl AppService {
         let sequence_display_name = sequence.display_name.clone();
         let compatibility_profile = sequence.export_capability.clone();
         let bounded_export_capability = sequence.bounded_export_capability.clone();
-        let fresh = self.fresh_authorization(request)?;
+        let fresh = self.fresh_authorization(request, inclusion)?;
         let result = match fresh {
+            FreshExportAuthorization::XFormRecovery(manifest) => {
+                assemble_recovery_sequence(&manifest).map_err(|_| {
+                    self.export_authorization_error(
+                        request,
+                        "conversion_failed",
+                        "Recovery adaptation or serialization failed.",
+                    )
+                })?
+            }
             FreshExportAuthorization::ExactProfile(fresh) => {
                 let ready = build_conversion_ready_sequence(&fresh).map_err(|error| {
                     self.export_authorization_error(
@@ -1173,6 +1247,25 @@ impl AppService {
     ) -> Result<ExportSequenceResponse, AppError> {
         self.export_sequence_with_file_system(
             &request,
+            &RealExportFileSystem,
+            ExportLimits {
+                candidate_count: EXPORT_CANDIDATE_LIMIT,
+                temp_attempt_count: EXPORT_TEMP_ATTEMPT_LIMIT,
+            },
+        )
+    }
+
+    /// Explicit preference is supported only by freshly authorized xForm recovery.
+    #[allow(clippy::result_large_err)]
+    pub fn export_sequence_with_recovery_inclusion(
+        &self,
+        request: ExportSequenceRequest,
+        inclusion: RecoveryInclusionOption,
+    ) -> Result<ExportSequenceResponse, AppError> {
+        let prepared = self.prepare_export_with_inclusion(&request, Some(inclusion))?;
+        self.commit_prepared_export(
+            &request,
+            prepared,
             &RealExportFileSystem,
             ExportLimits {
                 candidate_count: EXPORT_CANDIDATE_LIMIT,
@@ -1684,6 +1777,7 @@ impl AppService {
     fn fresh_authorization(
         &self,
         request: &ExportSequenceRequest,
+        inclusion: Option<RecoveryInclusionOption>,
     ) -> Result<FreshExportAuthorization, AppError> {
         let session = self
             .sessions
@@ -1725,7 +1819,11 @@ impl AppService {
                 }
                 return Ok(FreshExportAuthorization::ExactProfile(Box::new(fresh)));
             }
-            Some(InspectedExportAuthority::Bounded {
+            Some(InspectedExportAuthority::XFormRecovery {
+                selection,
+                contract_revision,
+            })
+            | Some(InspectedExportAuthority::Bounded {
                 selection,
                 contract_revision,
             }) => (selection, *contract_revision),
@@ -1811,6 +1909,36 @@ impl AppService {
                     "An applicable exact profile rejected the source.",
                 ))
             }
+        }
+        if matches!(
+            assessment.authority,
+            Some(InspectedExportAuthority::XFormRecovery { .. })
+        ) {
+            if !is_xform_control(&bytes, &hash, fresh_selection) {
+                return Err(fail(
+                    "source_sequence_identity_changed",
+                    "Fresh source is not the authenticated CONTROL selection.",
+                ));
+            }
+            let manifest = build_recovery_sequence_manifest(
+                &bytes,
+                selection.structural_ordinal as usize,
+                480,
+                recovery_mode(inclusion.unwrap_or_default()),
+            )
+            .map_err(|_| {
+                fail(
+                    "source_revalidation_failed",
+                    "Complete recovery qualification failed.",
+                )
+            })?;
+            if owned_range(&manifest.sequence_range()) != Some(fresh_selection.sequence_range) {
+                return Err(fail(
+                    "source_sequence_identity_changed",
+                    "Fresh recovery range differs.",
+                ));
+            }
+            return Ok(FreshExportAuthorization::XFormRecovery(Box::new(manifest)));
         }
         let manifest =
             build_bounded_sequence_manifest(&bytes, selection.structural_ordinal as usize, 480)
@@ -2672,7 +2800,42 @@ fn assess_export_precedence(
     }
 }
 
+const XFORM_CONTROL_SHA256: &str =
+    "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132";
+fn is_xform_control(bytes: &[u8], hash: &str, selection: &InspectedSequenceStructure) -> bool {
+    bytes.len() == 211468
+        && hash == XFORM_CONTROL_SHA256
+        && selection.structural_ordinal == 0
+        && selection.name_bytes == b"xForm"
+        && selection.pair_count == 13
+        && selection.descriptor_count == 15
+        && selection.tracks.len() == 13
+}
+fn recovery_mode(mode: RecoveryInclusionOption) -> RecoveryInclusion {
+    match mode {
+        RecoveryInclusionOption::IncludeMuted => RecoveryInclusion::IncludeMuted,
+        RecoveryInclusionOption::ExcludeMuted => RecoveryInclusion::ExcludeMuted,
+    }
+}
+
 fn project_sequence_readiness(summary: &mut SequenceSummary, assessment: &SequenceAssessment) {
+    if matches!(
+        assessment.authority,
+        Some(InspectedExportAuthority::XFormRecovery {
+            contract_revision: 1,
+            ..
+        })
+    ) {
+        summary.readiness = Readiness::Ready;
+        summary.readiness_reason = ReadinessReason::new(
+            ReadinessReasonCode::ValidatedBoundedSequence,
+            "This sequence satisfies authenticated recovery qualification.",
+        );
+        summary.export_capability = None;
+        summary.bounded_export_capability = Some(BoundedExportCapability::xform_recovery());
+        return;
+    }
+
     if matches!(
         assessment.authority,
         Some(InspectedExportAuthority::Layout120 { .. })
@@ -4898,6 +5061,132 @@ pub(crate) mod tests {
             overall_readiness(&[summary(Readiness::Unsupported), summary(Readiness::Unknown)]),
             Readiness::Unknown
         );
+    }
+    fn xform_service() -> (AppService, PathBuf, InspectProjectResponse) {
+        let bytes =
+            fs::read("/Volumes/Extreme Pro 2TB/Applications/SheepShaver/Shared/CCA073 CONTROL")
+                .unwrap();
+        assert_eq!(sha256_hex(&bytes), XFORM_CONTROL_SHA256);
+        let path = portable_path(&bytes);
+        let mut service = AppService::new();
+        let inspection = service
+            .inspect_project(InspectProjectRequest {
+                contract_version: 1,
+                source_path: path.to_str().unwrap().into(),
+                diagnostics_level: DiagnosticsLevel::Summary,
+            })
+            .unwrap();
+        (service, path, inspection)
+    }
+
+    #[test]
+    fn xform_forged_descriptive_or_private_authority_never_publishes() {
+        let (mut service, source, inspection) = xform_service();
+        let destination = portable_directory();
+        let original = service.sessions[&inspection.session_id].clone();
+        let mut request = export_request(
+            inspection.session_id.clone(),
+            inspection.sequences[0].sequence_id.clone(),
+        );
+        request.destination_folder = destination.to_str().unwrap().into();
+        for mutation in 0..6 {
+            service
+                .sessions
+                .insert(inspection.session_id.clone(), original.clone());
+            let session = service.sessions.get_mut(&inspection.session_id).unwrap();
+            let assessment = session.assessments.get_mut(&request.sequence_id).unwrap();
+            match mutation {
+                0 => assessment.authority = None,
+                1 => {
+                    session.response.sequences[0].bounded_export_capability =
+                        Some(BoundedExportCapability::validated())
+                }
+                2 => {
+                    let Some(InspectedExportAuthority::XFormRecovery {
+                        contract_revision, ..
+                    }) = &mut assessment.authority
+                    else {
+                        panic!()
+                    };
+                    *contract_revision = 2;
+                }
+                3 => assessment.match_state = SequenceMatchState::Rejected,
+                4 => {
+                    let Some(InspectedExportAuthority::XFormRecovery { selection, .. }) =
+                        &mut assessment.authority
+                    else {
+                        panic!()
+                    };
+                    *selection = session.structure.as_ref().unwrap().sequences[1].clone();
+                }
+                5 => session.source_sha256 = "forged".into(),
+                _ => unreachable!(),
+            }
+            assert!(service
+                .export_sequence_with_recovery_inclusion(
+                    request.clone(),
+                    RecoveryInclusionOption::ExcludeMuted
+                )
+                .is_err());
+            assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+        }
+        fs::remove_file(source).unwrap();
+        fs::remove_dir(destination).unwrap();
+    }
+
+    #[test]
+    fn xform_recovery_uses_existing_transaction_failures_and_cleanup() {
+        let (service, source, inspection) = xform_service();
+        for (stage, code) in [
+            ("write", "output_write_failed"),
+            ("flush", "output_sync_failed"),
+            ("sync", "output_sync_failed"),
+            ("publish", "output_commit_failed"),
+        ] {
+            let destination = portable_directory();
+            let mut request = export_request(
+                inspection.session_id.clone(),
+                inspection.sequences[0].sequence_id.clone(),
+            );
+            request.destination_folder = destination.to_str().unwrap().into();
+            request.filename_stem = "xForm".into();
+            let prepared = service
+                .prepare_export_with_inclusion(
+                    &request,
+                    Some(RecoveryInclusionOption::ExcludeMuted),
+                )
+                .unwrap();
+            let file_system = FaultExportFileSystem::default();
+            match stage {
+                "write" => file_system.fail_write.set(true),
+                "flush" => file_system.fail_flush.set(true),
+                "sync" => file_system
+                    .sync_errors
+                    .borrow_mut()
+                    .push_back(io::ErrorKind::Other),
+                "publish" => file_system
+                    .hard_link_errors
+                    .borrow_mut()
+                    .push_back(io::ErrorKind::PermissionDenied),
+                _ => unreachable!(),
+            }
+            let error = service
+                .commit_prepared_export(
+                    &request,
+                    prepared,
+                    &file_system,
+                    ExportLimits {
+                        candidate_count: 10_000,
+                        temp_attempt_count: 128,
+                    },
+                )
+                .unwrap_err();
+            assert_eq!(error.diagnostic_code, code);
+            assert!(!destination.join("xForm.mid").exists());
+            assert!(temp_entries(&destination).is_empty());
+            fs::remove_dir(destination).unwrap();
+        }
+        fs::remove_file(source).unwrap();
     }
 }
 

@@ -194,6 +194,17 @@ private struct ProjectInspectionView: View {
             }
 
             Divider()
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle("Exclude Muted Tracks", isOn: Binding(
+                    get: { model.excludeMutedTracks },
+                    set: { model.setExcludeMutedTracks($0) }
+                ))
+                .toggleStyle(.checkbox)
+                .disabled(!model.canChangeRecoveryInclusion)
+                .help("Muted sequences (tracks) sometimes represent alternative takes and musical ideas. By default, Phoenix recovers all tracks, including muted ones. Check this box only if you're certain you don't want muted tracks included in your MIDI exports.")
+                Text("Applies to eligible xForm recovery only. Other sequences retain their verified track selections.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack(alignment: .center, spacing: 20) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Sequence inspection")

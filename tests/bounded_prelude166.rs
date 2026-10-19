@@ -1,3 +1,5 @@
+#[path = "support/xform_application.rs"]
+mod xform_application;
 use phoenix::bounded_prelude166::{classify_prelude_coverage as classify, PreludeRefusal};
 use phoenix::bounded_sequence::{
     assemble_bounded_sequence, build_bounded_sequence_manifest as manifest,
@@ -332,12 +334,8 @@ fn experiment073_preludes_and_terminals_pass_but_authority_stays_blocked() {
             .iter()
             .find(|s| s.display_name == "xForm")
             .unwrap();
-        assert_eq!(
-            row.readiness,
-            phoenix::app_contract::Readiness::PartiallySupported
-        );
         assert!(row.export_capability.is_none());
-        assert!(row.bounded_export_capability.is_none());
+        xform_application::assert_capability(row, header == 1);
         assert_eq!(
             format!("{:x}", Sha256::digest(std::fs::read(path).unwrap())),
             hash

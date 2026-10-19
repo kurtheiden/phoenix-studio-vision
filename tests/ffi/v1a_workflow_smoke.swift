@@ -63,7 +63,7 @@ actor ControlledCore: PhoenixCoreServing {
     }
     func getDiagnostics(sessionID: String) throws -> DiagnosticsSummary { throw Failure() }
     func exportSequence(sessionID: String, sequenceID: String, destinationFolder: String,
-                        filenameStem: String) async throws -> ExportSequenceResult {
+                        filenameStem: String, recoveryInclusion: RecoveryInclusionPreference?) async throws -> ExportSequenceResult {
         calls.append(.init(session: sessionID, sequence: sequenceID, destination: destinationFolder, stem: filenameStem))
         return try await withCheckedThrowingContinuation { pending = $0 }
     }

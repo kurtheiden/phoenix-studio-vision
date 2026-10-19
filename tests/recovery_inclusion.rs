@@ -601,9 +601,13 @@ fn recovery_inclusion_does_not_change_profiles_or_application_authority() {
     }
     assert_eq!(inspect(&mut app), before);
     let xform = before.iter().find(|s| s.0 == "xForm").unwrap();
-    assert_eq!(xform.1, Readiness::PartiallySupported);
-    assert!(xform.2.is_none() && xform.3.is_none());
-    assert_eq!(before.iter().filter(|s| s.1 == Readiness::Ready).count(), 7);
+    assert_eq!(xform.1, Readiness::Ready);
+    assert!(xform.2.is_none());
+    assert_eq!(
+        xform.3.as_ref().unwrap().contract_id,
+        "authenticated_xform_recovery"
+    );
+    assert_eq!(before.iter().filter(|s| s.1 == Readiness::Ready).count(), 8);
     let bells = phoenix::compatibility_profiles::bells_for_her_profile().unwrap();
     for descriptor in [3, 8] {
         assert!(matches!(

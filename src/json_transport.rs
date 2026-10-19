@@ -6,7 +6,7 @@
 
 use crate::app_contract::{
     AppError, CollisionPolicy, DiagnosticsLevel, ExportSequenceRequest, InspectProjectRequest,
-    OperationId, SequenceId, SessionId,
+    OperationId, RecoveryInclusionOption, SequenceId, SessionId,
 };
 use crate::app_service::AppService;
 use serde::{Deserialize, Serialize};
@@ -46,6 +46,15 @@ struct ExportSequencePayload {
     filename_stem: String,
     collision_policy: CollisionPolicy,
     operation_id: Option<String>,
+    #[serde(default, deserialize_with = "decode_recovery_inclusion")]
+    recovery_inclusion: Option<RecoveryInclusionOption>,
+}
+
+// Absent means legacy/default; explicit null is not a valid preference.
+fn decode_recovery_inclusion<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<RecoveryInclusionOption>, D::Error> {
+    RecoveryInclusionOption::deserialize(d).map(Some)
 }
 
 #[derive(Deserialize)]
@@ -186,7 +195,7 @@ fn dispatch_export_sequence(service: &AppService, value: Value) -> Vec<u8> {
         Err(response) => return response,
     };
     debug_assert_eq!(envelope.operation, "export_sequence");
-    core_result(service.export_sequence(ExportSequenceRequest {
+    let request = ExportSequenceRequest {
         contract_version: envelope.contract_version,
         session_id: SessionId::new(envelope.payload.session_id),
         sequence_id: SequenceId::new(envelope.payload.sequence_id),
@@ -194,7 +203,11 @@ fn dispatch_export_sequence(service: &AppService, value: Value) -> Vec<u8> {
         filename_stem: envelope.payload.filename_stem,
         collision_policy: envelope.payload.collision_policy,
         operation_id: envelope.payload.operation_id.map(OperationId::new),
-    }))
+    };
+    core_result(match envelope.payload.recovery_inclusion {
+        Some(inclusion) => service.export_sequence_with_recovery_inclusion(request, inclusion),
+        None => service.export_sequence(request),
+    })
 }
 
 fn dispatch_cancel_operation(service: &AppService, value: Value) -> Vec<u8> {

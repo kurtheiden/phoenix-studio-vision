@@ -1,3 +1,5 @@
+#[path = "support/xform_application.rs"]
+mod xform_application;
 use phoenix::{
     bounded_sequence::build_bounded_sequence_manifest as manifest,
     context_note166::{qualify_track as qualify, ContextNoteRefusal},
@@ -495,11 +497,7 @@ fn authenticated_all29_and_native26_with_control_edit_routes() {
             .find(|s| s.display_name == "xForm")
             .unwrap();
         assert!(row.export_capability.is_none());
-        assert!(row.bounded_export_capability.is_none());
-        assert_eq!(
-            row.readiness,
-            phoenix::app_contract::Readiness::PartiallySupported
-        );
+        xform_application::assert_capability(row, !edit);
     }
     assert_eq!(control_target, edit_target);
 }

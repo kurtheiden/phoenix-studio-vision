@@ -204,14 +204,16 @@ actor PhoenixCore: PhoenixCoreServing {
     func exportSequence(sessionID: String,
                         sequenceID: String,
                         destinationFolder: String,
-                        filenameStem: String) throws -> ExportSequenceResult {
+                        filenameStem: String,
+                        recoveryInclusion: RecoveryInclusionPreference?) throws -> ExportSequenceResult {
         let request = ExportSequenceRequest(payload: .init(
             sessionID: sessionID,
             sequenceID: sequenceID,
             destinationFolder: destinationFolder,
             filenameStem: filenameStem,
             collisionPolicy: .generateUniqueName,
-            operationID: nil
+            operationID: nil,
+            recoveryInclusion: recoveryInclusion
         ))
         let data = try Self.call(handle: ensureHandle(), request: JSONEncoder().encode(request))
         let envelope: ExportEnvelope

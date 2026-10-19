@@ -330,6 +330,15 @@ pub struct ProfileCapability {
     pub display_label: String,
 }
 
+/// Explicit application preference; not an authorization token.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryInclusionOption {
+    #[default]
+    IncludeMuted,
+    ExcludeMuted,
+}
+
 /// Descriptive eligibility only; never an export permit.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct BoundedExportCapability {
@@ -338,6 +347,13 @@ pub struct BoundedExportCapability {
     pub display_label: String,
 }
 impl BoundedExportCapability {
+    pub(crate) fn xform_recovery() -> Self {
+        Self {
+            contract_id: "authenticated_xform_recovery".into(),
+            contract_revision: 1,
+            display_label: "Validated xForm recovery".into(),
+        }
+    }
     pub(crate) fn validated120() -> Self {
         Self {
             contract_id: "source_layout120_bounded_sequence".into(),

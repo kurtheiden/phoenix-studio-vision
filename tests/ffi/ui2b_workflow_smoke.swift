@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 @MainActor private var checks = 0
 @MainActor func check(_ value: Bool, _ message: String) {
@@ -12,14 +13,14 @@ import Foundation
     }
     fatalError("Timed out waiting for recovery")
 }
-func project(_ session: String) throws -> ProjectInspection {
+func project(_ session: String, recovery: Bool = false) throws -> ProjectInspection {
     let rows: [[String: Any]] = (0..<15).map { index in
         ["sequence_id": "\(session)-\(index)", "display_name": index == 1 ? "" : "Duplicate",
          "readiness": index < 8 || index == 14 ? "ready" : "partially_supported",
          "readiness_reason": ["severity": "informational", "display_detail": "Bounded fixture"],
          "musical_track_count": 2, "warning_count": 0, "export_capability": NSNull(),
          "bounded_export_capability": index < 8
-            ? ["contract_id": "source_layout120_bounded_sequence", "contract_revision": 1, "display_label": "Bounded"] : NSNull(),
+            ? ["contract_id": recovery && index < 2 ? "authenticated_xform_recovery" : "source_layout120_bounded_sequence", "contract_revision": 1, "display_label": "Bounded"] : NSNull(),
          "diagnostics_available": true]
     }
     let object: [String: Any] = ["session_id": session,
@@ -33,6 +34,7 @@ struct Call: Equatable {
     let sequence: String
     let destination: String
     let stem: String
+    var inclusion: RecoveryInclusionPreference? = nil
 }
 func receipt(_ call: Call, wrongIdentity: Bool = false) throws -> ExportSequenceResult {
     let counts = ["notes":1,"generated_note_offs":1,"controllers":0,"bank_select_msb":0,"bank_select_lsb":0,
@@ -47,20 +49,22 @@ func receipt(_ call: Call, wrongIdentity: Bool = false) throws -> ExportSequence
 struct UnknownFailure: LocalizedError { var errorDescription: String? { "Unclassified error" } }
 actor ProbeCore: PhoenixCoreServing {
     var opens = 0
+    var recovery = false
+    func enableRecovery() { recovery = true }
     var calls: [Call] = []
     var pending: CheckedContinuation<ExportSequenceResult, Error>?
     var active = 0
     var maximumActive = 0
     func handshake() -> UInt32 { 1 }
-    func inspectProject(path: String) throws -> ProjectInspection { opens += 1; return try project("session-\(opens)") }
+    func inspectProject(path: String) throws -> ProjectInspection { opens += 1; return try project("session-\(opens)", recovery: recovery) }
     func getDiagnostics(sessionID: String) throws -> DiagnosticsSummary {
         let object: [String: Any] = ["core_version":"test","recognized_profile":"Bounded120","structural_status":"bounded","unsupported_families":[]]
         return try JSONDecoder().decode(DiagnosticsSummary.self, from: JSONSerialization.data(withJSONObject: object))
     }
-    func exportSequence(sessionID: String, sequenceID: String, destinationFolder: String, filenameStem: String) async throws -> ExportSequenceResult {
+    func exportSequence(sessionID: String, sequenceID: String, destinationFolder: String, filenameStem: String, recoveryInclusion: RecoveryInclusionPreference?) async throws -> ExportSequenceResult {
         active += 1; maximumActive = max(maximumActive, active)
         defer { active -= 1 }
-        calls.append(Call(session:sessionID,sequence:sequenceID,destination:destinationFolder,stem:filenameStem))
+        calls.append(Call(session:sessionID,sequence:sequenceID,destination:destinationFolder,stem:filenameStem,inclusion:recoveryInclusion))
         return try await withCheckedThrowingContinuation { pending = $0 }
     }
     func pendingCount() -> Int { pending == nil ? 0 : 1 }
@@ -77,9 +81,10 @@ actor ProbeCore: PhoenixCoreServing {
 }
 @MainActor final class Pickers {
     var destination: URL? = URL(fileURLWithPath:"/recovered")
+    var sourceURL: URL? = URL(fileURLWithPath:"/source/Project")
     var projectPrompts = 0
     var destinationPrompts = 0
-    func source() -> URL? { projectPrompts += 1; return URL(fileURLWithPath:"/source/Project") }
+    func source() -> URL? { projectPrompts += 1; return sourceURL }
     func folder() -> URL? { destinationPrompts += 1; return destination }
 }
 @MainActor func setup() async -> (AppModel, ProbeCore, Pickers) {
@@ -92,6 +97,66 @@ actor ProbeCore: PhoenixCoreServing {
 }
 @main struct BatchSmoke {
     @MainActor static func main() async throws {
+        // CCA-101: preference lifecycle and captured batch/single contexts.
+        do {
+            let core = ProbeCore(); await core.enableRecovery(); let pickers = Pickers()
+            let model = AppModel(core: core, chooseProject: {pickers.source()}, chooseDestination: {pickers.folder()})
+            await until { model.state == .ready(contractVersion: 1) }
+            check(!model.excludeMutedTracks, "Default unchecked")
+            model.openProject(); await until { if case .inspected = model.projectState { return true }; return false }
+            check(model.canChangeRecoveryInclusion, "Qualified recovery preference enabled")
+            model.setExcludeMutedTracks(true)
+            pickers.sourceURL = nil; model.openProject()
+            check(model.excludeMutedTracks, "Canceled source picker preserves preference")
+            model.setRecoverySelected("session-1-0", selected: true); model.setRecoverySelected("session-1-1", selected: true)
+            pickers.destination = nil; model.recoverSelectedSequences()
+            check(model.excludeMutedTracks && model.batchRecovery == nil, "Canceled destination preserves preference")
+            check(await core.callCount() == 0, "Canceled picker dispatches nothing")
+            pickers.destination = URL(fileURLWithPath: "/recovered")
+            model.recoverSelectedSequences(); await until { await core.pendingCount() == 1 }
+            check(!model.canChangeRecoveryInclusion, "Preference disabled while busy")
+            model.setExcludeMutedTracks(false)
+            check(model.excludeMutedTracks && model.batchRecovery?.snapshot.recoveryInclusion == .excludeMuted, "Busy changes rejected; batch snapshot frozen")
+            try await core.finish(); await until { let count = await core.callCount(); let pending = await core.pendingCount(); return count == 2 && pending == 1 }
+            try await core.finish(); await until { model.batchRecovery?.isRunning == false }
+            check(await core.allCalls().map(\.inclusion) == [.excludeMuted,.excludeMuted], "Every batch item uses captured preference")
+            model.selectedSequenceID = "session-1-0"; model.setExcludeMutedTracks(false); model.exportSelectedSequence()
+            await until { await core.pendingCount() == 1 }
+            model.setExcludeMutedTracks(true)
+            if case .exporting(let context) = model.exportState { check(context.recoveryInclusion == .includeMuted, "Single context frozen") }
+            else { fatalError("Expected single export") }
+            check(await core.allCalls().last?.inclusion == .includeMuted, "Single request uses captured include mode")
+            try await core.finish(); await until { !model.isExporting }
+            model.setExcludeMutedTracks(true); model.exportSelectedSequence()
+            await until { await core.pendingCount() == 1 }
+            pickers.sourceURL = URL(fileURLWithPath: "/source/Other")
+            model.openProject(); await until { await core.openCount() == 2 && model.projectState != .inspecting }
+            check(!model.excludeMutedTracks, "Successful new project resets unchecked")
+            check(await core.allCalls().last?.inclusion == .excludeMuted, "In-flight single retains exclusion after new-project UI reset")
+            if case .exporting(let context) = model.exportState { check(context.recoveryInclusion == .excludeMuted, "Context survives actual preference reset") }
+            else { fatalError("Expected in-flight single") }
+            try await core.finish(); await until { !model.isExporting }
+        }
+        // Real Swift actor -> JSON -> C ABI -> AppService -> transactional output.
+        do {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("phoenix-cca101-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let original = URL(fileURLWithPath: "/Volumes/Extreme Pro 2TB/Applications/SheepShaver/Shared/CCA073 CONTROL")
+            let bytes = try Data(contentsOf: original); let copy = directory.appendingPathComponent("renamed.svp")
+            try bytes.write(to: copy)
+            let real = PhoenixCore(); check(try await real.handshake() == 1, "ABI/contract unchanged")
+            let inspection = try await real.inspectProject(path: copy.path)
+            let sequence = inspection.sequences[0]
+            check(sequence.supportsRecoveryInclusion, "Real CONTROL capability decoded")
+            for mode in [RecoveryInclusionPreference.includeMuted, .excludeMuted] {
+                let result = try await real.exportSequence(sessionID: inspection.sessionID, sequenceID: sequence.sequenceID,
+                    destinationFolder: directory.path, filenameStem: mode.rawValue, recoveryInclusion: mode)
+                let midi = try Data(contentsOf: URL(fileURLWithPath: result.outputPath)); let count = mode == .includeMuted ? 14 : 13
+                check(result.totalSMFTrackCount == count && Int(midi[11]) == count, "Real bridge publishes requested mode")
+            }
+            check(try Data(contentsOf: copy) == bytes && Data(contentsOf: original) == bytes, "Original and copy unchanged")
+        }
         let (model,core,pickers) = await setup()
         check(model.recoverySelection.isEmpty && !model.canRecoverSelection,"Initial selection empty")
         model.selectedSequenceID = "session-1-8"
@@ -276,11 +341,24 @@ actor ProbeCore: PhoenixCoreServing {
         check(batch.isAllSuccessful && batch.summary == "8 sequences recovered." && batch.results.allSatisfy { $0.outcome.status == "Recovered" },"All-success presentation actual eight")
         check(batch.snapshot.destination == directory,"Actual completion destination")
         let names = [1:"DANCING",2:"NOTHING",5:"Nothing FINAL",8:"Sequence H",9:"Unnamed Sequence 09",10:"Wind ensemble",12:"Tuba thing",13:"Sequence M"]
-        let artifacts = URL(fileURLWithPath:"/Users/kurtheiden/Documents/Phoenix Research/Experimental MIDI Recovery/SCHOOL PROJECTS")
+        // Exact output hashes from an isolated build of parent 2389e5d.
+        // Historical SCHOOL exports predate existing Controller routing fixes;
+        // Rust recovery120 tests retain that detailed historical reconciliation.
+        let baselineHashes = [
+            "DANCING":"b4f7c2881e091654edcfedf1dab3967a7d919c6d5149bc113eb83bb2e780cff0",
+            "NOTHING":"661d5fb6e9f4e7876c12606c28c84e9a034aeaa882b0da7fc66ec9cbb674c970",
+            "Nothing FINAL":"92e5d3eca95fc5ad26cd0dca18a62ca47d201eb60f68f9c9be0af25652c4bc41",
+            "Sequence H":"b7b0d39da264919f273e36886eae4913a5ff86dc8d6122a9576ca96c31935cc5",
+            "Unnamed Sequence 09":"a4421055e4f6d6915e7b04e196b87590f3689735a768a0d25ca9b62feca00fc2",
+            "Wind ensemble":"eadab495c4e8e8befae4c9ccef05522c43d573199a9e2d6d4d013ee372a78b28",
+            "Tuba thing":"4085abaa837942e426a6c95895b414ce77345488ba2e2fcb4d73d4470f97bcc5",
+            "Sequence M":"e8f988e8a7b983588ef12dd1c0f26a5fb9ac102f6fcace85529f59f8a39ec21c"
+        ]
+        check(SHA256.hash(data: sourceBefore).map {String(format:"%02x",$0)}.joined() == "bfd4fa1208e2cd884ec51ccfb1131d5c02723d7c90acafc98bd89597e1a20331", "Authenticated SCHOOL identity")
         for entry in batch.results {
             guard case .succeeded(let result) = entry.outcome, let name = names[entry.item.ordinal] else { fatalError("Unexpected result") }
-            let expected = artifacts.appendingPathComponent("SCHOOL - \(name).mid")
-            check(try Data(contentsOf:URL(fileURLWithPath:result.outputPath)) == Data(contentsOf:expected),"Actual output parity \(name)")
+            let bytes = try Data(contentsOf:URL(fileURLWithPath:result.outputPath))
+            check(SHA256.hash(data:bytes).map {String(format:"%02x",$0)}.joined() == baselineHashes[name],"Actual baseline output parity \(name)")
         }
         check(try Data(contentsOf:occupied) == sentinel,"Actual no-overwrite preserved")
         check(try Data(contentsOf:source) == sourceBefore,"Authentic source unchanged")

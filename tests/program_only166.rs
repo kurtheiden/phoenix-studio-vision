@@ -1,3 +1,5 @@
+#[path = "support/xform_application.rs"]
+mod xform_application;
 use phoenix::{
     bounded_sequence::{assemble_bounded_sequence, build_bounded_sequence_manifest as manifest},
     midi_export::*,
@@ -405,10 +407,6 @@ fn authenticated_composition_and_native_order_with_remaining_refusals() {
         .iter()
         .find(|s| s.display_name == "xForm")
         .unwrap();
-    assert_eq!(
-        row.readiness,
-        phoenix::app_contract::Readiness::PartiallySupported
-    );
     assert!(row.export_capability.is_none());
-    assert!(row.bounded_export_capability.is_none());
+    xform_application::assert_capability(row, true);
 }

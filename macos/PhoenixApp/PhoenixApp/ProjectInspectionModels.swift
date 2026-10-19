@@ -85,7 +85,7 @@ struct BoundedExportCapability: Decodable, Equatable {
     }
 
     var isRecognized: Bool {
-        (contractID == "descriptor166_bounded_sequence" || contractID == "source_layout120_bounded_sequence") && contractRevision == 1
+        (contractID == "descriptor166_bounded_sequence" || contractID == "source_layout120_bounded_sequence" || contractID == "authenticated_xform_recovery") && contractRevision == 1
     }
 }
 
@@ -112,6 +112,10 @@ struct SequenceViewData: Decodable, Equatable {
         case diagnosticsAvailable = "diagnostics_available"
     }
 
+    var supportsRecoveryInclusion: Bool {
+        isExportEligible && boundedExportCapability?.contractID == "authenticated_xform_recovery"
+            && boundedExportCapability?.contractRevision == 1
+    }
     var isExportEligible: Bool {
         guard readiness == .ready else { return false }
         if let exportCapability { return exportCapability.isRecognized && boundedExportCapability == nil }
@@ -258,6 +262,11 @@ struct ExportSequenceResult: Decodable, Equatable {
     }
 }
 
+enum RecoveryInclusionPreference: String, Encodable, Equatable, Sendable {
+    case includeMuted = "include_muted"
+    case excludeMuted = "exclude_muted"
+}
+
 struct ExportSequenceRequest: Encodable, Equatable {
     let operation = "export_sequence"
     let contractVersion: UInt32 = 1
@@ -270,6 +279,7 @@ struct ExportSequenceRequest: Encodable, Equatable {
         let filenameStem: String
         let collisionPolicy: CollisionPolicy
         let operationID: String?
+        var recoveryInclusion: RecoveryInclusionPreference? = nil
 
         enum CodingKeys: String, CodingKey {
             case sessionID = "session_id"
@@ -278,6 +288,7 @@ struct ExportSequenceRequest: Encodable, Equatable {
             case filenameStem = "filename_stem"
             case collisionPolicy = "collision_policy"
             case operationID = "operation_id"
+            case recoveryInclusion = "recovery_inclusion"
         }
 
         func encode(to encoder: Encoder) throws {
@@ -287,6 +298,7 @@ struct ExportSequenceRequest: Encodable, Equatable {
             try values.encode(destinationFolder, forKey: .destinationFolder)
             try values.encode(filenameStem, forKey: .filenameStem)
             try values.encode(collisionPolicy, forKey: .collisionPolicy)
+            try values.encodeIfPresent(recoveryInclusion, forKey: .recoveryInclusion)
             if let operationID {
                 try values.encode(operationID, forKey: .operationID)
             } else {
