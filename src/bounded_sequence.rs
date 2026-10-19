@@ -1,8 +1,9 @@
 //! Pure, fail-closed construction evidence. This module grants no export authority.
 //!
-//! Only the Descriptor166, initial-only conductor, unmuted nonempty Note/Pressure/Bend/CC0
-//! Patch subset is admitted. Accepted values have private construction and are
-//! independent of compatibility profiles, paths, identities and application policy.
+//! Only qualified Descriptor166 tracks and complete initial-only conductors are admitted.
+//! Legacy application construction still requires saved Mute OFF. Explicit recovery
+//! inclusion is a separate pure interface with no application authority. Values have
+//! private construction, independent of profiles, paths and project identities.
 use std::{fmt, ops::Range};
 
 use crate::{
@@ -69,6 +70,7 @@ pub struct BoundedTrackManifest {
     descriptor_ordinal: usize,
     routing: BoundedRoutingResolution,
     mute: SavedMuteEvidence,
+    primary_range: Range<usize>,
     secondary_range: Range<usize>,
     events: Vec<DecodedExportEvent>,
     simultaneous_notes: Vec<crate::simultaneous_note166::OwnedSimultaneousNotes>,
@@ -114,6 +116,9 @@ impl BoundedTrackManifest {
     pub fn saved_mute(&self) -> &SavedMuteEvidence {
         &self.mute
     }
+    pub fn primary_range(&self) -> Range<usize> {
+        self.primary_range.clone()
+    }
     pub fn secondary_range(&self) -> Range<usize> {
         self.secondary_range.clone()
     }
@@ -153,6 +158,86 @@ impl BoundedSequenceManifest {
     pub fn tracks(&self) -> &[BoundedTrackManifest] {
         &self.tracks
     }
+}
+
+/// Explicit recovery preference. No default is inferred from UI or native MIDI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RecoveryInclusion {
+    /// Recover all qualified musical tracks, regardless of saved mute state.
+    #[default]
+    IncludeMuted,
+    /// Exclude only source-proven saved ON tracks; Unknown remains included.
+    ExcludeMuted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecoveryTrackDisposition {
+    Included,
+    ExcludedSavedMute,
+}
+
+/// Pure recovery ledger, deliberately distinct from application construction
+/// authority. Every source track remains fully qualified, even when excluded.
+/// No caller-supplied mute evidence or conversion to BoundedSequenceManifest.
+#[derive(Clone, Debug)]
+pub struct RecoverySequenceManifest {
+    manifest: BoundedSequenceManifest,
+    inclusion: RecoveryInclusion,
+}
+impl RecoverySequenceManifest {
+    pub fn inclusion(&self) -> RecoveryInclusion {
+        self.inclusion
+    }
+    /// All source tracks, including omitted descriptors, primary/secondary ranges,
+    /// event ranges, saved-mute evidence and fully translated events.
+    pub fn tracks(&self) -> &[BoundedTrackManifest] {
+        &self.manifest.tracks
+    }
+    pub fn conductor(&self) -> &BoundedConductorManifest {
+        &self.manifest.conductor
+    }
+    pub fn sequence_range(&self) -> Range<usize> {
+        self.manifest.sequence_range()
+    }
+    pub fn disposition(&self, source_ordinal: usize) -> Option<RecoveryTrackDisposition> {
+        self.tracks()
+            .iter()
+            .find(|t| t.source_ordinal == source_ordinal)
+            .map(|t| {
+                if excluded(t, Some(self.inclusion)) {
+                    RecoveryTrackDisposition::ExcludedSavedMute
+                } else {
+                    RecoveryTrackDisposition::Included
+                }
+            })
+    }
+}
+fn excluded(track: &BoundedTrackManifest, inclusion: Option<RecoveryInclusion>) -> bool {
+    inclusion == Some(RecoveryInclusion::ExcludeMuted) && track.mute.state == SavedMuteState::On
+}
+
+/// Reparse and qualify the entire sequence with explicit recovery inclusion.
+/// Unknown mute states are retained, never treated as ON or relabeled OFF.
+/// Excluded tracks must also pass complete translation and serializer preflight.
+/// This interface is not used by compatibility profiles or application export.
+pub fn build_recovery_sequence_manifest(
+    bytes: &[u8],
+    sequence_ordinal: usize,
+    division: u16,
+    inclusion: RecoveryInclusion,
+) -> Result<RecoverySequenceManifest, ManifestRefusal> {
+    Ok(RecoverySequenceManifest {
+        manifest: build_manifest(bytes, sequence_ordinal, division, Some(inclusion))?,
+        inclusion,
+    })
+}
+
+/// Complete Format 1 construction in memory only. No filesystem publication,
+/// application capability or native-reference input is accepted.
+pub fn assemble_recovery_sequence(
+    manifest: &RecoverySequenceManifest,
+) -> Result<MultitrackExportResult, ManifestRefusal> {
+    assemble_with_inclusion(&manifest.manifest, Some(manifest.inclusion))
 }
 
 // Exact bounded initial-only record envelope. Bytes 10..14 in the primary
@@ -201,6 +286,15 @@ pub fn build_bounded_sequence_manifest(
     bytes: &[u8],
     sequence_ordinal: usize,
     division: u16,
+) -> Result<BoundedSequenceManifest, ManifestRefusal> {
+    build_manifest(bytes, sequence_ordinal, division, None)
+}
+
+fn build_manifest(
+    bytes: &[u8],
+    sequence_ordinal: usize,
+    division: u16,
+    inclusion: Option<RecoveryInclusion>,
 ) -> Result<BoundedSequenceManifest, ManifestRefusal> {
     if division != midi_export::IDENTITY_480_PPQN {
         return Err(refusal("division", division));
@@ -279,8 +373,14 @@ pub fn build_bounded_sequence_manifest(
                     && r.descriptor_ordinal == binding.descriptor_ordinal
             })
             .ok_or_else(|| refusal("mute", "missing evidence"))?;
-        if mute.state != SavedMuteState::Off {
+        if inclusion.is_none() && mute.state != SavedMuteState::Off {
             return Err(refusal("mute", mute.state));
+        }
+        // Recovery inclusion never bypasses declared raw-object accounting,
+        // even for saved-ON tracks that will not be emitted.
+        if inclusion.is_some() {
+            crate::controller166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
+                .map_err(|e| refusal("source accounting", (binding.pair_ordinal, e)))?;
         }
         let classified = classified
             .iter()
@@ -523,6 +623,10 @@ pub fn build_bounded_sequence_manifest(
             routing: routing.clone(),
             mute: mute.clone(),
             events,
+            primary_range: sequence.track_pairs[binding.pair_ordinal]
+                .primary
+                .record_range
+                .clone(),
             secondary_range: sequence.track_pairs[binding.pair_ordinal]
                 .secondary
                 .record_range
@@ -539,12 +643,19 @@ pub fn build_bounded_sequence_manifest(
     };
     // Acceptance includes all adapter and source-order safety checks. This
     // prevents an accepted proof from hiding an unsupported value or tie.
-    assemble_bounded_sequence_with_report(&manifest)?;
+    assemble_with_inclusion(&manifest, inclusion)?;
     Ok(manifest)
 }
 
 pub(crate) fn assemble_bounded_sequence_with_report(
     manifest: &BoundedSequenceManifest,
+) -> Result<MultitrackExportResult, ManifestRefusal> {
+    assemble_with_inclusion(manifest, None)
+}
+
+fn assemble_with_inclusion(
+    manifest: &BoundedSequenceManifest,
+    inclusion: Option<RecoveryInclusion>,
 ) -> Result<MultitrackExportResult, ManifestRefusal> {
     let c = &manifest.conductor;
     let m = &c.meter;
@@ -590,6 +701,18 @@ pub(crate) fn assemble_bounded_sequence_with_report(
         if !adapted.warnings.is_empty() || !adapted.untranslated_metadata.is_empty() {
             return Err(refusal("track adaptation", "incomplete translation"));
         }
+        // Serialize before exclusion: no unsupported ordering can hide in an
+        // omitted track. The ledger retains its complete source coverage.
+        let serialized = smf::serialize_named_musical_track_with_owned_simultaneous_notes(
+            &name,
+            &adapted.scheduled_events,
+            &adapted.note_provenance,
+            &t.simultaneous_notes,
+        )
+        .map_err(|e| refusal("source ordering", e))?;
+        if excluded(t, inclusion) {
+            continue;
+        }
         totals.add_assign(&adapted.counts);
         reports.push(MusicalTrackExportReport {
             context: format!("track {}", t.source_ordinal),
@@ -599,15 +722,7 @@ pub(crate) fn assemble_bounded_sequence_with_report(
             warnings: adapted.warnings,
             untranslated_metadata: adapted.untranslated_metadata,
         });
-        tracks.push(
-            smf::serialize_named_musical_track_with_owned_simultaneous_notes(
-                &name,
-                &adapted.scheduled_events,
-                &adapted.note_provenance,
-                &t.simultaneous_notes,
-            )
-            .map_err(|e| refusal("source ordering", e))?,
-        );
+        tracks.push(serialized);
     }
     let smf_bytes = smf::serialize_format1(manifest.ppqn, &tracks)
         .map_err(|e| refusal("Format 1 assembly", e))?;

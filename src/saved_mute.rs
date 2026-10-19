@@ -1,7 +1,7 @@
 //! Bounded saved track-mute interpretation for the evidenced Descriptor166 subset.
 //!
 //! This is inferred saved state, not an observed UI state or MIDI inclusion policy.
-//! The bounded recovery builder requires OFF; this module never authorizes omission.
+//! Legacy application construction requires OFF; this module never decides inclusion.
 //! See Experiments 035/036 and the exact 04-guard PM-R10 evidence recorded in
 //! docs/BOUNDED_SAVED_MUTE_04_GUARD_IMPLEMENTATION.md.
 
