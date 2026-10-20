@@ -838,7 +838,7 @@ impl AppService {
     }
 
     #[allow(clippy::result_large_err)]
-    fn prepare_export_with_inclusion(
+    pub(crate) fn prepare_export_with_inclusion(
         &self,
         request: &ExportSequenceRequest,
         inclusion: Option<RecoveryInclusionOption>,

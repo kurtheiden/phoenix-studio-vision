@@ -163,7 +163,7 @@ impl EmptyTrackManifest {
     }
 }
 
-fn qualify_empty_track(
+pub(crate) fn qualify_empty_track(
     sequence: &crate::sequence_container::SequenceContainer<'_>,
     binding: &crate::sequence_container::TrackBinding,
 ) -> Result<EmptyTrackManifest, ManifestRefusal> {
@@ -509,234 +509,15 @@ fn build_manifest(
         if walk.consumed_range != routing.event_range || walk.items.is_empty() {
             return Err(refusal("event walk", "incomplete or empty"));
         }
-        let sysex = if walk.items.iter().any(|item| {
-            matches!(item,
-            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::SysEx(_)))
-        }) {
-            crate::sysex166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal, &walk)
-                .map_err(|e| refusal("SysEx framing", e))?
-        } else {
-            vec![]
-        };
-        let controllers = if walk.items.iter().any(|item| {
-            matches!(item,
-            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::Controller(_)))
-        }) {
-            crate::controller166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
-                .map_err(|e| refusal("translation", e))?
-        } else {
-            vec![]
-        };
-        let context_notes = if walk.items.iter().any(|item| {
-            matches!(item,
-            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::ContextMediatedNote(_)))
-        }) {
-            crate::context_note166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
-                .map_err(|e| refusal("translation", e))?
-        } else {
-            vec![]
-        };
-        let mut events = Vec::new();
-        let mut ordinal = 0;
-        let mut patches = 0;
-        let mut program_only_patches = Vec::new();
-        let mut terminal_programs = Vec::new();
-        let mut bank_patches = Vec::new();
-        let mut numeric_programs = Vec::new();
-        let mut standalone_banks = Vec::new();
-        let mut context_controllers = Vec::new();
-        for item in &walk.items {
-            match item {
-                MixedEventItem::Event(e) => {
-                    events.push(match &e.event {
-                        MixedEventKind::SysEx(s) => {
-                            let proof = sysex
-                                .iter()
-                                .find(|proof| {
-                                    let p = proof.provenance();
-                                    p.logical_source_ordinal == ordinal
-                                        && p.representation_range == s.representation_range
-                                })
-                                .ok_or_else(|| refusal("SysEx framing", "missing owned proof"))?;
-                            DecodedExportEvent::from_source_framed_sysex07(proof.clone())
-                        }
-                        MixedEventKind::Controller(c) => controllers
-                            .iter()
-                            .find(|proof| {
-                                let p = proof.provenance();
-                                p.logical_source_ordinal == ordinal
-                                    && p.representation_range == c.record_range
-                            })
-                            .ok_or_else(|| refusal("translation", "missing Controller proof"))?
-                            .decoded_export_event(),
-                        MixedEventKind::ContextMediatedController(_) => {
-                            let proof = crate::context_controller166::qualify_current(
-                                bytes,
-                                sequence_ordinal,
-                                binding.pair_ordinal,
-                                item,
-                                routing,
-                                ordinal,
-                            )
-                            .map_err(|e| refusal("context Controller", e))?;
-                            let event = proof.decoded_export_event();
-                            context_controllers.push(proof);
-                            event
-                        }
-                        MixedEventKind::ContextMediatedNote(n) => context_notes
-                            .iter()
-                            .find(|proof| {
-                                let p = proof.provenance();
-                                p.logical_source_ordinal == ordinal
-                                    && p.composition_range == n.representation_range
-                                    && p.composition_bytes == bytes[n.representation_range.clone()]
-                                    && p.absolute_tick == e.position
-                                    && proof.routing() == routing
-                            })
-                            .ok_or_else(|| refusal("translation", "missing context Note proof"))?
-                            .decoded_export_event(),
-                        MixedEventKind::Note(n) => {
-                            DecodedExportEvent::from_note(e.position, ordinal, n)
-                        }
-                        MixedEventKind::ChannelPressure { entry, .. } => {
-                            DecodedExportEvent::from_channel_pressure(e.position, ordinal, entry)
-                        }
-                        MixedEventKind::PitchBend { entry, .. } => {
-                            DecodedExportEvent::from_pitch_bend(e.position, ordinal, entry)
-                        }
-                        _ => return Err(refusal("translation", "unsupported parsed event")),
-                    });
-                }
-                MixedEventItem::PatchToNote(n) => {
-                    let evidence = classified
-                        .patches
-                        .get(patches)
-                        .filter(|p| p.source_ordinal == ordinal)
-                        .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
-                    match &evidence.result {
-                        Ok(patch) => {
-                            events.push(patch.decoded_export_event());
-                            events.push(DecodedExportEvent::from_note_body(
-                                n.first_note_position,
-                                ordinal + 1,
-                                &n.first_note,
-                            ));
-                        }
-                        Err(original) => {
-                            if let Ok(proof) = crate::program_only166::qualify_track(
-                                bytes,
-                                sequence_ordinal,
-                                binding.pair_ordinal,
-                            ) {
-                                let p = proof.provenance();
-                                if p.logical_source_ordinal != ordinal
-                                    || p.composition_range != n.representation_range
-                                {
-                                    return Err(refusal("Patch", original));
-                                }
-                                events.extend(proof.decoded_export_events());
-                                program_only_patches.push(proof);
-                            } else if let Ok(proof) = crate::numeric_program166::qualify_current(
-                                bytes,
-                                sequence_ordinal,
-                                binding.pair_ordinal,
-                                item,
-                                routing,
-                                ordinal,
-                            ) {
-                                events.extend(proof.decoded_export_events());
-                                numeric_programs.push(proof);
-                            } else {
-                                let proof = crate::bank_patch166_handoff::qualify_current(
-                                    bytes,
-                                    sequence_ordinal,
-                                    binding.pair_ordinal,
-                                    item,
-                                    routing,
-                                    ordinal,
-                                )
-                                .map_err(|_| refusal("Patch", original))?;
-                                events.extend(proof.decoded_export_events());
-                                bank_patches.push(proof);
-                            }
-                        }
-                    }
-                    patches += 1;
-                }
-                MixedEventItem::Patch(patch) => {
-                    let evidence = classified
-                        .patches
-                        .get(patches)
-                        .filter(|p| {
-                            p.source_ordinal == ordinal
-                                && p.source_range == patch.patch.representation_range
-                        })
-                        .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
-                    if let Some(proof) = crate::terminal_program166::qualify_track(
-                        bytes,
-                        sequence_ordinal,
-                        binding.pair_ordinal,
-                    )
-                    .ok()
-                    .filter(|proof| {
-                        let p = proof.provenance();
-                        p.logical_source_ordinal == evidence.source_ordinal
-                            && p.representation_range == patch.patch.representation_range
-                    }) {
-                        events.push(proof.decoded_export_event());
-                        terminal_programs.push(proof);
-                    } else {
-                        let proof = crate::standalone_bank166::qualify_current(
-                            bytes,
-                            sequence_ordinal,
-                            binding.pair_ordinal,
-                            item,
-                            routing,
-                            ordinal,
-                        )
-                        .map_err(|_| refusal("Patch", "unsupported standalone Patch"))?;
-                        events.push(proof.decoded_export_event());
-                        standalone_banks.push(proof);
-                    }
-                    patches += 1;
-                }
-            }
-            ordinal += item.logical_event_count() as u64;
-        }
-        if events.len() != walk.logical_event_count() || patches != classified.patches.len() {
-            return Err(refusal("translation", "incomplete accounting"));
-        }
-        // Qualification failure supplies no exception. Existing preflight remains
-        // authoritative; older supported tracks need no new accounting contract.
-        let simultaneous_notes = crate::simultaneous_note166::qualify_track(
+        tracks.push(qualify_track_translation(
             bytes,
             sequence_ordinal,
-            binding.pair_ordinal,
-        )
-        .unwrap_or_default();
-        tracks.push(BoundedTrackManifest {
-            simultaneous_notes,
-            program_only_patches,
-            numeric_programs,
-            standalone_banks,
-            terminal_programs,
-            bank_patches,
-            context_notes,
-            context_controllers,
-            source_ordinal: binding.pair_ordinal,
-            descriptor_ordinal: binding.descriptor_ordinal,
-            routing: routing.clone(),
-            mute: mute.clone(),
-            events,
-            primary_range: sequence.track_pairs[binding.pair_ordinal]
-                .primary
-                .record_range
-                .clone(),
-            secondary_range: sequence.track_pairs[binding.pair_ordinal]
-                .secondary
-                .record_range
-                .clone(),
-        });
+            binding,
+            sequence,
+            mute,
+            classified,
+            &walk,
+        )?);
     }
     let manifest = BoundedSequenceManifest {
         sequence_range: sequence.sequence_range.clone(),
@@ -753,21 +534,298 @@ fn build_manifest(
     Ok(manifest)
 }
 
+// Shared unchanged production qualification; census supplies only same-source
+// parser/routing evidence. This helper never grants export authority.
+pub(crate) fn qualify_track_translation(
+    bytes: &[u8],
+    sequence_ordinal: usize,
+    binding: &crate::sequence_container::TrackBinding,
+    sequence: &crate::sequence_container::SequenceContainer<'_>,
+    mute: &SavedMuteEvidence,
+    classified: &crate::bounded_patch_translation::Cc0TrackClassification<'_>,
+    walk: &crate::mixed_event::MixedEventWalk<'_>,
+) -> Result<BoundedTrackManifest, ManifestRefusal> {
+    let routing = &classified.routing;
+    let sysex = if walk.items.iter().any(|item| {
+        matches!(item,
+            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::SysEx(_)))
+    }) {
+        crate::sysex166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal, walk)
+            .map_err(|e| refusal("SysEx framing", e))?
+    } else {
+        vec![]
+    };
+    let controllers = if walk.items.iter().any(|item| {
+        matches!(item,
+            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::Controller(_)))
+    }) {
+        crate::controller166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
+            .map_err(|e| refusal("translation", e))?
+    } else {
+        vec![]
+    };
+    let context_notes = if walk.items.iter().any(|item| {
+        matches!(item,
+            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::ContextMediatedNote(_)))
+    }) {
+        crate::context_note166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
+            .map_err(|e| refusal("translation", e))?
+    } else {
+        vec![]
+    };
+    let mut events = Vec::new();
+    let mut ordinal = 0;
+    let mut patches = 0;
+    let mut program_only_patches = Vec::new();
+    let mut terminal_programs = Vec::new();
+    let mut bank_patches = Vec::new();
+    let mut numeric_programs = Vec::new();
+    let mut standalone_banks = Vec::new();
+    let mut context_controllers = Vec::new();
+    for item in &walk.items {
+        match item {
+            MixedEventItem::Event(e) => {
+                events.push(match &e.event {
+                    MixedEventKind::SysEx(s) => {
+                        let proof = sysex
+                            .iter()
+                            .find(|proof| {
+                                let p = proof.provenance();
+                                p.logical_source_ordinal == ordinal
+                                    && p.representation_range == s.representation_range
+                            })
+                            .ok_or_else(|| refusal("SysEx framing", "missing owned proof"))?;
+                        DecodedExportEvent::from_source_framed_sysex07(proof.clone())
+                    }
+                    MixedEventKind::Controller(c) => controllers
+                        .iter()
+                        .find(|proof| {
+                            let p = proof.provenance();
+                            p.logical_source_ordinal == ordinal
+                                && p.representation_range == c.record_range
+                        })
+                        .ok_or_else(|| refusal("translation", "missing Controller proof"))?
+                        .decoded_export_event(),
+                    MixedEventKind::ContextMediatedController(_) => {
+                        let proof = crate::context_controller166::qualify_current(
+                            bytes,
+                            sequence_ordinal,
+                            binding.pair_ordinal,
+                            item,
+                            routing,
+                            ordinal,
+                        )
+                        .map_err(|e| refusal("context Controller", e))?;
+                        let event = proof.decoded_export_event();
+                        context_controllers.push(proof);
+                        event
+                    }
+                    MixedEventKind::ContextMediatedNote(n) => context_notes
+                        .iter()
+                        .find(|proof| {
+                            let p = proof.provenance();
+                            p.logical_source_ordinal == ordinal
+                                && p.composition_range == n.representation_range
+                                && p.composition_bytes == bytes[n.representation_range.clone()]
+                                && p.absolute_tick == e.position
+                                && proof.routing() == routing
+                        })
+                        .ok_or_else(|| refusal("translation", "missing context Note proof"))?
+                        .decoded_export_event(),
+                    MixedEventKind::Note(n) => {
+                        DecodedExportEvent::from_note(e.position, ordinal, n)
+                    }
+                    MixedEventKind::ChannelPressure { entry, .. } => {
+                        DecodedExportEvent::from_channel_pressure(e.position, ordinal, entry)
+                    }
+                    MixedEventKind::PitchBend { entry, .. } => {
+                        DecodedExportEvent::from_pitch_bend(e.position, ordinal, entry)
+                    }
+                    _ => return Err(refusal("translation", "unsupported parsed event")),
+                });
+            }
+            MixedEventItem::PatchToNote(n) => {
+                let evidence = classified
+                    .patches
+                    .get(patches)
+                    .filter(|p| p.source_ordinal == ordinal)
+                    .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
+                match &evidence.result {
+                    Ok(patch) => {
+                        events.push(patch.decoded_export_event());
+                        events.push(DecodedExportEvent::from_note_body(
+                            n.first_note_position,
+                            ordinal + 1,
+                            &n.first_note,
+                        ));
+                    }
+                    Err(original) => {
+                        if let Ok(proof) = crate::program_only166::qualify_track(
+                            bytes,
+                            sequence_ordinal,
+                            binding.pair_ordinal,
+                        ) {
+                            let p = proof.provenance();
+                            if p.logical_source_ordinal != ordinal
+                                || p.composition_range != n.representation_range
+                            {
+                                return Err(refusal("Patch", original));
+                            }
+                            events.extend(proof.decoded_export_events());
+                            program_only_patches.push(proof);
+                        } else if let Ok(proof) = crate::numeric_program166::qualify_current(
+                            bytes,
+                            sequence_ordinal,
+                            binding.pair_ordinal,
+                            item,
+                            routing,
+                            ordinal,
+                        ) {
+                            events.extend(proof.decoded_export_events());
+                            numeric_programs.push(proof);
+                        } else {
+                            let proof = crate::bank_patch166_handoff::qualify_current(
+                                bytes,
+                                sequence_ordinal,
+                                binding.pair_ordinal,
+                                item,
+                                routing,
+                                ordinal,
+                            )
+                            .map_err(|_| refusal("Patch", original))?;
+                            events.extend(proof.decoded_export_events());
+                            bank_patches.push(proof);
+                        }
+                    }
+                }
+                patches += 1;
+            }
+            MixedEventItem::Patch(patch) => {
+                let evidence = classified
+                    .patches
+                    .get(patches)
+                    .filter(|p| {
+                        p.source_ordinal == ordinal
+                            && p.source_range == patch.patch.representation_range
+                    })
+                    .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
+                if let Some(proof) = crate::terminal_program166::qualify_track(
+                    bytes,
+                    sequence_ordinal,
+                    binding.pair_ordinal,
+                )
+                .ok()
+                .filter(|proof| {
+                    let p = proof.provenance();
+                    p.logical_source_ordinal == evidence.source_ordinal
+                        && p.representation_range == patch.patch.representation_range
+                }) {
+                    events.push(proof.decoded_export_event());
+                    terminal_programs.push(proof);
+                } else {
+                    let proof = crate::standalone_bank166::qualify_current(
+                        bytes,
+                        sequence_ordinal,
+                        binding.pair_ordinal,
+                        item,
+                        routing,
+                        ordinal,
+                    )
+                    .map_err(|_| refusal("Patch", "unsupported standalone Patch"))?;
+                    events.push(proof.decoded_export_event());
+                    standalone_banks.push(proof);
+                }
+                patches += 1;
+            }
+        }
+        ordinal += item.logical_event_count() as u64;
+    }
+    if events.len() != walk.logical_event_count() || patches != classified.patches.len() {
+        return Err(refusal("translation", "incomplete accounting"));
+    }
+    // Qualification failure supplies no exception. Existing preflight remains
+    // authoritative; older supported tracks need no new accounting contract.
+    let simultaneous_notes =
+        crate::simultaneous_note166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
+            .unwrap_or_default();
+    Ok(BoundedTrackManifest {
+        simultaneous_notes,
+        program_only_patches,
+        numeric_programs,
+        standalone_banks,
+        terminal_programs,
+        bank_patches,
+        context_notes,
+        context_controllers,
+        source_ordinal: binding.pair_ordinal,
+        descriptor_ordinal: binding.descriptor_ordinal,
+        routing: routing.clone(),
+        mute: mute.clone(),
+        events,
+        primary_range: sequence.track_pairs[binding.pair_ordinal]
+            .primary
+            .record_range
+            .clone(),
+        secondary_range: sequence.track_pairs[binding.pair_ordinal]
+            .secondary
+            .record_range
+            .clone(),
+    })
+}
+
 pub(crate) fn assemble_bounded_sequence_with_report(
     manifest: &BoundedSequenceManifest,
 ) -> Result<MultitrackExportResult, ManifestRefusal> {
     assemble_with_inclusion(manifest, None)
 }
 
-fn assemble_with_inclusion(
-    manifest: &BoundedSequenceManifest,
-    inclusion: Option<RecoveryInclusion>,
-) -> Result<MultitrackExportResult, ManifestRefusal> {
-    let c = &manifest.conductor;
-    let m = &c.meter;
+// Same adapter/order checks are used before exclusion and by read-only census.
+pub(crate) fn prepare_track_export(
+    t: &BoundedTrackManifest,
+) -> Result<
+    (
+        Vec<u8>,
+        midi_export::ExportTrackResult,
+        smf::SerializedTrack,
+    ),
+    ManifestRefusal,
+> {
+    let name = midi_export::adapt_text(&t.routing.label_bytes).map_err(|e| refusal("label", e))?;
+    let channel = MidiChannel::new(t.routing.midi_channel).map_err(|e| refusal("channel", e))?;
+    let adapted = midi_export::adapt_track(
+        &t.events,
+        Some(ChannelAssignment {
+            channel,
+            provenance: ChannelAssignmentProvenance::ParsedRouting,
+        }),
+        TimingPolicy::Identity480,
+        PatchPolicy::StrictKnownOnly,
+    )
+    .map_err(|e| refusal("track adaptation", e))?;
+    if !adapted.warnings.is_empty() || !adapted.untranslated_metadata.is_empty() {
+        return Err(refusal("track adaptation", "incomplete translation"));
+    }
+    // Serialize before exclusion: no unsupported ordering can hide in an
+    // omitted track. The ledger retains its complete source coverage.
+    let serialized = smf::serialize_named_musical_track_with_owned_simultaneous_notes(
+        &name,
+        &adapted.scheduled_events,
+        &adapted.note_provenance,
+        &t.simultaneous_notes,
+    )
+    .map_err(|e| refusal("source ordering", e))?;
+    Ok((name, adapted, serialized))
+}
+
+// Conductor adaptation is independently evaluable after the two bounded decoders.
+pub(crate) fn prepare_conductor_export(
+    name: &[u8],
+    tempo: &InitialTempoEvent,
+    m: &InitialMeterEvent,
+) -> Result<(midi_export::ConductorResult, smf::SerializedTrack), ManifestRefusal> {
     let conductor = midi_export::adapt_conductor(
-        &manifest.name,
-        c.tempo.mpqn(),
+        name,
+        tempo.mpqn(),
         (
             m.numerator.value,
             m.denominator_exponent.value,
@@ -781,12 +839,22 @@ fn assemble_with_inclusion(
     if !conductor.warnings.is_empty() || m.numerator.value == 0 || m.denominator().is_none() {
         return Err(refusal("meter", "fallback or invalid meter"));
     }
-    let mut tracks = vec![smf::serialize_conductor_track(
+    let serialized = smf::serialize_conductor_track(
         &conductor.sequence_name,
         conductor.tempo_mpqn,
         conductor.time_signature,
     )
-    .map_err(|e| refusal("conductor serialization", e))?];
+    .map_err(|e| refusal("conductor serialization", e))?;
+    Ok((conductor, serialized))
+}
+
+fn assemble_with_inclusion(
+    manifest: &BoundedSequenceManifest,
+    inclusion: Option<RecoveryInclusion>,
+) -> Result<MultitrackExportResult, ManifestRefusal> {
+    let c = &manifest.conductor;
+    let (conductor, serialized) = prepare_conductor_export(&manifest.name, &c.tempo, &c.meter)?;
+    let mut tracks = vec![serialized];
     let mut totals = conductor.counts.clone();
     let mut reports = Vec::new();
     for ordinal in 0..manifest.tracks.len() + manifest.empty_tracks.len() {
@@ -804,32 +872,7 @@ fn assemble_with_inclusion(
             .iter()
             .find(|t| t.source_ordinal == ordinal)
             .ok_or_else(|| refusal("source accounting", "missing track ordinal"))?;
-        let name =
-            midi_export::adapt_text(&t.routing.label_bytes).map_err(|e| refusal("label", e))?;
-        let channel =
-            MidiChannel::new(t.routing.midi_channel).map_err(|e| refusal("channel", e))?;
-        let adapted = midi_export::adapt_track(
-            &t.events,
-            Some(ChannelAssignment {
-                channel,
-                provenance: ChannelAssignmentProvenance::ParsedRouting,
-            }),
-            TimingPolicy::Identity480,
-            PatchPolicy::StrictKnownOnly,
-        )
-        .map_err(|e| refusal("track adaptation", e))?;
-        if !adapted.warnings.is_empty() || !adapted.untranslated_metadata.is_empty() {
-            return Err(refusal("track adaptation", "incomplete translation"));
-        }
-        // Serialize before exclusion: no unsupported ordering can hide in an
-        // omitted track. The ledger retains its complete source coverage.
-        let serialized = smf::serialize_named_musical_track_with_owned_simultaneous_notes(
-            &name,
-            &adapted.scheduled_events,
-            &adapted.note_provenance,
-            &t.simultaneous_notes,
-        )
-        .map_err(|e| refusal("source ordering", e))?;
+        let (name, adapted, serialized) = prepare_track_export(t)?;
         if excluded(t, inclusion) {
             continue;
         }

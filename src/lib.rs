@@ -14,6 +14,7 @@ pub mod bounded_sequence;
 pub mod bounded_terminal;
 pub mod bounded_terminal166;
 mod c_abi;
+pub mod census;
 pub mod channel_pressure;
 pub mod comparison;
 pub mod compatibility;

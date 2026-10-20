@@ -2,6 +2,7 @@
 name = "phoenix"
 version = "0.1.0"
 edition = "2021"
+default-run = "phoenix"
 description = "A format-neutral binary inspection tool for the Phoenix project"
 license = "MIT"
 repository = "https://github.com/kurtheiden/phoenix-studio-vision"
