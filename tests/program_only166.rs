@@ -304,12 +304,12 @@ fn wrappers_counts_routing_and_explicit_successor_mutations_refuse() {
     assert!(qualify(&fixture(&e, 4), 0, 0).is_err());
 }
 #[test]
-fn only_first_patch_after_ordinary_prefix_and_no_contexts() {
+fn only_first_patch_after_optional_ordinary_prefix_and_no_contexts() {
     let mut initial = CC.to_vec();
     initial.extend([0, 255, 96, 7, 87, 127, 0, 1, 2, 3, 4]);
     initial.extend(composition());
     assert!(qualify(&fixture(&initial, 4), 0, 0).is_err());
-    assert!(qualify(&fixture(&composition(), 2), 0, 0).is_err());
+    assert!(qualify(&fixture(&composition(), 2), 0, 0).is_ok());
     let mut e = vec![0, 144, 60, 100, 64, 12];
     e.extend(CC);
     e.extend(composition());
@@ -409,4 +409,140 @@ fn authenticated_composition_and_native_order_with_remaining_refusals() {
         .unwrap();
     assert!(row.export_capability.is_none());
     xform_application::assert_capability(row, true);
+}
+
+// Synthetic equivalents retain the two candidates' program, label, name length
+// and timing components; names and Note data are invented.
+fn opening_candidate(
+    program: u8,
+    label: &[u8; 2],
+    name_len: usize,
+    tick: u32,
+    interval: u32,
+) -> Vec<u8> {
+    fn vlq(mut n: u32) -> Vec<u8> {
+        let mut bytes = vec![(n & 127) as u8];
+        n >>= 7;
+        while n > 0 {
+            bytes.push((n & 127) as u8 | 128);
+            n >>= 7;
+        }
+        bytes.reverse();
+        bytes
+    }
+    let mut e = vlq(tick);
+    e.extend([
+        255,
+        124,
+        (name_len + 15) as u8,
+        0,
+        0,
+        program,
+        0,
+        program,
+        name_len as u8,
+    ]);
+    e.extend(vec![b'X'; name_len]);
+    e.extend([3, b'I', label[0], label[1], 4, 255, 255, 255, program]);
+    e.extend(vlq(interval));
+    e.extend([144, 70, 102, 90, 12]);
+    e
+}
+
+#[test]
+fn opening_candidates_preserve_ticks_counts_routing_and_program_only_serialization() {
+    for (program, label, name_len, tick, note_tick) in
+        [(58, *b"83", 13, 320, 71477), (15, *b"28", 16, 1500, 41520)]
+    {
+        let e = opening_candidate(program, &label, name_len, tick, note_tick - tick);
+        let b = fixture(&e, 2);
+        let q = qualify(&b, 0, 0).unwrap();
+        let p = q.provenance().clone();
+        assert!(q.controller_prefix().is_empty());
+        assert_eq!(
+            (p.previous_tick, p.patch_tick, p.note_tick),
+            (0, tick, note_tick)
+        );
+        assert_eq!(
+            (
+                p.logical_source_ordinal,
+                p.raw_source_object_ordinal,
+                p.declared_source_objects
+            ),
+            (0, 0, 2)
+        );
+        assert_eq!(&b[p.composition_range.clone()], p.composition_bytes);
+        let a = adapt(&q);
+        assert_eq!((a.counts.bank_select_msb, a.counts.bank_select_lsb), (0, 0));
+        assert_eq!(
+            a.scheduled_events
+                .iter()
+                .map(|e| (e.absolute_tick, serialize_channel_message(&e.message)))
+                .collect::<Vec<_>>(),
+            [
+                (tick, vec![0xc3, program]),
+                (note_tick, vec![0x93, 70, 102]),
+                (note_tick + 12, vec![0x83, 70, 90]),
+            ]
+        );
+        let m = manifest(&b, 0, 480).unwrap();
+        assert_eq!(m.tracks()[0].program_only_patches(), [q]);
+        let midi = assemble_bounded_sequence(&m).unwrap();
+        assert_eq!(
+            reference::midi_tracks(&midi)[1]
+                .iter()
+                .filter(|(_, s, _)| *s >= 128 && *s < 240)
+                .cloned()
+                .collect::<Vec<_>>(),
+            [
+                (tick, 0xc3, vec![program]),
+                (note_tick, 0x93, vec![70, 102]),
+                (note_tick + 12, 0x83, vec![70, 90]),
+            ]
+        );
+        for declared in [1, 3] {
+            assert!(qualify(&fixture(&e, declared), 0, 0).is_err());
+        }
+        assert!(qualify(&b, 0, 1).is_err());
+        let mut initial = vec![0, 255, 96, 7, 87, 127, 0, 1, 2, 3, 4];
+        initial.extend(&e);
+        assert_eq!(
+            qualify(&fixture(&initial, 3), 0, 0).unwrap_err(),
+            phoenix::program_only166::ProgramOnlyRefusal::Composition
+        );
+        let mut contextual = e.clone();
+        let note = contextual.len() - 5;
+        contextual.splice(note..note, [255, 96, 7, 87, 127, 0, 1, 1, 1, 1, 0]);
+        assert_eq!(
+            qualify(&fixture(&contextual, 3), 0, 0).unwrap_err(),
+            phoenix::program_only166::ProgramOnlyRefusal::Composition
+        );
+        for offset in [p.pre_name_range.start + 3, p.post_name_range.start + 6] {
+            let mut bad = b.clone();
+            bad[offset] = 80;
+            assert!(qualify(&bad, 0, 0).is_err());
+        }
+    }
+}
+
+#[test]
+fn multiple_ordinary_controllers_keep_accumulated_timing_and_accounting() {
+    let mut e = CC.to_vec();
+    e.extend(CC);
+    e.extend(composition());
+    let q = qualify(&fixture(&e, 4), 0, 0).unwrap();
+    assert_eq!(q.controller_prefix().len(), 2);
+    let p = q.provenance();
+    assert_eq!(
+        (p.previous_tick, p.patch_tick, p.note_tick),
+        (40, 500, 1940)
+    );
+    assert_eq!(
+        (
+            p.logical_source_ordinal,
+            p.raw_source_object_ordinal,
+            p.declared_source_objects
+        ),
+        (2, 2, 4)
+    );
 }

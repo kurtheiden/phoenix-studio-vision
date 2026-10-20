@@ -505,3 +505,24 @@ fn multi_patch_successful_program_only_mismatch_refuses_without_fallback() {
         Some(&1)
     );
 }
+
+#[test]
+fn opening_program_only_proof_cannot_authorize_a_later_patch() {
+    let mut e = program_only();
+    e.extend(numeric(false));
+    let b = fixture(&e, 4);
+    let proof = crate::program_only166::qualify_track(&b, 0, 0).unwrap();
+    assert_eq!(proof.provenance().logical_source_ordinal, 0);
+    let s = &census_bytes(&b).sequences[0];
+    let patches: Vec<_> = s
+        .diagnostics
+        .iter()
+        .filter(|d| d.stage == Stage::PatchTranslation)
+        .collect();
+    assert_eq!(patches.len(), 2);
+    assert_eq!(patches[0].outcome, Outcome::Passed);
+    assert_eq!(patches[1].outcome, Outcome::Failed);
+    assert_eq!(patches[1].reason_code, "NonzeroPosition");
+    assert_eq!(s.general_include_muted.stage, "Patch");
+    assert_eq!(s.general_include_muted.reason_code, "NonzeroPosition");
+}

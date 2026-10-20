@@ -22,9 +22,56 @@ fn approved_baseline_exports_remain_identical() {
         })
         .unwrap();
     assert_eq!(inspected.sequences.len(), 18);
+    // Authentic, source-bound positive fixtures, including the additional
+    // zero-tick match discovered by the complete census. These facts are literal
+    // expectations, independent of the census's fallback classification.
+    for (sequence, pair, range, program, post, ticks, name_len) in [
+        (
+            1,
+            6,
+            0x124de..0x12508,
+            58,
+            *b"\x03I83\x04\xff\xff\xff",
+            (320, 71477),
+            13,
+        ),
+        (
+            10,
+            0,
+            0x2598e..0x259b6,
+            19,
+            *b"\x03I34\x04\xff\xff\xff",
+            (0, 2),
+            14,
+        ),
+        (
+            12,
+            13,
+            0x2d050..0x2d07d,
+            15,
+            *b"\x03I28\x04\xff\xff\xff",
+            (1500, 41520),
+            16,
+        ),
+    ] {
+        let q = phoenix::program_only166::qualify_track(&bytes, sequence, pair).unwrap();
+        let p = q.provenance();
+        assert!(q.controller_prefix().is_empty());
+        assert_eq!(p.composition_range, range);
+        assert_eq!(p.pre_name_bytes, [0, 0, program, 0, program]);
+        assert_eq!(p.post_name_bytes, post);
+        assert_eq!(
+            (p.previous_tick, p.patch_tick, p.note_tick),
+            (0, ticks.0, ticks.1)
+        );
+        assert_eq!(p.logical_source_ordinal, 0);
+        assert_eq!(p.raw_source_object_ordinal, 0);
+        assert_eq!(&bytes[p.composition_range.clone()], p.composition_bytes);
+        assert_eq!(p.post_name_range.start - p.pre_name_range.end - 1, name_len);
+    }
     let census = phoenix::census::census_path(std::path::Path::new(&source)).unwrap();
-    assert_eq!(census.metrics.complete_include_muted, 6);
-    assert_eq!(census.metrics.complete_exclude_muted, 6);
+    assert_eq!(census.metrics.complete_include_muted, 7);
+    assert_eq!(census.metrics.complete_exclude_muted, 7);
     assert_eq!(census.metrics.application_authorized, 9);
     assert_eq!(census.metrics.proven_policy_only, 0);
     assert_eq!(census.metrics.sequences_with_decoding_blockers, 0);
@@ -32,18 +79,18 @@ fn approved_baseline_exports_remain_identical() {
     assert_eq!(
         census.metrics.blocker_instances,
         BTreeMap::from([
-            (Family::Translation, 25),
+            (Family::Translation, 22),
             (Family::Conductor, 5),
             (Family::Routing, 4),
             (Family::Ordering, 3),
             (Family::Ownership, 1),
         ])
     );
-    let expected_patches = [0, 6, 1, 2, 1, 0, 2, 1, 0, 0, 1, 2, 6, 0, 3, 0, 0, 0];
+    let expected_patches = [0, 5, 1, 2, 1, 0, 2, 1, 0, 0, 0, 2, 5, 0, 3, 0, 0, 0];
     let mut categories = BTreeMap::new();
     let mut ranges = std::collections::BTreeSet::new();
     for (ordinal, s) in census.sequences.iter().enumerate() {
-        let complete = [0, 5, 13, 15, 16, 17].contains(&ordinal);
+        let complete = [0, 5, 10, 13, 15, 16, 17].contains(&ordinal);
         for p in [&s.general_include_muted, &s.general_exclude_muted] {
             assert_eq!(
                 p.outcome,
@@ -102,8 +149,8 @@ fn approved_baseline_exports_remain_identical() {
     assert_eq!(
         categories,
         BTreeMap::from([
-            ("NonzeroPosition", 14),
-            ("PayloadLength", 5),
+            ("NonzeroPosition", 12),
+            ("PayloadLength", 4),
             ("unsupported_standalone_patch", 5),
             ("UnsupportedProgram", 1)
         ])
@@ -219,7 +266,7 @@ fn approved_baseline_exports_remain_identical() {
                 passed.push(ordinal);
             }
         }
-        assert_eq!(passed, vec![0, 5, 13, 15, 16, 17]);
+        assert_eq!(passed, vec![0, 5, 10, 13, 15, 16, 17]);
     }
     fs::remove_dir_all(output).unwrap();
     if std::env::var_os("PHOENIX_CENSUS_CAPTURE").is_some() {
@@ -230,7 +277,28 @@ fn approved_baseline_exports_remain_identical() {
             &fs::read(ledger).expect("UNAVAILABLE coverage: pre-change ledger missing"),
         )
         .unwrap();
-        assert_eq!(digests, previous, "authorized MIDI bytes changed");
+        assert_eq!(
+            previous.len(),
+            25,
+            "private pre-change ledger must contain all 25 outputs"
+        );
+        for (key, digest) in &previous {
+            assert_eq!(
+                digests.get(key),
+                Some(digest),
+                "authorized MIDI bytes changed: {key}"
+            );
+        }
+        let added: Vec<_> = digests
+            .keys()
+            .filter(|key| !previous.contains_key(*key))
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            added,
+            ["general/10/ExcludeMuted", "general/10/IncludeMuted"]
+        );
+        assert_eq!(digests.len(), 27);
     }
     assert_eq!(fs::read(source).unwrap(), bytes, "source changed");
 }

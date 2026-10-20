@@ -66,7 +66,7 @@ pub enum ProgramOnlyRefusal {
     MidiData,
 }
 
-/// Only the first Patch after a nonempty ordinary FF41 prefix qualifies.
+/// Only the first Patch after zero or more ordinary FF41 Controllers qualifies.
 /// All facts are derived again from this immutable source, not caller assertions.
 pub fn qualify_track(
     bytes: &[u8],
@@ -119,9 +119,6 @@ pub fn qualify_track(
                 previous = e.position;
                 continue;
             }
-        }
-        if prefix.is_empty() {
-            return Err(ProgramOnlyRefusal::Prefix);
         }
         let MixedEventItem::PatchToNote(t) = item else {
             return Err(ProgramOnlyRefusal::Composition);
@@ -203,7 +200,13 @@ pub fn qualify_track(
                 note_tick: t.first_note_position,
                 logical_source_ordinal: ordinal,
                 raw_source_object_ordinal: ordinal,
-                declared_source_objects: prefix[0].provenance().declared_source_objects,
+                // qualify_controllers already checked this count against the
+                // complete walk, including when there are no Controllers.
+                declared_source_objects: u32::from_be_bytes(
+                    pair.primary.payload.bytes[2..6]
+                        .try_into()
+                        .map_err(|_| ProgramOnlyRefusal::Accounting)?,
+                ),
             },
             routing: route,
             prefix,
