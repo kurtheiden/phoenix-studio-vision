@@ -68,6 +68,10 @@ fn patch(family: u8, tick: u8, standalone: bool) -> Vec<u8> {
         ),
         2 => (vec![0, 0, p, 8, p], vec![2, b'9', b'9', 4, 255, 80, 0]),
         3 => (vec![0, 1, p, 248, p | 128], vec![1, b'9', 4, 255, 81, 1]),
+        4 => (
+            vec![0, 0, p, 248, p],
+            vec![3, b'A', b'9', b'9', 4, 255, 81, 255],
+        ),
         _ => panic!(),
     };
     let mut payload = pre;
@@ -102,15 +106,15 @@ fn messages(b: &[u8]) -> Vec<(u32, Vec<u8>)> {
 }
 #[test]
 fn structural_cc0_and_cc0_cc32_expansion_order_and_timing() {
-    for family in 0..4 {
+    for family in 0..5 {
         for standalone in [false, true] {
             let b = synthetic(
                 &patch(family, 37, standalone),
                 if standalone { 3 } else { 2 },
             );
-            let msb = if family == 3 { 81 } else { 80 };
+            let msb = if family >= 3 { 81 } else { 80 };
             let mut expected = vec![(37, vec![0xb3, 0, msb])];
-            if family >= 2 {
+            if matches!(family, 2 | 3) {
                 expected.push((37, vec![0xb3, 32, if family == 3 { 1 } else { 0 }]));
             }
             expected.push((37, vec![0xc3, 42]));
@@ -156,7 +160,7 @@ fn provenance_and_source_accounting_survive_expansion() {
 }
 #[test]
 fn unsupported_wrappers_and_bank_neighbors_refuse() {
-    for family in 0..4 {
+    for family in 0..5 {
         let e = patch(family, 37, false);
         // Header, pre-name flags/Program agreement, post-name marker and bank tail.
         for (at, value) in [
@@ -312,4 +316,40 @@ fn authenticated_eight_patch_neighborhoods_match_native_when_available() {
         format!("{:x}", Sha256::digest(std::fs::read(path).unwrap())),
         format!("{:x}", Sha256::digest(&b))
     );
+}
+
+#[test]
+fn msb81_label_variants_and_absent_bank_boundary() {
+    for tick in [0, 37] {
+        for label in *b"AB" {
+            let mut e = patch(4, tick, false);
+            // Name has five bytes; the independently constructed post-name
+            // fields begin at offset 15.
+            e[16] = label;
+            let b = synthetic(&e, 2);
+            assert_eq!(
+                messages(&b),
+                [
+                    (u32::from(tick), vec![0xb3, 0, 81]),
+                    (u32::from(tick), vec![0xc3, 42])
+                ]
+            );
+            for (offset, value) in [
+                (6, 43),
+                (7, 8),
+                (8, 43),
+                (16, b'I'),
+                (17, b'x'),
+                (19, 5),
+                (20, 0),
+                (21, 82),
+                (22, 0),
+                (23, 128),
+            ] {
+                let mut bad = e.clone();
+                bad[offset] = value;
+                assert!(qualify(&synthetic(&bad, 2), 0, 0).is_err(), "{offset}");
+            }
+        }
+    }
 }

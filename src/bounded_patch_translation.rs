@@ -167,6 +167,19 @@ pub fn qualify_descriptor166_bank_patch(
                 {
                     Some(PatchTranslation::ConfirmedBankSelect { msb: 80, lsb: 0 })
                 }
+                // Native Bells references establish this A/B-labelled MSB-81
+                // form with no CC32, including nonzero accumulated timing and
+                // standalone / retained-context successors. Label digits do
+                // not supply the Program value; use the final payload byte.
+                ([0, 0, a, 248, b], [4, 255, 81, 255])
+                    if *a == p
+                        && *b == p
+                        && label.len() == 3
+                        && matches!(label[0], b'A' | b'B')
+                        && digits(&label[1..]) =>
+                {
+                    Some(PatchTranslation::ConfirmedBankSelectMsb { msb: 81 })
+                }
                 ([0, 1, a, 248, b], [4, 255, 81, 1])
                     if *a == p
                         && *b == p | 128

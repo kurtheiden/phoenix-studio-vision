@@ -116,6 +116,10 @@ fn patch(family: u8, tick: u8, standalone: bool) -> Vec<u8> {
         ),
         2 => (vec![0, 0, p, 8, p], vec![2, b'9', b'9', 4, 255, 80, 0]),
         3 => (vec![0, 1, p, 248, p | 128], vec![1, b'9', 4, 255, 81, 1]),
+        4 => (
+            vec![0, 0, p, 248, p],
+            vec![3, b'A', b'9', b'9', 4, 255, 81, 255],
+        ),
         _ => panic!(),
     };
     let mut payload = pre;
@@ -145,7 +149,7 @@ fn adapt(q: &phoenix::bank_patch166_handoff::OwnedBankPatch) -> ExportTrackResul
 }
 #[test]
 fn integrated_families_keep_bank_absence_zero_source_order_and_two_objects() {
-    for family in 0..4 {
+    for family in 0..5 {
         let mut e = vec![9, 255, 65, 5, 0, 1, 0, 7, 90];
         e.extend(patch(family, 37, false));
         let b = fixture(&e, 3);
@@ -167,9 +171,9 @@ fn integrated_families_keep_bank_absence_zero_source_order_and_two_objects() {
             .iter()
             .map(|e| (e.absolute_tick, serialize_channel_message(&e.message)))
             .collect();
-        let msb = if family == 3 { 81 } else { 80 };
+        let msb = if family >= 3 { 81 } else { 80 };
         let mut expected = vec![(46, vec![0xb3, 0, msb])];
-        if family >= 2 {
+        if matches!(family, 2 | 3) {
             expected.push((46, vec![0xb3, 32, if family == 3 { 1 } else { 0 }]));
         }
         expected.extend([
@@ -195,27 +199,29 @@ fn integrated_families_keep_bank_absence_zero_source_order_and_two_objects() {
 }
 #[test]
 fn embedded_context_is_owned_provenance_not_an_extra_musical_object() {
-    let mut e = patch(1, 37, false);
-    e.truncate(e.len() - NOTE.len());
-    e.extend([4, 255, 96, 7, 87, 127, 0, 1, 2, 3, 4, 5]);
-    e.extend(NOTE.iter().skip(1));
-    let b = fixture(&e, 3);
-    let q = qualify(&b, 0, 0).unwrap();
-    let p = q.provenance();
-    let c = p.context.as_ref().unwrap();
-    assert_eq!(p.note_tick, 46);
-    assert_eq!(p.raw_note_ordinal, 2);
-    assert_eq!(p.logical_source_ordinal, 0);
-    assert_eq!(&b[c.range.clone()], c.bytes);
-    assert_eq!(&b[c.payload_range.clone()], c.payload);
-    assert_eq!(c.final_interval, 5);
-    let m = manifest(&b, 0, 480).unwrap();
-    assert_eq!(m.tracks()[0].events().len(), 2);
-    assert_eq!(m.tracks()[0].bank_patches(), [q]);
+    for family in [1, 4] {
+        let mut e = patch(family, 37, false);
+        e.truncate(e.len() - NOTE.len());
+        e.extend([4, 255, 96, 7, 87, 127, 0, 1, 2, 3, 4, 5]);
+        e.extend(NOTE.iter().skip(1));
+        let b = fixture(&e, 3);
+        let q = qualify(&b, 0, 0).unwrap();
+        let p = q.provenance();
+        let c = p.context.as_ref().unwrap();
+        assert_eq!(p.note_tick, 46);
+        assert_eq!(p.raw_note_ordinal, 2);
+        assert_eq!(p.logical_source_ordinal, 0);
+        assert_eq!(&b[c.range.clone()], c.bytes);
+        assert_eq!(&b[c.payload_range.clone()], c.payload);
+        assert_eq!(c.final_interval, 5);
+        let m = manifest(&b, 0, 480).unwrap();
+        assert_eq!(m.tracks()[0].events().len(), 2);
+        assert_eq!(m.tracks()[0].bank_patches(), [q]);
+    }
 }
 #[test]
 fn malformed_unqualified_standalone_and_accounting_forms_stay_blocked() {
-    for family in 0..4 {
+    for family in 0..5 {
         let e = patch(family, 37, false);
         let b = fixture(&e, 2);
         let q = qualify(&b, 0, 0).unwrap();

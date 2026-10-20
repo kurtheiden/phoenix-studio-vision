@@ -70,27 +70,27 @@ fn approved_baseline_exports_remain_identical() {
         assert_eq!(p.post_name_range.start - p.pre_name_range.end - 1, name_len);
     }
     let census = phoenix::census::census_path(std::path::Path::new(&source)).unwrap();
-    assert_eq!(census.metrics.complete_include_muted, 7);
-    assert_eq!(census.metrics.complete_exclude_muted, 7);
-    assert_eq!(census.metrics.application_authorized, 9);
+    assert_eq!(census.metrics.complete_include_muted, 8);
+    assert_eq!(census.metrics.complete_exclude_muted, 8);
+    assert_eq!(census.metrics.application_authorized, 10);
     assert_eq!(census.metrics.proven_policy_only, 0);
     assert_eq!(census.metrics.sequences_with_decoding_blockers, 0);
     use phoenix::census::{Family, Outcome, Stage};
     assert_eq!(
         census.metrics.blocker_instances,
         BTreeMap::from([
-            (Family::Translation, 22),
+            (Family::Translation, 16),
             (Family::Conductor, 5),
             (Family::Routing, 4),
             (Family::Ordering, 3),
             (Family::Ownership, 1),
         ])
     );
-    let expected_patches = [0, 5, 1, 2, 1, 0, 2, 1, 0, 0, 0, 2, 5, 0, 3, 0, 0, 0];
+    let expected_patches = [0, 2, 0, 2, 1, 0, 0, 1, 0, 0, 0, 2, 5, 0, 3, 0, 0, 0];
     let mut categories = BTreeMap::new();
     let mut ranges = std::collections::BTreeSet::new();
     for (ordinal, s) in census.sequences.iter().enumerate() {
-        let complete = [0, 5, 10, 13, 15, 16, 17].contains(&ordinal);
+        let complete = [0, 2, 5, 10, 13, 15, 16, 17].contains(&ordinal);
         for p in [&s.general_include_muted, &s.general_exclude_muted] {
             assert_eq!(
                 p.outcome,
@@ -149,12 +149,36 @@ fn approved_baseline_exports_remain_identical() {
     assert_eq!(
         categories,
         BTreeMap::from([
-            ("NonzeroPosition", 12),
-            ("PayloadLength", 4),
-            ("unsupported_standalone_patch", 5),
-            ("UnsupportedProgram", 1)
+            ("NonzeroPosition", 9),
+            ("PayloadLength", 3),
+            ("unsupported_standalone_patch", 4)
         ])
     );
+    // All six new source instances must reach the production-backed census
+    // through exactly the known wrapper, including the standalone case.
+    for (sequence, pair) in [(1, 2), (1, 7), (1, 8), (2, 1), (6, 6), (6, 7)] {
+        let q = phoenix::bounded_patch_translation::qualify_descriptor166_bank_patch(
+            &bytes, sequence, pair,
+        )
+        .unwrap();
+        let event = q.decoded_export_event();
+        assert!(matches!(
+            event.kind,
+            phoenix::midi_export::DecodedExportEventKind::TargetedPatch {
+                translation: phoenix::midi_export::PatchTranslation::ConfirmedBankSelectMsb {
+                    msb: 81
+                },
+                ..
+            }
+        ));
+        let rows: Vec<_> = census.sequences[sequence]
+            .diagnostics
+            .iter()
+            .filter(|d| d.stage == Stage::PatchTranslation && d.pair_ordinal == Some(pair))
+            .collect();
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|d| d.outcome == Outcome::Passed));
+    }
     let output = ledger.parent().unwrap().join("regression-midi");
     fs::create_dir(&output).unwrap();
     let mut digests = BTreeMap::new();
@@ -240,7 +264,7 @@ fn approved_baseline_exports_remain_identical() {
             );
         }
     }
-    assert_eq!(ready, 9);
+    assert_eq!(ready, 10);
     for mode in [
         RecoveryInclusion::IncludeMuted,
         RecoveryInclusion::ExcludeMuted,
@@ -266,7 +290,7 @@ fn approved_baseline_exports_remain_identical() {
                 passed.push(ordinal);
             }
         }
-        assert_eq!(passed, vec![0, 5, 10, 13, 15, 16, 17]);
+        assert_eq!(passed, vec![0, 2, 5, 10, 13, 15, 16, 17]);
     }
     fs::remove_dir_all(output).unwrap();
     if std::env::var_os("PHOENIX_CENSUS_CAPTURE").is_some() {
@@ -296,9 +320,15 @@ fn approved_baseline_exports_remain_identical() {
             .collect();
         assert_eq!(
             added,
-            ["general/10/ExcludeMuted", "general/10/IncludeMuted"]
+            [
+                "application/2/None",
+                "general/10/ExcludeMuted",
+                "general/10/IncludeMuted",
+                "general/2/ExcludeMuted",
+                "general/2/IncludeMuted"
+            ]
         );
-        assert_eq!(digests.len(), 27);
+        assert_eq!(digests.len(), 30);
     }
     assert_eq!(fs::read(source).unwrap(), bytes, "source changed");
 }

@@ -132,6 +132,35 @@ fn authentic_bells_four_tracks_establish_explicit_cc0_only_policy() {
         let expected = expected_patch_events(&case);
         assert_eq!(patch_inventory(reference), expected);
 
+        // Reconcile the actual generalized source-derived translator against
+        // the independent native reference, not just a manually chosen policy.
+        // Track 6 has a different opaque pre-name tuple and remains excluded.
+        if case.ordinal != 6 {
+            let proof = phoenix::bounded_patch_translation::qualify_descriptor166_bank_patch(
+                &project_bytes,
+                1,
+                case.ordinal - 1,
+            )
+            .expect("native-backed MSB-81 source proof");
+            assert_eq!(proof.routing().midi_channel, case.channel);
+            let actual = adapt_track(
+                &[proof.decoded_export_event()],
+                Some(ChannelAssignment {
+                    channel: MidiChannel::new(proof.routing().midi_channel).unwrap(),
+                    provenance: ChannelAssignmentProvenance::ParsedRouting,
+                }),
+                TimingPolicy::Identity480,
+                PatchPolicy::StrictKnownOnly,
+            )
+            .unwrap();
+            assert_eq!(actual.counts.bank_select_lsb, 0);
+            let wire = serialize_musical_track(&actual.scheduled_events).unwrap();
+            assert_eq!(
+                patch_inventory(&parse_track_chunk(wire.as_bytes()).unwrap()),
+                expected
+            );
+        }
+
         let event = DecodedExportEvent {
             absolute_position: case.tick,
             source_ordinal: 0,
