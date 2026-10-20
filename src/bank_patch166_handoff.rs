@@ -1,6 +1,8 @@
 //! Owned handoff for CCA-071-qualified Patch-to-Note items; no new Patch rules.
 use crate::{
-    bounded_patch_translation::{qualify_descriptor166_bank_patch, BoundedBankPatch},
+    bounded_patch_translation::{
+        qualify_descriptor166_bank_patch, qualify_descriptor166_bank_patch_at, BoundedBankPatch,
+    },
     bounded_routing::BoundedRoutingResolution,
     midi_export::{DecodedExportEvent, DecodedExportEventKind},
     mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventItem},
@@ -39,6 +41,8 @@ pub struct BankPatchProvenance {
     pub raw_patch_ordinal: u64,
     pub raw_note_ordinal: u64,
     pub context: Option<EmbeddedContext>,
+    pub initial_context_range: Option<Range<usize>>,
+    pub initial_context_bytes: Option<Vec<u8>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OwnedBankPatch {
@@ -121,9 +125,9 @@ fn bind(
         (None, None) => None,
         _ => return Err(BankHandoffRefusal::Binding),
     };
-    // CCA-071 admits only ordinary Controllers before the first Patch, so
-    // logical and raw Patch ordinals agree. Its context is a separate raw object.
-    let raw_note_ordinal = ordinal + 1 + u64::from(context.is_some());
+    // Logical ordinals exclude retained context objects; raw ordinals do not.
+    let raw_patch_ordinal = q.raw_patch_ordinal();
+    let raw_note_ordinal = raw_patch_ordinal + 1 + u64::from(context.is_some());
     let note =
         DecodedExportEvent::from_note_body(n.first_note_position, ordinal + 1, &n.first_note);
     Ok(OwnedBankPatch {
@@ -150,9 +154,17 @@ fn bind(
             note_range: n.first_note.representation_range.clone(),
             note_tick: n.first_note_position,
             logical_source_ordinal: ordinal,
-            raw_patch_ordinal: ordinal,
+            raw_patch_ordinal,
             raw_note_ordinal,
             context,
+            initial_context_range: n
+                .initial_context
+                .as_ref()
+                .map(|c| c.leading_timing.range.start..c.context.range.end),
+            initial_context_bytes: n
+                .initial_context
+                .as_ref()
+                .map(|c| bytes[c.leading_timing.range.start..c.context.range.end].to_vec()),
         },
         routing: routing.clone(),
         events: [event, note],
@@ -169,7 +181,7 @@ pub(crate) fn qualify_current(
     routing: &BoundedRoutingResolution,
     ordinal: u64,
 ) -> Result<OwnedBankPatch, BankHandoffRefusal> {
-    let q = qualify_descriptor166_bank_patch(bytes, sequence_ordinal, pair_ordinal)
+    let q = qualify_descriptor166_bank_patch_at(bytes, sequence_ordinal, pair_ordinal, ordinal)
         .map_err(|_| BankHandoffRefusal::Qualification)?;
     bind(
         bytes,

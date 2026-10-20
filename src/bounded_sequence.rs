@@ -660,17 +660,17 @@ pub(crate) fn qualify_track_translation(
                         ));
                     }
                     Err(original) => {
-                        if let Ok(proof) = crate::program_only166::qualify_track(
+                        if let Some(proof) = crate::program_only166::qualify_track(
                             bytes,
                             sequence_ordinal,
                             binding.pair_ordinal,
-                        ) {
+                        )
+                        .ok()
+                        .filter(|proof| {
                             let p = proof.provenance();
-                            if p.logical_source_ordinal != ordinal
-                                || p.composition_range != n.representation_range
-                            {
-                                return Err(refusal("Patch", original));
-                            }
+                            p.logical_source_ordinal == ordinal
+                                && p.composition_range == n.representation_range
+                        }) {
                             events.extend(proof.decoded_export_events());
                             program_only_patches.push(proof);
                         } else if let Ok(proof) = crate::numeric_program166::qualify_current(

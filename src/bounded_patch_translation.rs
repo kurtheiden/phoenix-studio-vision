@@ -20,9 +20,14 @@ pub struct BoundedBankPatch<'a> {
     source: MixedEventItem<'a>,
     event: DecodedExportEvent,
     routing: BoundedRoutingResolution,
+    raw_patch_ordinal: u64,
 }
 
 impl<'a> BoundedBankPatch<'a> {
+    pub(crate) fn raw_patch_ordinal(&self) -> u64 {
+        self.raw_patch_ordinal
+    }
+
     /// Full original core/transition, including successor timing and contexts.
     pub fn source(&self) -> &MixedEventItem<'a> {
         &self.source
@@ -48,7 +53,7 @@ pub enum BankPatchRefusal {
     UnsupportedWrapper,
 }
 
-/// Qualify the first banked Patch of one ordinal-owned Descriptor166 Track.
+/// Qualify the first Patch of one ordinal-owned Descriptor166 Track.
 /// CCA-070 plus controlled bank Experiments028/029 support these wrappers only.
 /// Complete event decoding is required, but no other event receives translation
 /// or inclusion authority. In particular this does not authorize whole export.
@@ -57,8 +62,43 @@ pub fn qualify_descriptor166_bank_patch(
     sequence_ordinal: usize,
     pair_ordinal: usize,
 ) -> Result<BoundedBankPatch<'_>, BankPatchRefusal> {
-    use crate::midi_export::DecodedExportEventKind;
+    qualify_bank_patch(bytes, sequence_ordinal, pair_ordinal, None)
+}
+
+/// Qualify one exact logical source item, independent of preceding MIDI kinds.
+pub fn qualify_descriptor166_bank_patch_at(
+    bytes: &[u8],
+    sequence_ordinal: usize,
+    pair_ordinal: usize,
+    logical_ordinal: u64,
+) -> Result<BoundedBankPatch<'_>, BankPatchRefusal> {
+    qualify_bank_patch(bytes, sequence_ordinal, pair_ordinal, Some(logical_ordinal))
+}
+
+pub(crate) fn retained_contexts(item: &MixedEventItem<'_>) -> usize {
     use crate::mixed_event::MixedEventKind;
+    match item {
+        MixedEventItem::PatchToNote(p) => {
+            usize::from(p.initial_context.is_some()) + usize::from(p.context.is_some())
+        }
+        MixedEventItem::Event(e) => match &e.event {
+            MixedEventKind::ContextMediatedNote(_)
+            | MixedEventKind::ContextMediatedController(_) => 1,
+            MixedEventKind::DoubleContextMediatedNote(_) => 2,
+            MixedEventKind::MidiController(c) => usize::from(c.context.is_some()),
+            _ => 0,
+        },
+        _ => 0,
+    }
+}
+
+fn qualify_bank_patch(
+    bytes: &[u8],
+    sequence_ordinal: usize,
+    pair_ordinal: usize,
+    target: Option<u64>,
+) -> Result<BoundedBankPatch<'_>, BankPatchRefusal> {
+    use crate::midi_export::DecodedExportEventKind;
     use crate::sequence_container::parse_project_166;
 
     let project = parse_project_166(bytes).map_err(|_| BankPatchRefusal::Structure)?;
@@ -98,49 +138,45 @@ pub fn qualify_descriptor166_bank_patch(
     ) as usize;
     // Context objects remain separate from logical musical objects. Do not
     // turn the adapter's bank expansion into additional source objects.
-    let contexts = walk
-        .items
-        .iter()
-        .map(|item| match item {
-            MixedEventItem::PatchToNote(p) => {
-                usize::from(p.initial_context.is_some()) + usize::from(p.context.is_some())
-            }
-            MixedEventItem::Event(e) => match &e.event {
-                MixedEventKind::ContextMediatedNote(_)
-                | MixedEventKind::ContextMediatedController(_) => 1,
-                MixedEventKind::DoubleContextMediatedNote(_) => 2,
-                MixedEventKind::MidiController(c) => usize::from(c.context.is_some()),
-                _ => 0,
-            },
-            _ => 0,
-        })
-        .sum::<usize>();
+    let contexts = walk.items.iter().map(retained_contexts).sum::<usize>();
     if walk.consumed_range != routing.event_range
         || walk.logical_event_count() + contexts != declared
     {
         return Err(BankPatchRefusal::ObjectCount);
     }
+    // Reuse complete source accounting and exhaustive ownership even when
+    // unrelated event families precede the selected Patch.
+    crate::controller166::qualify_track(bytes, sequence_ordinal, pair_ordinal)
+        .map_err(|_| BankPatchRefusal::Structure)?;
     let mut ordinal = 0;
-    for (index, item) in walk.items.iter().enumerate() {
-        let (position, range, p, pre, post) = match item {
-            MixedEventItem::Patch(p) if index + 1 < walk.items.len() => (
+    let mut raw = 0;
+    for item in &walk.items {
+        let is_patch = matches!(
+            item,
+            MixedEventItem::Patch(_) | MixedEventItem::PatchToNote(_)
+        );
+        if target.map_or(!is_patch, |wanted| wanted != ordinal) {
+            ordinal += item.logical_event_count() as u64;
+            raw += (item.logical_event_count() + retained_contexts(item)) as u64;
+            continue;
+        }
+        let (position, range, p, pre, post, initial) = match item {
+            MixedEventItem::Patch(p) => (
                 p.position,
                 p.patch.representation_range.clone(),
                 p.patch.program_change.value,
                 p.patch.pre_name_context.bytes,
                 p.patch.post_name_context.bytes,
+                false,
             ),
-            MixedEventItem::PatchToNote(p) if p.initial_context.is_none() => (
+            MixedEventItem::PatchToNote(p) => (
                 p.patch_position,
                 p.patch.representation_range.clone(),
                 p.patch.program_change.value,
                 p.patch.pre_name_context.bytes,
                 p.patch.post_name_context.bytes,
+                p.initial_context.is_some(),
             ),
-            MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::Controller(_)) => {
-                ordinal += 1;
-                continue;
-            }
             _ => return Err(BankPatchRefusal::UnsupportedPlacement),
         };
         let digits = |label: &[u8]| !label.is_empty() && label.iter().all(u8::is_ascii_digit);
@@ -196,6 +232,7 @@ pub fn qualify_descriptor166_bank_patch(
         .ok_or(BankPatchRefusal::UnsupportedWrapper)?;
         return Ok(BoundedBankPatch {
             source: item.clone(),
+            raw_patch_ordinal: raw + u64::from(initial),
             event: DecodedExportEvent {
                 absolute_position: position,
                 source_ordinal: ordinal,

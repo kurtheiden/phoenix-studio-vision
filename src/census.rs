@@ -1137,16 +1137,16 @@ pub fn census_bytes(bytes: &[u8]) -> ProjectCensus {
     report
 }
 
-// Some(false) is a successful but differently bound program-only proof:
-// production refuses it immediately, rather than trying another qualifier.
+// A proof for another source item does not qualify this item. Independent
+// numeric/bank proofs must still bind to the exact current source item.
 fn patch_fallback(
     program_only: Option<bool>,
     numeric: impl FnOnce() -> bool,
     bank: impl FnOnce() -> bool,
 ) -> bool {
     match program_only {
-        Some(matches) => matches,
-        None => numeric() || bank(),
+        Some(true) => true,
+        Some(false) | None => numeric() || bank(),
     }
 }
 

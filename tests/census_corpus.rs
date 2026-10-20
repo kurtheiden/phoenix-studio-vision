@@ -79,14 +79,14 @@ fn approved_baseline_exports_remain_identical() {
     assert_eq!(
         census.metrics.blocker_instances,
         BTreeMap::from([
-            (Family::Translation, 16),
+            (Family::Translation, 14),
             (Family::Conductor, 5),
             (Family::Routing, 4),
             (Family::Ordering, 3),
             (Family::Ownership, 1),
         ])
     );
-    let expected_patches = [0, 2, 0, 2, 1, 0, 0, 1, 0, 0, 0, 2, 5, 0, 3, 0, 0, 0];
+    let expected_patches = [0, 2, 0, 2, 1, 0, 0, 0, 0, 0, 0, 2, 4, 0, 3, 0, 0, 0];
     let mut categories = BTreeMap::new();
     let mut ranges = std::collections::BTreeSet::new();
     for (ordinal, s) in census.sequences.iter().enumerate() {
@@ -149,9 +149,9 @@ fn approved_baseline_exports_remain_identical() {
     assert_eq!(
         categories,
         BTreeMap::from([
-            ("NonzeroPosition", 9),
+            ("NonzeroPosition", 8),
             ("PayloadLength", 3),
-            ("unsupported_standalone_patch", 4)
+            ("unsupported_standalone_patch", 3)
         ])
     );
     // All six new source instances must reach the production-backed census
@@ -178,6 +178,60 @@ fn approved_baseline_exports_remain_identical() {
             .collect();
         assert!(!rows.is_empty());
         assert!(rows.iter().all(|d| d.outcome == Outcome::Passed));
+    }
+    // Composition, not a new wrapper: all retained bytes and raw contexts survive.
+    let q = phoenix::bank_patch166_handoff::qualify_track(&bytes, 7, 5).unwrap();
+    let p = q.provenance();
+    assert_eq!((p.patch_tick, p.note_tick), (62, 360));
+    assert_eq!(
+        (
+            p.logical_source_ordinal,
+            p.raw_patch_ordinal,
+            p.raw_note_ordinal
+        ),
+        (0, 1, 2)
+    );
+    assert_eq!(
+        &bytes[p.initial_context_range.clone().unwrap()],
+        p.initial_context_bytes.as_ref().unwrap()
+    );
+    let project = phoenix::sequence_container::parse_project_166(&bytes).unwrap();
+    let bounds = project.sequences[12]
+        .validated_track_event_bounds(9)
+        .unwrap();
+    let walk = phoenix::mixed_event::walk_bounded_mixed_events(
+        &bytes,
+        phoenix::mixed_event::MixedEventBounds {
+            event_range: bounds.event_range,
+        },
+        Default::default(),
+    )
+    .unwrap();
+    let mut logical = 0;
+    let mut found = false;
+    for item in &walk.items {
+        if let phoenix::mixed_event::MixedEventItem::Patch(patch) = item {
+            if patch.patch.representation_range.start == 0x2ca22 {
+                let later =
+                    phoenix::bounded_patch_translation::qualify_descriptor166_bank_patch_at(
+                        &bytes, 12, 9, logical,
+                    )
+                    .unwrap();
+                assert_eq!(later.source(), item);
+                assert!(logical > 0);
+                assert_eq!(patch.patch.program_change.value, 40);
+                found = true;
+            }
+        }
+        logical += item.logical_event_count() as u64;
+    }
+    assert!(found, "literal later standalone Patch range");
+    for (sequence, pair) in [(7, 5), (12, 9)] {
+        assert!(census.sequences[sequence]
+            .diagnostics
+            .iter()
+            .filter(|d| d.stage == Stage::PatchTranslation && d.pair_ordinal == Some(pair))
+            .all(|d| d.outcome == Outcome::Passed));
     }
     let output = ledger.parent().unwrap().join("regression-midi");
     fs::create_dir(&output).unwrap();

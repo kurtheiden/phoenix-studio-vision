@@ -472,7 +472,7 @@ fn supported_patch_alternatives_are_not_false_blockers() {
     }
 }
 #[test]
-fn multi_patch_successful_program_only_mismatch_refuses_without_fallback() {
+fn unrelated_program_only_proof_does_not_apply_to_the_current_patch() {
     let mut e = CC.to_vec();
     e.extend(program_only());
     e.extend(numeric(false));
@@ -481,11 +481,7 @@ fn multi_patch_successful_program_only_mismatch_refuses_without_fallback() {
     let proof = crate::program_only166::qualify_track(&b, 0, 0).unwrap();
     let matches = proof.provenance().logical_source_ordinal == 3;
     assert!(!matches);
-    assert!(!patch_fallback(
-        Some(matches),
-        || panic!("numeric fallback must not run"),
-        || panic!("bank fallback must not run")
-    ));
+    assert!(!patch_fallback(Some(matches), || false, || false));
     let report = census_bytes(&b);
     let s = &report.sequences[0];
     let patches: Vec<_> = s

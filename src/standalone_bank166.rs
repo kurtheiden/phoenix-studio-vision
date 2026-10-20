@@ -1,10 +1,13 @@
 //! Owned single-event handoff for CCA-071 standalone banks. No new bank or inclusion rules.
 use crate::{
-    bounded_patch_translation::{qualify_descriptor166_bank_patch, BoundedBankPatch},
+    bounded_patch_translation::{
+        qualify_descriptor166_bank_patch, qualify_descriptor166_bank_patch_at, retained_contexts,
+        BoundedBankPatch,
+    },
     bounded_routing::{decode_bounded_routing, BoundedRoutingResolution},
     controller166::qualify_track as qualify_accounting,
     midi_export::{DecodedExportEvent, DecodedExportEventKind},
-    mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventItem, MixedEventKind},
+    mixed_event::{walk_bounded_mixed_events, MixedEventBounds, MixedEventItem},
     sequence_container::parse_project_166,
 };
 use std::ops::Range;
@@ -140,27 +143,23 @@ fn bind(
     let mut logical = 0;
     let mut raw = 0;
     let mut found = false;
-    for (index, item) in walk.items.iter().enumerate() {
+    for item in &walk.items {
         if logical == ordinal {
-            // CCA-071's first-Patch and nonterminal contract stays intact.
-            if item != current || index + 1 >= walk.items.len() {
+            if item != current {
                 return Err(Binding);
             }
             found = true;
             break;
         }
-        let MixedEventItem::Event(e) = item else {
-            return Err(Placement);
+        previous = match item {
+            MixedEventItem::Event(e) => e.position,
+            MixedEventItem::Patch(p) => p.position,
+            MixedEventItem::PatchToNote(t) => t.first_note_position,
         };
-        let MixedEventKind::Controller(c) = &e.event else {
-            return Err(Placement);
-        };
-        check_timing(previous, c.timing_delta.value, e.position)?;
-        previous = e.position;
-        logical += 1;
-        raw += 1;
+        logical += item.logical_event_count() as u64;
+        raw += (item.logical_event_count() + retained_contexts(item)) as u64;
     }
-    if !found {
+    if !found || raw != q.raw_patch_ordinal() {
         return Err(Binding);
     }
     let p = &p.patch;
@@ -220,7 +219,7 @@ pub(crate) fn qualify_current(
     routing: &BoundedRoutingResolution,
     ordinal: u64,
 ) -> Result<OwnedStandaloneBankPatch, StandaloneBankRefusal> {
-    let q = qualify_descriptor166_bank_patch(bytes, sequence_ordinal, pair_ordinal)
+    let q = qualify_descriptor166_bank_patch_at(bytes, sequence_ordinal, pair_ordinal, ordinal)
         .map_err(|_| StandaloneBankRefusal::Qualification)?;
     bind(
         bytes,

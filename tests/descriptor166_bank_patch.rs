@@ -182,13 +182,14 @@ fn unsupported_wrappers_and_bank_neighbors_refuse() {
     }
 }
 #[test]
-fn earlier_notes_ambiguous_targets_and_ff60_authority_stay_refused() {
+fn earlier_notes_and_initial_context_preserve_routing_guards() {
     let mut e = NOTE.to_vec();
     e.extend(patch(2, 37, false));
-    assert_eq!(
-        qualify(&synthetic(&e, 3), 0, 0).unwrap_err(),
-        BankPatchRefusal::UnsupportedPlacement
-    );
+    let proof = qualify(&synthetic(&e, 3), 0, 0)
+        .unwrap()
+        .decoded_export_event();
+    assert_eq!(proof.source_ordinal, 1);
+    assert_eq!(proof.absolute_position, 37);
     let e = patch(2, 37, false);
     let mut b = synthetic(&e, 2);
     let p = parse_project_166(&b).unwrap();

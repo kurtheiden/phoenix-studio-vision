@@ -269,7 +269,10 @@ fn malformed_unqualified_standalone_and_accounting_forms_stay_blocked() {
     }
     let mut e = NOTE.to_vec();
     e.extend(patch(2, 37, false));
-    assert!(qualify(&fixture(&e, 3), 0, 0).is_err());
+    let q = qualify(&fixture(&e, 3), 0, 0).unwrap();
+    assert_eq!(q.provenance().logical_source_ordinal, 1);
+    assert_eq!(q.provenance().raw_patch_ordinal, 1);
+    assert_eq!(q.provenance().patch_tick, 37);
 }
 fn read(name: &str, hash: &str) -> Vec<u8> {
     let b = std::fs::read(format!(
@@ -404,4 +407,101 @@ fn authenticated_five_compositions_match_native_bank_program_note_and_ending() {
         .unwrap();
     assert!(row.export_capability.is_none());
     xform_application::assert_capability(row, true);
+}
+
+#[test]
+fn initial_contexts_and_later_bank_items_keep_raw_and_logical_ordinals() {
+    for length in [7, 8] {
+        let mut initial = vec![0, 255, 96, length];
+        let mut payload = vec![87, 127, 0, 1, 2, 3, 4];
+        payload.resize(length as usize, 0);
+        initial.extend(payload);
+        let mut e = initial.clone();
+        e.extend(patch(3, 37, false));
+        // A second, standalone bank follows the Note in the first composition.
+        e.extend(patch(2, 37, true));
+        let b = fixture(&e, 6);
+        let q = qualify(&b, 0, 0).unwrap();
+        let p = q.provenance();
+        assert_eq!(
+            (
+                p.logical_source_ordinal,
+                p.raw_patch_ordinal,
+                p.raw_note_ordinal
+            ),
+            (0, 1, 2)
+        );
+        assert_eq!(p.initial_context_bytes.as_deref(), Some(initial.as_slice()));
+        assert_eq!(&b[p.initial_context_range.clone().unwrap()], initial);
+        assert_eq!(&b[p.composition_range.clone()], p.composition_bytes);
+        assert_eq!((p.patch_tick, p.note_tick), (37, 37));
+        let m = manifest(&b, 0, 480).unwrap();
+        assert_eq!(m.tracks()[0].bank_patches().len(), 1);
+        let later = &m.tracks()[0].standalone_banks()[0];
+        assert_eq!(
+            (
+                later.provenance().logical_source_ordinal,
+                later.provenance().raw_source_object_ordinal
+            ),
+            (2, 3)
+        );
+        assert_eq!(
+            (
+                later.provenance().previous_tick,
+                later.provenance().absolute_tick
+            ),
+            (37, 74)
+        );
+        let mut bad = b.clone();
+        bad[p.initial_context_range.clone().unwrap().start] = 1;
+        assert!(
+            manifest(&bad, 0, 480).is_err(),
+            "nonzero leading context timing"
+        );
+        assert!(
+            phoenix::bounded_patch_translation::qualify_descriptor166_bank_patch_at(&b, 0, 0, 1)
+                .is_err(),
+            "Note ordinal is not a Patch"
+        );
+    }
+}
+
+#[test]
+fn bank_after_program_only_uses_its_own_proof_and_serializes_in_source_order() {
+    let mut e = vec![0, 255, 124, 20, 0, 0, 36, 0, 36, 5];
+    e.extend(b"Fresh");
+    e.extend([
+        3, b'I', b'5', b'5', 4, 255, 255, 255, 36, 0, 144, 60, 100, 64, 12,
+    ]);
+    e.extend(patch(2, 37, false));
+    let b = fixture(&e, 4);
+    let m = manifest(&b, 0, 480).unwrap();
+    assert_eq!(m.tracks()[0].program_only_patches().len(), 1);
+    let p = m.tracks()[0].bank_patches()[0].provenance();
+    assert_eq!((p.logical_source_ordinal, p.raw_patch_ordinal), (2, 2));
+    let midi = assemble_bounded_sequence(&m).unwrap();
+    let tr = reference::midi_tracks(&midi);
+    let channel_events: Vec<_> = tr[1]
+        .iter()
+        .filter(|(_, s, _)| *s >= 128 && *s < 240)
+        .cloned()
+        .collect();
+    assert_eq!(
+        channel_events,
+        [
+            (0, 0xc3, vec![36]),
+            (0, 0x93, vec![60, 100]),
+            (12, 0x83, vec![60, 64]),
+            (37, 0xb3, vec![0, 80]),
+            (37, 0xb3, vec![32, 0]),
+            (37, 0xc3, vec![42]),
+            (37, 0x93, vec![60, 100]),
+            (49, 0x83, vec![60, 64]),
+        ]
+    );
+    let report = phoenix::census::census_bytes(&b);
+    assert_eq!(
+        report.sequences[0].general_include_muted.outcome,
+        phoenix::census::Outcome::Passed
+    );
 }

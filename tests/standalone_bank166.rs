@@ -285,20 +285,44 @@ fn wrapper_program_lengths_counts_and_incomplete_sources_refuse() {
     }
 }
 #[test]
-fn terminal_unbanked_placement_contexts_and_duplicate_handoffs_stay_blocked() {
+fn valid_late_and_repeated_banks_preserve_other_refusals() {
     let b = source(2, false);
     let q = qualify(&b, 0, 0).unwrap();
     let len = q.provenance().patch_range.len();
     let e = patch(2, 37, true);
     let core = e[..len].to_vec();
-    assert!(qualify(&fixture(&core, 1), 0, 0).is_err());
-    assert!(manifest(&fixture(&core, 1), 0, 480).is_err());
+    let terminal = fixture(&core, 1);
+    let proof = qualify(&terminal, 0, 0).unwrap();
+    assert_eq!(proof.provenance().logical_track_objects, 1);
+    assert_eq!(proof.provenance().absolute_tick, 37);
+    let m = manifest(&terminal, 0, 480).unwrap();
+    let midi = assemble_bounded_sequence(&m).unwrap();
+    let tracks = reference::midi_tracks(&midi);
+    assert_eq!(
+        tracks[1]
+            .iter()
+            .filter(|(_, s, _)| *s >= 128 && *s < 240)
+            .cloned()
+            .collect::<Vec<_>>(),
+        [
+            (37, 0xb3, vec![0, 80]),
+            (37, 0xb3, vec![32, 0]),
+            (37, 0xc3, vec![42])
+        ]
+    );
     let mut late = NOTE.to_vec();
     late.extend(&e);
-    assert!(qualify(&fixture(&late, 4), 0, 0).is_err());
+    let q = qualify(&fixture(&late, 4), 0, 0).unwrap();
+    assert_eq!(q.provenance().logical_source_ordinal, 1);
+    assert_eq!(q.provenance().raw_source_object_ordinal, 1);
     let mut repeated = e.clone();
     repeated.extend(&e);
-    assert!(manifest(&fixture(&repeated, 6), 0, 480).is_err());
+    assert_eq!(
+        manifest(&fixture(&repeated, 6), 0, 480).unwrap().tracks()[0]
+            .standalone_banks()
+            .len(),
+        2
+    );
     for at in [0, len] {
         let mut context = e.clone();
         context.splice(at..at, [0, 255, 96, 7, 87, 127, 0, 1, 1, 1, 1]);
