@@ -140,7 +140,7 @@ fn synthetic_f_z_accept_and_preserve_provenance() {
 
 #[test]
 fn synthetic_association_refusals() {
-    for (back, value) in [(33, 0), (33, 2), (32, 1), (32, 0x70), (30, 0), (29, 2)] {
+    for (back, value) in [(33, 0), (33, 2), (32, 1), (32, 0x70)] {
         let mut b = synthetic(3, NOTE, true);
         let l = label(&b);
         b[l - back] = value;
@@ -164,9 +164,12 @@ fn synthetic_association_refusals() {
         b[l - 31 + 2 * n] = 4 + n as u8;
     }
     assert_eq!(result(&b), Err(RoutingRefusal::UnsupportedAssociation));
-    // Even with prefix 01, residual and multiple associations are refused.
+    // With one declared destination the remaining words are unused storage.
     b[l - 33] = 1;
-    assert_eq!(result(&b), Err(RoutingRefusal::UnsupportedAssociation));
+    let route = result(&b).unwrap();
+    assert_eq!(route.instrument_candidate, 4);
+    assert_eq!(route.association_form, AssociationForm::Counted);
+    assert_eq!(route.association_bytes, b[l - 33..l]);
 }
 
 #[test]
@@ -335,7 +338,7 @@ fn authenticated_corpus_predicate_results() {
         (10, 0, 0),
         (9, 2, 0),
         (0, 0, 11),
-        (0, 1, 4),
+        (4, 1, 0),
         (1, 1, 0),
         (4, 2, 0),
         (15, 1, 0),
@@ -347,7 +350,7 @@ fn authenticated_corpus_predicate_results() {
     ];
     assert_eq!(p.sequences.len(), expected_counts.len());
     let mut matched_expected = 0;
-    let mut forms = [0usize; 2];
+    let mut forms = [0usize; 4];
     for (s, seq) in p.sequences.iter().enumerate() {
         let name = seq.sequence_name.as_utf8().unwrap();
         let tracks: Vec<_> = rows.iter().filter(|r| r.structural_ordinal == s).collect();
@@ -358,7 +361,12 @@ fn authenticated_corpus_predicate_results() {
             match &row.result {
                 Ok(r) => {
                     accepted += 1;
-                    forms[usize::from(r.association_form == AssociationForm::Z)] += 1;
+                    forms[match r.association_form {
+                        AssociationForm::F => 0,
+                        AssociationForm::Z => 1,
+                        AssociationForm::Counted => 2,
+                        AssociationForm::Multi => 3,
+                    }] += 1;
                     println!(
                         "{name}|d{}|{:?}|i{}|ch{}",
                         row.descriptor_ordinal,
@@ -398,12 +406,16 @@ fn authenticated_corpus_predicate_results() {
                 .all(|r| r.result == Err(RoutingRefusal::AmbiguousOwnership)));
         }
         if name == "newsong" {
-            assert!(rows.iter().any(|r| r.structural_ordinal == s
-                && r.result == Err(RoutingRefusal::UnsupportedAssociation)));
+            let channels: Vec<_> = rows
+                .iter()
+                .filter(|r| r.structural_ordinal == s)
+                .filter_map(|r| r.result.as_ref().ok().map(|r| r.midi_channel))
+                .collect();
+            assert_eq!(channels, [9, 15, 9, 10]); // Setup's second Patch is independently targeted to 12.
         }
     }
     assert_eq!(matched_expected, 8);
-    assert_eq!(forms, [87, 17]);
+    assert_eq!(forms, [87, 17, 3, 1]);
     println!("Authenticated F={} Z={}", forms[0], forms[1]);
 }
 
@@ -462,7 +474,7 @@ fn bounded_success_leaves_existing_readiness_and_profile_evidence_unchanged() {
         .routing_channel_resolutions(&before.session_id)
         .unwrap();
     let rows = decode_bounded_routing(&std::fs::read(BASELINE).unwrap()).unwrap();
-    assert_eq!(rows.iter().filter(|r| r.result.is_ok()).count(), 104);
+    assert_eq!(rows.iter().filter(|r| r.result.is_ok()).count(), 108);
     assert_eq!(
         before
             .sequences
@@ -1296,4 +1308,18 @@ fn experiment073_control_edit_routes_and_complete_native_streams() {
     )
     .unwrap();
     assert_eq!(c, normalized);
+}
+
+#[test]
+fn unused_single_list_storage_is_retained_without_changing_the_active_route() {
+    let mut b = synthetic(3, NOTE, true);
+    let l = label(&b);
+    b[l - 30..l].fill(0);
+    b[l - 30..l - 28].copy_from_slice(&[0, 2]);
+    let route = result(&b).unwrap();
+    assert_eq!(route.instrument_candidate, 1);
+    assert_eq!(route.association_bytes, b[l - 33..l]);
+    // A zero active row cannot fall back to the retained row.
+    b[l - 31] = 0;
+    assert_eq!(result(&b), Err(RoutingRefusal::UnsupportedNumericScope));
 }

@@ -1117,3 +1117,183 @@ fn source_framed_sysex07_owned_handoff_refuses_unsupported_and_late_invalid_reco
         assert!(build_bounded_sequence_manifest(&synthetic(&stream), 0, 480).is_err());
     }
 }
+
+// Change only container padding and the paired end-sentinel representation.
+fn conductor_envelope_variant(
+    mut b: Vec<u8>,
+    compact: bool,
+    wide: bool,
+    mismatch: bool,
+) -> Vec<u8> {
+    let project = parse_project_166(&b).unwrap();
+    let s = &project.sequences[0];
+    let mut edits = Vec::new();
+    for (primary, secondary, event) in [
+        (&s.meter_primary, &s.meter_secondary, &s.initial_meter_range),
+        (&s.tempo_primary, &s.tempo_secondary, &s.initial_tempo_range),
+    ] {
+        let end = 14 + event.len();
+        let mut p = primary.payload.bytes.to_vec();
+        let mut copy = secondary.payload.bytes.to_vec();
+        if compact {
+            p.truncate(end + 7);
+        }
+        if wide {
+            p[end] = 255;
+            if !mismatch {
+                copy[22] = 15;
+            }
+        }
+        for (r, payload) in [(primary, p), (secondary, copy)] {
+            let mut replacement = vec![r.record_type.value];
+            replacement.extend((payload.len() as u32).to_be_bytes());
+            replacement.extend(payload);
+            edits.push((r.record_range.clone(), replacement));
+        }
+    }
+    edits.sort_by_key(|(r, _)| std::cmp::Reverse(r.start));
+    for (range, replacement) in edits {
+        b.splice(range, replacement);
+    }
+    b
+}
+
+#[test]
+fn compact_and_padded_initial_conductors_preserve_midi_and_require_paired_terminal_copy() {
+    let b = synthetic(NOTE);
+    let original = assemble_bounded_sequence(&accepted(&b)).unwrap();
+    for compact in [false, true] {
+        for wide in [false, true] {
+            let variant = conductor_envelope_variant(b.clone(), compact, wide, false);
+            assert_eq!(
+                assemble_bounded_sequence(&accepted(&variant)).unwrap(),
+                original
+            );
+        }
+        let mismatch = conductor_envelope_variant(b.clone(), compact, true, true);
+        assert_eq!(refused(&mismatch).stage, "conductor coverage");
+    }
+}
+
+fn counted_setup_fixture() -> Vec<u8> {
+    fn program(selector: u8, value: u8) -> Vec<u8> {
+        let name = b"Fresh";
+        let label = format!("G{value}");
+        let mut e = vec![
+            0,
+            255,
+            124,
+            (5 + 1 + name.len() + 1 + label.len() + 4 + 1) as u8,
+            selector,
+            0,
+            value,
+            248,
+            value,
+            name.len() as u8,
+        ];
+        e.extend(name);
+        e.push(label.len() as u8);
+        e.extend(label.as_bytes());
+        e.extend([4, 255, 255, 255, value]);
+        e
+    }
+    let mut events = program(0, 11);
+    events.extend(program(1, 48));
+    let mut b = synthetic(&events);
+    let root = phoenix::sequence_container::parse_root_record_stream(&b).unwrap();
+    let at = root
+        .records
+        .iter()
+        .find(|r| r.record_type.value == 42)
+        .unwrap()
+        .record_range
+        .start;
+    let mut row = vec![0; 36];
+    row[25] = 2;
+    row[26] = 7;
+    row[27] = 11;
+    let mut framed = Vec::new();
+    record(&mut framed, 16, &row);
+    b.splice(at..at, framed);
+    let p = parse_project_166(&b).unwrap();
+    let s = &p.sequences[0];
+    let l = s.track_descriptors()[0].label_start;
+    let count = s.track_pairs[0].primary.payload.range.start + 2;
+    b[l - 33..l].fill(255);
+    b[l - 33..l - 28].copy_from_slice(&[2, 0, 1, 0, 2]);
+    b[count..count + 4].copy_from_slice(&2u32.to_be_bytes());
+    b
+}
+
+#[test]
+fn counted_setup_keeps_each_patch_destination_and_refuses_inactive_selectors_and_counts() {
+    let b = counted_setup_fixture();
+    let m = build_recovery_sequence_manifest(&b, 0, 480, RecoveryInclusion::IncludeMuted).unwrap();
+    let q = m.tracks()[0].multi_patches().unwrap();
+    assert_eq!(
+        q.patches()
+            .iter()
+            .map(|p| (p.selector, p.instrument_row, p.midi_channel, p.program))
+            .collect::<Vec<_>>(),
+        [(0, 1, 4, 11), (1, 2, 12, 48)]
+    );
+    let wire = assemble_recovery_sequence(&m).unwrap().smf_bytes;
+    #[path = "support/reference_smf.rs"]
+    mod reference;
+    let tr = reference::midi_tracks(&wire);
+    assert_eq!(
+        tr[1]
+            .iter()
+            .filter(|(_, s, _)| *s >= 128 && *s < 240)
+            .cloned()
+            .collect::<Vec<_>>(),
+        [(0, 0xc3, vec![11]), (0, 0xcb, vec![48])]
+    );
+    let p = parse_project_166(&b).unwrap();
+    let s = &p.sequences[0];
+    let l = s.track_descriptors()[0].label_start;
+    let count = s.track_pairs[0].primary.payload.range.start + 2;
+    for (at, value) in [
+        (l - 29, 1),
+        (l - 29, 99),
+        (q.patches()[1].representation_range.start + 4, 2),
+        (count + 3, 3),
+    ] {
+        let mut bad = b.clone();
+        bad[at] = value;
+        assert!(
+            build_recovery_sequence_manifest(&bad, 0, 480, RecoveryInclusion::IncludeMuted)
+                .is_err(),
+            "offset {at}"
+        );
+    }
+    // Unused association words have no authority for either selector.
+    let mut retained = b.clone();
+    retained[l - 28..l].fill(0);
+    retained[l - 28..l - 26].copy_from_slice(&[0, 1]);
+    let retained_m =
+        build_recovery_sequence_manifest(&retained, 0, 480, RecoveryInclusion::IncludeMuted)
+            .unwrap();
+    assert_eq!(
+        retained_m.tracks()[0].routing().association_bytes,
+        retained[l - 33..l]
+    );
+    assert_eq!(
+        assemble_recovery_sequence(&retained_m).unwrap().smf_bytes,
+        wire
+    );
+    // New routing does not invent saved-OFF evidence or application authority.
+    assert_eq!(refused(&b).stage, "mute");
+    let report = phoenix::census::census_bytes(&b);
+    assert_eq!(
+        report.sequences[0].general_include_muted.outcome,
+        phoenix::census::Outcome::Passed
+    );
+    let mut inactive = b.clone();
+    inactive[l - 33] = 1;
+    // Slot 1 is not available even if its retained row bytes remain present.
+    assert!(
+        build_recovery_sequence_manifest(&inactive, 0, 480, RecoveryInclusion::IncludeMuted)
+            .is_err()
+    );
+}

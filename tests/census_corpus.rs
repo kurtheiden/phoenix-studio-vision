@@ -2,6 +2,8 @@
 use phoenix::{app_contract::*, app_service::AppService, bounded_sequence::*};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, path::PathBuf};
+#[path = "support/reference_smf.rs"]
+mod reference;
 
 #[test]
 #[ignore = "requires approved Experiment 007 and a private pre-change byte ledger"]
@@ -70,18 +72,17 @@ fn approved_baseline_exports_remain_identical() {
         assert_eq!(p.post_name_range.start - p.pre_name_range.end - 1, name_len);
     }
     let census = phoenix::census::census_path(std::path::Path::new(&source)).unwrap();
-    assert_eq!(census.metrics.complete_include_muted, 8);
-    assert_eq!(census.metrics.complete_exclude_muted, 8);
+    assert_eq!(census.metrics.complete_include_muted, 9);
+    assert_eq!(census.metrics.complete_exclude_muted, 9);
     assert_eq!(census.metrics.application_authorized, 10);
-    assert_eq!(census.metrics.proven_policy_only, 0);
+    assert_eq!(census.metrics.proven_policy_only, 1);
     assert_eq!(census.metrics.sequences_with_decoding_blockers, 0);
     use phoenix::census::{Family, Outcome, Stage};
     assert_eq!(
         census.metrics.blocker_instances,
         BTreeMap::from([
             (Family::Translation, 14),
-            (Family::Conductor, 5),
-            (Family::Routing, 4),
+            (Family::Conductor, 3),
             (Family::Ordering, 3),
             (Family::Ownership, 1),
         ])
@@ -90,7 +91,7 @@ fn approved_baseline_exports_remain_identical() {
     let mut categories = BTreeMap::new();
     let mut ranges = std::collections::BTreeSet::new();
     for (ordinal, s) in census.sequences.iter().enumerate() {
-        let complete = [0, 2, 5, 10, 13, 15, 16, 17].contains(&ordinal);
+        let complete = [0, 2, 5, 9, 10, 13, 15, 16, 17].contains(&ordinal);
         for p in [&s.general_include_muted, &s.general_exclude_muted] {
             assert_eq!(
                 p.outcome,
@@ -233,6 +234,70 @@ fn approved_baseline_exports_remain_identical() {
             .filter(|d| d.stage == Stage::PatchTranslation && d.pair_ordinal == Some(pair))
             .all(|d| d.outcome == Outcome::Passed));
     }
+    for stage in [Stage::TempoCoverage, Stage::MeterCoverage] {
+        assert_eq!(
+            census.sequences[9]
+                .diagnostics
+                .iter()
+                .find(|d| d.stage == stage)
+                .unwrap()
+                .outcome,
+            Outcome::Passed
+        );
+    }
+    // Literal expected routing, independent of the qualifier's returned channel.
+    let newsong =
+        build_recovery_sequence_manifest(&bytes, 9, 480, RecoveryInclusion::IncludeMuted).unwrap();
+    let wire = assemble_recovery_sequence(&newsong).unwrap().smf_bytes;
+    let tr = reference::midi_tracks(&wire);
+    assert_eq!(tr.len(), 5); // Conductor + four nonempty source tracks; empty fifth retained in coverage.
+    let channels = |index: usize| {
+        tr[index]
+            .iter()
+            .filter(|(_, s, _)| *s >= 128 && *s < 240)
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(channels(1), [(0, 0xc8, vec![90]), (480, 0xcb, vec![120])]);
+    assert_eq!(channels(2), [(0, 0xce, vec![9])]);
+    for (pair, index, channel, count) in [(2, 3, 9, 102), (3, 4, 10, 115)] {
+        let bounds = project.sequences[9]
+            .validated_track_event_bounds(pair)
+            .unwrap();
+        let walk = phoenix::mixed_event::walk_bounded_mixed_events(
+            &bytes,
+            phoenix::mixed_event::MixedEventBounds {
+                event_range: bounds.event_range,
+            },
+            Default::default(),
+        )
+        .unwrap();
+        let mut expected = Vec::new();
+        for item in walk.items {
+            let phoenix::mixed_event::MixedEventItem::Event(e) = item else {
+                panic!("Notes only");
+            };
+            let phoenix::mixed_event::MixedEventKind::Note(n) = e.event else {
+                panic!("Notes only");
+            };
+            expected.push((
+                e.position,
+                0x90 + channel - 1,
+                vec![n.pitch.value, n.attack_velocity.value],
+            ));
+            expected.push((
+                e.position + n.duration.value,
+                0x80 + channel - 1,
+                vec![n.pitch.value, n.release_velocity.value],
+            ));
+        }
+        let mut actual = channels(index);
+        assert_eq!(actual.len(), count * 2);
+        actual.sort();
+        expected.sort();
+        assert_eq!(actual, expected);
+    }
+    assert!(census.sequences[9].proven_policy_only);
     let output = ledger.parent().unwrap().join("regression-midi");
     fs::create_dir(&output).unwrap();
     let mut digests = BTreeMap::new();
@@ -344,7 +409,7 @@ fn approved_baseline_exports_remain_identical() {
                 passed.push(ordinal);
             }
         }
-        assert_eq!(passed, vec![0, 2, 5, 10, 13, 15, 16, 17]);
+        assert_eq!(passed, vec![0, 2, 5, 9, 10, 13, 15, 16, 17]);
     }
     fs::remove_dir_all(output).unwrap();
     if std::env::var_os("PHOENIX_CENSUS_CAPTURE").is_some() {
@@ -379,10 +444,12 @@ fn approved_baseline_exports_remain_identical() {
                 "general/10/ExcludeMuted",
                 "general/10/IncludeMuted",
                 "general/2/ExcludeMuted",
-                "general/2/IncludeMuted"
+                "general/2/IncludeMuted",
+                "general/9/ExcludeMuted",
+                "general/9/IncludeMuted"
             ]
         );
-        assert_eq!(digests.len(), 30);
+        assert_eq!(digests.len(), 32);
     }
     assert_eq!(fs::read(source).unwrap(), bytes, "source changed");
 }

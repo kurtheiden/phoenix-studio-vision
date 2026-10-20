@@ -885,25 +885,39 @@ pub fn census_bytes(bytes: &[u8]) -> ProjectCensus {
                         patch_index += 1;
                     }
                     MixedEventItem::Patch(p) => {
-                        let accepted = crate::terminal_program166::qualify_track(
-                            bytes,
-                            ordinal,
-                            binding.pair_ordinal,
-                        )
-                        .ok()
-                        .is_some_and(|p2| {
-                            p2.provenance().logical_source_ordinal == logical
-                                && p2.provenance().representation_range
-                                    == p.patch.representation_range
-                        }) || crate::standalone_bank166::qualify_current(
-                            bytes,
-                            ordinal,
-                            binding.pair_ordinal,
-                            item,
-                            route,
-                            logical,
-                        )
-                        .is_ok();
+                        let accepted = (route.association_form
+                            == crate::bounded_routing::AssociationForm::Multi
+                            && crate::bounded_multi_patch::qualify_descriptor166_track(
+                                bytes,
+                                ordinal,
+                                binding.pair_ordinal,
+                            )
+                            .is_ok_and(|q| {
+                                q.patches().iter().any(|q| {
+                                    q.source_ordinal == logical
+                                        && q.representation_range == p.patch.representation_range
+                                })
+                            }))
+                            || crate::terminal_program166::qualify_track(
+                                bytes,
+                                ordinal,
+                                binding.pair_ordinal,
+                            )
+                            .ok()
+                            .is_some_and(|p2| {
+                                p2.provenance().logical_source_ordinal == logical
+                                    && p2.provenance().representation_range
+                                        == p.patch.representation_range
+                            })
+                            || crate::standalone_bank166::qualify_current(
+                                bytes,
+                                ordinal,
+                                binding.pair_ordinal,
+                                item,
+                                route,
+                                logical,
+                            )
+                            .is_ok();
                         r.add(
                             Stage::PatchTranslation,
                             if accepted {

@@ -1,4 +1,5 @@
-//! Agreement-gated single-Instrument routing for Descriptor166 projects.
+//! Agreement-gated counted Instrument routing for Descriptor166 projects.
+//! Multi lists are admitted only with complete per-Patch target proofs.
 //!
 //! Pure observations, independent of inclusion, Patch translation, readiness,
 //! and export authority. No filename, digest, or compatibility-profile lookup.
@@ -17,6 +18,10 @@ use std::ops::Range;
 pub enum AssociationForm {
     F,
     Z,
+    /// One active destination; remaining list storage is retained, not routed.
+    Counted,
+    /// Patch-only counted list; each event has an independently proven target.
+    Multi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +46,7 @@ pub struct BoundedRoutingResolution {
     pub label_range: Range<usize>,
     pub label_bytes: Vec<u8>,
     pub association_range: Range<usize>,
+    pub association_bytes: Vec<u8>,
     pub association_form: AssociationForm,
     pub first_slot: [u8; 2],
     pub instrument_candidate: u8,
@@ -57,6 +63,8 @@ pub struct BoundedRoutingResolution {
     pub type2a_position: usize,
     pub type2a_record_range: Range<usize>,
     pub device_name: Vec<u8>,
+    /// Single destination, or the first Multi destination as an adapter summary.
+    /// Every admitted Multi event supplies its own independently proven channel.
     pub midi_channel: u8,
     pub event_range: Range<usize>,
     pub consumed_range: Range<usize>,
@@ -109,7 +117,7 @@ pub fn decode_bounded_routing(
             results.push(TrackRoutingResult {
                 structural_ordinal,
                 descriptor_ordinal: descriptor.ordinal,
-                result: resolve(bytes, sequence, descriptor, &evidence),
+                result: resolve(bytes, structural_ordinal, sequence, descriptor, &evidence),
             });
         }
     }
@@ -117,8 +125,11 @@ pub fn decode_bounded_routing(
 }
 
 fn association(neighborhood: &[u8]) -> Result<(AssociationForm, u8), RoutingRefusal> {
-    if neighborhood.len() != 33 || neighborhood[0] != 1 || neighborhood[1] != 0 {
+    if neighborhood.len() != 33 || !(1..=15).contains(&neighborhood[0]) || neighborhood[1] != 0 {
         return Err(RoutingRefusal::UnsupportedAssociation);
+    }
+    if neighborhood[0] > 1 {
+        return Ok((AssociationForm::Multi, neighborhood[2]));
     }
     let tail = &neighborhood[3..];
     let form = if tail.iter().all(|b| *b == 0xff) {
@@ -126,13 +137,16 @@ fn association(neighborhood: &[u8]) -> Result<(AssociationForm, u8), RoutingRefu
     } else if tail.iter().all(|b| *b == 0) {
         AssociationForm::Z
     } else {
-        return Err(RoutingRefusal::UnsupportedAssociation);
+        // The established count bounds the active list. Preserve unused
+        // storage verbatim; it does not add an Instrument destination.
+        AssociationForm::Counted
     };
     Ok((form, neighborhood[2]))
 }
 
 fn resolve(
     bytes: &[u8],
+    sequence_ordinal: usize,
     sequence: &SequenceContainer<'_>,
     descriptor: &SequenceDescriptor<'_>,
     evidence: &RoutingEvidence,
@@ -229,7 +243,32 @@ fn resolve(
             "incomplete consumption".into(),
         ));
     }
-    let contexts = validate_routing_contexts(&walk, i, true)?;
+    let contexts = if association_form == AssociationForm::Multi {
+        // A track-wide summary channel is never used to route these Patches.
+        // The existing Multi proof validates every selector, row and channel,
+        // forbids non-Patch items, and checks complete source-object counts.
+        crate::bounded_multi_patch::qualify_descriptor166_track(
+            bytes,
+            sequence_ordinal,
+            binding.pair_ordinal,
+        )
+        .map_err(|_| RoutingRefusal::UnsupportedAssociation)?;
+        walk.items
+            .iter()
+            .map(|item| {
+                let MixedEventItem::Patch(p) = item else {
+                    return Err(RoutingRefusal::UnsupportedAssociation);
+                };
+                Ok(ValidatedContext {
+                    kind: ContextKind::Patch,
+                    range: p.patch.pre_name_context.range.clone(),
+                    bytes: p.patch.pre_name_context.bytes.to_vec(),
+                })
+            })
+            .collect::<Result<Vec<_>, RoutingRefusal>>()?
+    } else {
+        validate_routing_contexts(&walk, i, true)?
+    };
     let range = |r: crate::compatibility::ByteRange| r.start() as usize..r.end_exclusive() as usize;
     Ok(BoundedRoutingResolution {
         pair_ordinal: binding.pair_ordinal,
@@ -237,6 +276,7 @@ fn resolve(
         label_range: label.range.clone(),
         label_bytes: label.bytes.to_vec(),
         association_range,
+        association_bytes: neighborhood.to_vec(),
         association_form,
         first_slot: [0, i],
         instrument_candidate: i,

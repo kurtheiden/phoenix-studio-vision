@@ -81,8 +81,13 @@ pub struct BoundedTrackManifest {
     context_controllers: Vec<crate::context_controller166::OwnedContextController>,
     numeric_programs: Vec<crate::numeric_program166::NumericProgramPatch>,
     standalone_banks: Vec<crate::standalone_bank166::OwnedStandaloneBankPatch>,
+    multi_patches: Option<crate::bounded_multi_patch::BoundedMultiPatchTrack>,
 }
 impl BoundedTrackManifest {
+    pub fn multi_patches(&self) -> Option<&crate::bounded_multi_patch::BoundedMultiPatchTrack> {
+        self.multi_patches.as_ref()
+    }
+
     pub fn context_controllers(&self) -> &[crate::context_controller166::OwnedContextController] {
         &self.context_controllers
     }
@@ -347,20 +352,30 @@ pub(crate) fn initial_only(
     let mut value = copy.to_vec();
     value.extend_from_slice(&event[4..]);
     let size = value.len() + 35;
+    let end = 14 + event.len();
+    // Two evidenced end sentinels, both copied as BE32 in the secondary.
+    // They terminate the initial-only container; neither is a musical event.
+    // Keep all remaining envelope checks, including the paired copy and zero
+    // padding. Never scan beyond or drop an additional conductor event.
+    let terminal: u32 = match p.get(end..end + 4) {
+        Some([135, 255, 255, 127]) => 0x00ff_ffff,
+        Some([255, 255, 255, 127]) => 0x0fff_ffff,
+        _ => return Err(refusal("conductor coverage", "unsupported end sentinel")),
+    };
     let mut expected = vec![0, 1, 0, 0, 0, 0];
     expected.extend_from_slice(&((size - 13) as u32).to_be_bytes());
     expected.extend_from_slice(&((size - 13) as u32).to_be_bytes());
     // The observed length fields start at +6 and +10; the entry count at +14.
     expected.extend_from_slice(&1u32.to_be_bytes());
     expected.extend_from_slice(&((size - 28) as u32).to_be_bytes());
-    expected.extend_from_slice(&[0, 255, 255, 255, 47, 197, 0, 0, 0, 0]);
+    expected.extend_from_slice(&terminal.to_be_bytes());
+    expected.extend_from_slice(&[47, 197, 0, 0, 0, 0]);
     expected.extend(value);
     expected.extend([255; 3]);
-    let end = 14 + event.len();
-    if p.len() != 38
+    if p.len() < end + 7
         || p[..10] != [0, 1, 0, 0, 0, 1, 0, 0, 0, 0]
         || p[14..end] != *event
-        || p[end..end + 7] != [135, 255, 255, 127, 255, 47, 0]
+        || p[end + 4..end + 7] != [255, 47, 0]
         || p[end + 7..].iter().any(|b| *b != 0)
         || s != expected
     {
@@ -546,6 +561,19 @@ pub(crate) fn qualify_track_translation(
     walk: &crate::mixed_event::MixedEventWalk<'_>,
 ) -> Result<BoundedTrackManifest, ManifestRefusal> {
     let routing = &classified.routing;
+    let multi_patches =
+        if routing.association_form == crate::bounded_routing::AssociationForm::Multi {
+            Some(
+                crate::bounded_multi_patch::qualify_descriptor166_track(
+                    bytes,
+                    sequence_ordinal,
+                    binding.pair_ordinal,
+                )
+                .map_err(|e| refusal("Multi Patch", e))?,
+            )
+        } else {
+            None
+        };
     let sysex = if walk.items.iter().any(|item| {
         matches!(item,
             MixedEventItem::Event(e) if matches!(e.event, MixedEventKind::SysEx(_)))
@@ -709,7 +737,17 @@ pub(crate) fn qualify_track_translation(
                             && p.source_range == patch.patch.representation_range
                     })
                     .ok_or_else(|| refusal("translation", "missing Patch accounting"))?;
-                if let Some(proof) = crate::terminal_program166::qualify_track(
+                if let Some(multi) = &multi_patches {
+                    let patch = multi
+                        .patches()
+                        .iter()
+                        .find(|p| {
+                            p.source_ordinal == ordinal
+                                && p.representation_range == patch.patch.representation_range
+                        })
+                        .ok_or_else(|| refusal("Multi Patch", "missing exact source proof"))?;
+                    events.push(patch.export_event());
+                } else if let Some(proof) = crate::terminal_program166::qualify_track(
                     bytes,
                     sequence_ordinal,
                     binding.pair_ordinal,
@@ -749,6 +787,7 @@ pub(crate) fn qualify_track_translation(
         crate::simultaneous_note166::qualify_track(bytes, sequence_ordinal, binding.pair_ordinal)
             .unwrap_or_default();
     Ok(BoundedTrackManifest {
+        multi_patches,
         simultaneous_notes,
         program_only_patches,
         numeric_programs,

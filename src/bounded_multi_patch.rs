@@ -114,7 +114,7 @@ pub fn decode_bounded_multi_patch_track(
     association_range: Range<usize>,
     event_range: Range<usize>,
 ) -> Result<BoundedMultiPatchTrack, MultiPatchRefusal> {
-    decode_impl(source, association_range, event_range, false).map(|v| v.0)
+    decode_impl(source, association_range, event_range, false, false).map(|v| v.0)
 }
 
 /// Experimental-only native-confirmed GS envelope plus completely decoded mixed
@@ -130,7 +130,7 @@ pub(crate) fn native_gs_multi_handoff(
     ),
     MultiPatchRefusal,
 > {
-    decode_impl(source, association_range, event_range, true)
+    decode_impl(source, association_range, event_range, true, false)
         .map(|(track, events)| (events, track.controller_targets))
 }
 fn decode_impl(
@@ -138,6 +138,7 @@ fn decode_impl(
     association_range: Range<usize>,
     event_range: Range<usize>,
     native_gs: bool,
+    counted_tail: bool,
 ) -> Result<(BoundedMultiPatchTrack, Vec<DecodedExportEvent>), MultiPatchRefusal> {
     let root = parse_root_record_stream(source).map_err(|_| MultiPatchRefusal::Framing)?;
     let assoc = source
@@ -147,7 +148,7 @@ fn decode_impl(
         return Err(MultiPatchRefusal::Association);
     }
     let count = usize::from(assoc[0]);
-    if !assoc[1 + 2 * count..].iter().all(|b| *b == 0xff) {
+    if !counted_tail && !assoc[1 + 2 * count..].iter().all(|b| *b == 0xff) {
         return Err(MultiPatchRefusal::Association);
     }
     let owner = root
@@ -371,4 +372,66 @@ fn decode_impl(
         },
         export_events,
     ))
+}
+
+/// Descriptor166-owned use of the existing standalone Multi proof. No routing
+/// fallback, discovery, or change to the established Multi wrapper predicates.
+pub(crate) fn qualify_descriptor166_track(
+    source: &[u8],
+    sequence_ordinal: usize,
+    pair_ordinal: usize,
+) -> Result<BoundedMultiPatchTrack, MultiPatchRefusal> {
+    use crate::sequence_container::{parse_project_166, TrackAssociations};
+    let project = parse_project_166(source).map_err(|_| MultiPatchRefusal::Framing)?;
+    let s = project
+        .sequences
+        .get(sequence_ordinal)
+        .ok_or(MultiPatchRefusal::BoundsOrOwnership)?;
+    let TrackAssociations::Ordinal(bindings) = &s.track_associations else {
+        return Err(MultiPatchRefusal::BoundsOrOwnership);
+    };
+    if bindings.len() != s.track_pairs.len()
+        || bindings.len() != s.track_descriptors().len()
+        || bindings
+            .iter()
+            .enumerate()
+            .any(|(i, b)| b.pair_ordinal != i || b.descriptor_ordinal != i + 2)
+    {
+        return Err(MultiPatchRefusal::BoundsOrOwnership);
+    }
+    let pair = s
+        .track_pairs
+        .get(pair_ordinal)
+        .ok_or(MultiPatchRefusal::BoundsOrOwnership)?;
+    let descriptor = s
+        .descriptors
+        .get(pair_ordinal + 2)
+        .ok_or(MultiPatchRefusal::BoundsOrOwnership)?;
+    let start = descriptor
+        .label_start
+        .checked_sub(33)
+        .filter(|start| *start >= s.sequence_range.start)
+        .ok_or(MultiPatchRefusal::BoundsOrOwnership)?;
+    let bounds = s
+        .validated_track_event_bounds(pair_ordinal)
+        .map_err(|_| MultiPatchRefusal::BoundsOrOwnership)?;
+    // Descriptor166's owned count bounds the active entries. Unused storage
+    // is retained by its routing proof, never used as a destination.
+    let q = decode_impl(
+        source,
+        start..descriptor.label_start,
+        bounds.event_range,
+        false,
+        true,
+    )?
+    .0;
+    let declared = u32::from_be_bytes(
+        pair.primary.payload.bytes[2..6]
+            .try_into()
+            .map_err(|_| MultiPatchRefusal::EventWalk)?,
+    );
+    if q.patches().len() != declared as usize {
+        return Err(MultiPatchRefusal::EventWalk);
+    }
+    Ok(q)
 }
