@@ -189,6 +189,25 @@ pub enum MixedEventItem<'a> {
 }
 
 impl MixedEventItem<'_> {
+    pub fn representation_range(&self) -> Range<usize> {
+        match self {
+            MixedEventItem::Patch(p) => p.patch.representation_range.clone(),
+            MixedEventItem::PatchToNote(p) => p.representation_range.clone(),
+            MixedEventItem::Event(e) => match &e.event {
+                MixedEventKind::Note(n) => n.representation_range.clone(),
+                MixedEventKind::Controller(c) => c.record_range.clone(),
+                MixedEventKind::MidiController(c) => c.representation_range.clone(),
+                MixedEventKind::SysEx(s) => s.representation_range.clone(),
+                MixedEventKind::Program(p) => p.representation_range.clone(),
+                MixedEventKind::ContextMediatedController(c) => c.representation_range.clone(),
+                MixedEventKind::ContextMediatedNote(n) => n.representation_range.clone(),
+                MixedEventKind::DoubleContextMediatedNote(n) => n.representation_range.clone(),
+                MixedEventKind::ChannelPressure { entry, .. } => entry.entry_range.clone(),
+                MixedEventKind::PitchBend { entry, .. } => entry.entry_range.clone(),
+            },
+        }
+    }
+
     pub fn logical_event_count(&self) -> usize {
         match self {
             Self::Event(_) => 1,
@@ -461,6 +480,35 @@ fn walk_mixed_events(
     explicit_program: bool,
     framed_sysex120: bool,
 ) -> Result<MixedEventWalk<'_>, MixedEventWalkError> {
+    walk_mixed_events_impl(
+        bytes,
+        bounds,
+        timing_basis,
+        explicit_program,
+        framed_sysex120,
+        false,
+    )
+    .map(|(walk, _)| walk)
+}
+
+/// Same decoder, retaining only completed dispatches before the first failure.
+/// No byte scanning or restart is performed.
+pub fn walk_bounded_mixed_event_prefix(
+    bytes: &[u8],
+    bounds: MixedEventBounds,
+    timing_basis: MixedEventTimingBasis,
+) -> Result<(MixedEventWalk<'_>, Option<MixedEventWalkError>), MixedEventWalkError> {
+    walk_mixed_events_impl(bytes, bounds, timing_basis, false, false, true)
+}
+
+fn walk_mixed_events_impl(
+    bytes: &[u8],
+    bounds: MixedEventBounds,
+    timing_basis: MixedEventTimingBasis,
+    explicit_program: bool,
+    framed_sysex120: bool,
+    retain_prefix: bool,
+) -> Result<(MixedEventWalk<'_>, Option<MixedEventWalkError>), MixedEventWalkError> {
     let start = bounds.event_range.start;
     let end = bounds.event_range.end;
     if start > end || end > bytes.len() {
@@ -476,37 +524,50 @@ fn walk_mixed_events(
     let mut state = ActiveEventState::None;
     let mut items = Vec::new();
 
-    while cursor != end {
-        let decoded_timing = decode_7bit_be_vlq(bytes, cursor, end)
-            .map_err(|source| MixedEventWalkError::TimingVlq { cursor, source })?;
-        let timing_end = cursor.checked_add(decoded_timing.bytes_consumed).ok_or(
-            MixedEventWalkError::EventPastBound {
-                cursor,
-                required_end: usize::MAX,
-                event_end: end,
-            },
-        )?;
-        let Some(first) = bytes.get(timing_end).copied().filter(|_| timing_end < end) else {
-            return Err(MixedEventWalkError::MissingDispatchByte {
-                cursor,
-                offset: timing_end,
-            });
-        };
+    let outcome = (|| -> Result<(), MixedEventWalkError> {
+        while cursor != end {
+            let decoded_timing = decode_7bit_be_vlq(bytes, cursor, end)
+                .map_err(|source| MixedEventWalkError::TimingVlq { cursor, source })?;
+            let timing_end = cursor.checked_add(decoded_timing.bytes_consumed).ok_or(
+                MixedEventWalkError::EventPastBound {
+                    cursor,
+                    required_end: usize::MAX,
+                    event_end: end,
+                },
+            )?;
+            let Some(first) = bytes.get(timing_end).copied().filter(|_| timing_end < end) else {
+                return Err(MixedEventWalkError::MissingDispatchByte {
+                    cursor,
+                    offset: timing_end,
+                });
+            };
 
-        let tag_offset = timing_end.checked_add(1);
-        if cursor == start
-            && state == ActiveEventState::None
-            && first == 0xff
-            && tag_offset.and_then(|offset| bytes.get(offset).filter(|_| offset < end))
-                == Some(&0x60)
-        {
-            if let Some(outcome) = decode_initial_context_patch_note(
-                bytes,
-                cursor,
-                timing_end,
-                end,
-                previous_position,
-            )? {
+            let tag_offset = timing_end.checked_add(1);
+            if cursor == start
+                && state == ActiveEventState::None
+                && first == 0xff
+                && tag_offset.and_then(|offset| bytes.get(offset).filter(|_| offset < end))
+                    == Some(&0x60)
+            {
+                if let Some(outcome) = decode_initial_context_patch_note(
+                    bytes,
+                    cursor,
+                    timing_end,
+                    end,
+                    previous_position,
+                )? {
+                    require_advance(cursor, outcome.next, end)?;
+                    items.extend(outcome.items);
+                    cursor = outcome.next;
+                    previous_position = outcome.next_position;
+                    state = outcome.next_state;
+                    continue;
+                }
+            }
+            if first == 0xff
+                && tag_offset.and_then(|offset| bytes.get(offset).copied()) == Some(0x7c)
+            {
+                let outcome = decode_patch_transition(bytes, cursor, end, previous_position)?;
                 require_advance(cursor, outcome.next, end)?;
                 items.extend(outcome.items);
                 cursor = outcome.next;
@@ -514,28 +575,187 @@ fn walk_mixed_events(
                 state = outcome.next_state;
                 continue;
             }
-        }
-        if first == 0xff && tag_offset.and_then(|offset| bytes.get(offset).copied()) == Some(0x7c) {
-            let outcome = decode_patch_transition(bytes, cursor, end, previous_position)?;
-            require_advance(cursor, outcome.next, end)?;
-            items.extend(outcome.items);
-            cursor = outcome.next;
-            previous_position = outcome.next_position;
-            state = outcome.next_state;
-            continue;
-        }
 
-        let (item, next, next_position, next_state) = match first {
-            0x00..=0x7f => match state {
-                ActiveEventState::None => {
-                    return Err(MixedEventWalkError::DataWithoutActiveState {
+            let (item, next, next_position, next_state) = match first {
+                0x00..=0x7f => match state {
+                    ActiveEventState::None => {
+                        return Err(MixedEventWalkError::DataWithoutActiveState {
+                            cursor,
+                            offset: timing_end,
+                            observed: first,
+                        });
+                    }
+                    ActiveEventState::Note => {
+                        let (note, next) =
+                            decode_note_at(bytes, cursor, end, false).map_err(|source| {
+                                MixedEventWalkError::MalformedNote { cursor, source }
+                            })?;
+                        let position = add_position(previous_position, note.timing.value, cursor)?;
+                        (
+                            MixedEventItem::Event(Box::new(PositionedEvent {
+                                position,
+                                event: MixedEventKind::Note(note),
+                            })),
+                            next,
+                            position,
+                            ActiveEventState::Note,
+                        )
+                    }
+                    ActiveEventState::ChannelPressure => {
+                        let (decoded, next) = decode_channel_pressure_entry_at(
+                            bytes, cursor, end, false,
+                        )
+                        .map_err(|source| {
+                            MixedEventWalkError::MalformedChannelPressure { cursor, source }
+                        })?;
+                        require_pressure_data(&decoded, cursor)?;
+                        let position = add_position(
+                            previous_position,
+                            decoded.entry.timing_delta.value,
+                            cursor,
+                        )?;
+                        (
+                            pressure_item(position, decoded),
+                            next,
+                            position,
+                            ActiveEventState::ChannelPressure,
+                        )
+                    }
+                    ActiveEventState::MidiController { status } => decode_midi_controller(
+                        bytes,
                         cursor,
-                        offset: timing_end,
-                        observed: first,
-                    });
+                        timing_end,
+                        end,
+                        previous_position,
+                        status,
+                        false,
+                    )?,
+                    ActiveEventState::PitchBend => {
+                        let (decoded, next) =
+                            decode_pitch_bend_entry_at(bytes, cursor, end, false).map_err(
+                                |source| MixedEventWalkError::MalformedPitchBend { cursor, source },
+                            )?;
+                        require_bend_data(&decoded, cursor)?;
+                        let position = add_position(
+                            previous_position,
+                            decoded.entry.timing_delta.value,
+                            cursor,
+                        )?;
+                        (
+                            bend_item(position, decoded),
+                            next,
+                            position,
+                            ActiveEventState::PitchBend,
+                        )
+                    }
+                },
+                0xf0 if framed_sysex120
+                    && (explicit_program || bytes.get(timing_end + 1) != Some(&7)) =>
+                {
+                    let (entry, next) = decode_framed_sysex120(bytes, cursor, timing_end, end)?;
+                    let position =
+                        add_position(previous_position, entry.timing_delta.value, cursor)?;
+                    (
+                        MixedEventItem::Event(Box::new(PositionedEvent {
+                            position,
+                            event: MixedEventKind::SysEx(entry),
+                        })),
+                        next,
+                        position,
+                        state,
+                    )
                 }
-                ActiveEventState::Note => {
-                    let (note, next) = decode_note_at(bytes, cursor, end, false)
+                0xf0 if !explicit_program => {
+                    let next =
+                        timing_end
+                            .checked_add(9)
+                            .ok_or(MixedEventWalkError::EventPastBound {
+                                cursor,
+                                required_end: usize::MAX,
+                                event_end: end,
+                            })?;
+                    if next > end {
+                        return Err(MixedEventWalkError::EventPastBound {
+                            cursor,
+                            required_end: next,
+                            event_end: end,
+                        });
+                    }
+                    let length_offset = timing_end + 1;
+                    let payload_start = timing_end + 2;
+                    if bytes[length_offset] != 7 {
+                        return Err(MixedEventWalkError::MalformedSysEx {
+                            cursor,
+                            offset: length_offset,
+                        });
+                    }
+                    for (index, value) in bytes[payload_start..next - 1].iter().enumerate() {
+                        let offset = payload_start + index;
+                        if *value > 127 {
+                            return Err(MixedEventWalkError::MalformedSysEx { cursor, offset });
+                        }
+                    }
+                    if bytes[next - 1] != 0xf7 {
+                        return Err(MixedEventWalkError::MalformedSysEx {
+                            cursor,
+                            offset: next - 1,
+                        });
+                    }
+                    // CCA-016 establishes only explicit F0/90 successors, not
+                    // a general source compact-state or SMF running-status rule.
+                    if next < end {
+                        let timing = decode_7bit_be_vlq(bytes, next, end).map_err(|source| {
+                            MixedEventWalkError::TimingVlq {
+                                cursor: next,
+                                source,
+                            }
+                        })?;
+                        let offset = next + timing.bytes_consumed;
+                        let observed = *bytes.get(offset).filter(|_| offset < end).ok_or(
+                            MixedEventWalkError::MissingDispatchByte {
+                                cursor: next,
+                                offset,
+                            },
+                        )?;
+                        if !matches!(observed, 0xf0 | 0x90) {
+                            return Err(MixedEventWalkError::UnsupportedSysExSuccessor {
+                                cursor,
+                                offset,
+                                observed,
+                            });
+                        }
+                    }
+                    let timing_delta = located_vlq(bytes, cursor, timing_end, cursor)?;
+                    let position = add_position(previous_position, timing_delta.value, cursor)?;
+                    (
+                        MixedEventItem::Event(Box::new(PositionedEvent {
+                            position,
+                            event: MixedEventKind::SysEx(BoundedSysExEntry {
+                                representation_range: cursor..next,
+                                timing_delta,
+                                status: LocatedByte {
+                                    value: 0xf0,
+                                    offset: timing_end,
+                                },
+                                payload_length: LocatedByte {
+                                    value: 7,
+                                    offset: length_offset,
+                                },
+                                framing: None,
+                                payload: LocatedBytes {
+                                    bytes: &bytes[payload_start..next],
+                                    range: payload_start..next,
+                                },
+                            }),
+                        })),
+                        next,
+                        position,
+                        state,
+                    )
+                }
+                0xff => dispatch_ff(bytes, cursor, timing_end, end, previous_position)?,
+                0x90 => {
+                    let (note, next) = decode_note_at(bytes, cursor, end, true)
                         .map_err(|source| MixedEventWalkError::MalformedNote { cursor, source })?;
                     let position = add_position(previous_position, note.timing.value, cursor)?;
                     (
@@ -548,9 +768,66 @@ fn walk_mixed_events(
                         ActiveEventState::Note,
                     )
                 }
-                ActiveEventState::ChannelPressure => {
+                0xc0 if explicit_program => {
+                    let next =
+                        timing_end
+                            .checked_add(2)
+                            .ok_or(MixedEventWalkError::EventPastBound {
+                                cursor,
+                                required_end: usize::MAX,
+                                event_end: end,
+                            })?;
+                    if next > end {
+                        return Err(MixedEventWalkError::EventPastBound {
+                            cursor,
+                            required_end: next,
+                            event_end: end,
+                        });
+                    }
+                    let offset = timing_end + 1;
+                    let value = bytes[offset];
+                    if value > 127 {
+                        return Err(MixedEventWalkError::HighBitData {
+                            cursor,
+                            offset,
+                            observed: value,
+                        });
+                    }
+                    let timing_delta = located_vlq(bytes, cursor, timing_end, cursor)?;
+                    let position = add_position(previous_position, timing_delta.value, cursor)?;
+                    (
+                        MixedEventItem::Event(Box::new(PositionedEvent {
+                            position,
+                            event: MixedEventKind::Program(BoundedProgramEntry {
+                                representation_range: cursor..next,
+                                timing_delta,
+                                status: LocatedByte {
+                                    value: first,
+                                    offset: timing_end,
+                                },
+                                program: LocatedByte { value, offset },
+                            }),
+                        })),
+                        next,
+                        position,
+                        ActiveEventState::None,
+                    )
+                }
+                0xb0..=0xbf => decode_midi_controller(
+                    bytes,
+                    cursor,
+                    timing_end,
+                    end,
+                    previous_position,
+                    LocatedByte {
+                        value: first,
+                        offset: timing_end,
+                    },
+                    true,
+                )?,
+                0xd0 => {
                     let (decoded, next) = decode_channel_pressure_entry_at(
-                        bytes, cursor, end, false,
+                        bytes, cursor, end, true,
                     )
                     .map_err(|source| {
                         MixedEventWalkError::MalformedChannelPressure { cursor, source }
@@ -565,20 +842,11 @@ fn walk_mixed_events(
                         ActiveEventState::ChannelPressure,
                     )
                 }
-                ActiveEventState::MidiController { status } => decode_midi_controller(
-                    bytes,
-                    cursor,
-                    timing_end,
-                    end,
-                    previous_position,
-                    status,
-                    false,
-                )?,
-                ActiveEventState::PitchBend => {
+                0xe0 => {
                     let (decoded, next) =
-                        decode_pitch_bend_entry_at(bytes, cursor, end, false).map_err(
-                            |source| MixedEventWalkError::MalformedPitchBend { cursor, source },
-                        )?;
+                        decode_pitch_bend_entry_at(bytes, cursor, end, true).map_err(|source| {
+                            MixedEventWalkError::MalformedPitchBend { cursor, source }
+                        })?;
                     require_bend_data(&decoded, cursor)?;
                     let position =
                         add_position(previous_position, decoded.entry.timing_delta.value, cursor)?;
@@ -589,231 +857,37 @@ fn walk_mixed_events(
                         ActiveEventState::PitchBend,
                     )
                 }
-            },
-            0xf0 if framed_sysex120
-                && (explicit_program || bytes.get(timing_end + 1) != Some(&7)) =>
-            {
-                let (entry, next) = decode_framed_sysex120(bytes, cursor, timing_end, end)?;
-                let position = add_position(previous_position, entry.timing_delta.value, cursor)?;
-                (
-                    MixedEventItem::Event(Box::new(PositionedEvent {
-                        position,
-                        event: MixedEventKind::SysEx(entry),
-                    })),
-                    next,
-                    position,
-                    state,
-                )
-            }
-            0xf0 if !explicit_program => {
-                let next =
-                    timing_end
-                        .checked_add(9)
-                        .ok_or(MixedEventWalkError::EventPastBound {
-                            cursor,
-                            required_end: usize::MAX,
-                            event_end: end,
-                        })?;
-                if next > end {
-                    return Err(MixedEventWalkError::EventPastBound {
+                observed => {
+                    return Err(MixedEventWalkError::UnsupportedStatus {
                         cursor,
-                        required_end: next,
-                        event_end: end,
+                        offset: timing_end,
+                        observed,
                     });
                 }
-                let length_offset = timing_end + 1;
-                let payload_start = timing_end + 2;
-                if bytes[length_offset] != 7 {
-                    return Err(MixedEventWalkError::MalformedSysEx {
-                        cursor,
-                        offset: length_offset,
-                    });
-                }
-                for (index, value) in bytes[payload_start..next - 1].iter().enumerate() {
-                    let offset = payload_start + index;
-                    if *value > 127 {
-                        return Err(MixedEventWalkError::MalformedSysEx { cursor, offset });
-                    }
-                }
-                if bytes[next - 1] != 0xf7 {
-                    return Err(MixedEventWalkError::MalformedSysEx {
-                        cursor,
-                        offset: next - 1,
-                    });
-                }
-                // CCA-016 establishes only explicit F0/90 successors, not
-                // a general source compact-state or SMF running-status rule.
-                if next < end {
-                    let timing = decode_7bit_be_vlq(bytes, next, end).map_err(|source| {
-                        MixedEventWalkError::TimingVlq {
-                            cursor: next,
-                            source,
-                        }
-                    })?;
-                    let offset = next + timing.bytes_consumed;
-                    let observed = *bytes.get(offset).filter(|_| offset < end).ok_or(
-                        MixedEventWalkError::MissingDispatchByte {
-                            cursor: next,
-                            offset,
-                        },
-                    )?;
-                    if !matches!(observed, 0xf0 | 0x90) {
-                        return Err(MixedEventWalkError::UnsupportedSysExSuccessor {
-                            cursor,
-                            offset,
-                            observed,
-                        });
-                    }
-                }
-                let timing_delta = located_vlq(bytes, cursor, timing_end, cursor)?;
-                let position = add_position(previous_position, timing_delta.value, cursor)?;
-                (
-                    MixedEventItem::Event(Box::new(PositionedEvent {
-                        position,
-                        event: MixedEventKind::SysEx(BoundedSysExEntry {
-                            representation_range: cursor..next,
-                            timing_delta,
-                            status: LocatedByte {
-                                value: 0xf0,
-                                offset: timing_end,
-                            },
-                            payload_length: LocatedByte {
-                                value: 7,
-                                offset: length_offset,
-                            },
-                            framing: None,
-                            payload: LocatedBytes {
-                                bytes: &bytes[payload_start..next],
-                                range: payload_start..next,
-                            },
-                        }),
-                    })),
-                    next,
-                    position,
-                    state,
-                )
-            }
-            0xff => dispatch_ff(bytes, cursor, timing_end, end, previous_position)?,
-            0x90 => {
-                let (note, next) = decode_note_at(bytes, cursor, end, true)
-                    .map_err(|source| MixedEventWalkError::MalformedNote { cursor, source })?;
-                let position = add_position(previous_position, note.timing.value, cursor)?;
-                (
-                    MixedEventItem::Event(Box::new(PositionedEvent {
-                        position,
-                        event: MixedEventKind::Note(note),
-                    })),
-                    next,
-                    position,
-                    ActiveEventState::Note,
-                )
-            }
-            0xc0 if explicit_program => {
-                let next =
-                    timing_end
-                        .checked_add(2)
-                        .ok_or(MixedEventWalkError::EventPastBound {
-                            cursor,
-                            required_end: usize::MAX,
-                            event_end: end,
-                        })?;
-                if next > end {
-                    return Err(MixedEventWalkError::EventPastBound {
-                        cursor,
-                        required_end: next,
-                        event_end: end,
-                    });
-                }
-                let offset = timing_end + 1;
-                let value = bytes[offset];
-                if value > 127 {
-                    return Err(MixedEventWalkError::HighBitData {
-                        cursor,
-                        offset,
-                        observed: value,
-                    });
-                }
-                let timing_delta = located_vlq(bytes, cursor, timing_end, cursor)?;
-                let position = add_position(previous_position, timing_delta.value, cursor)?;
-                (
-                    MixedEventItem::Event(Box::new(PositionedEvent {
-                        position,
-                        event: MixedEventKind::Program(BoundedProgramEntry {
-                            representation_range: cursor..next,
-                            timing_delta,
-                            status: LocatedByte {
-                                value: first,
-                                offset: timing_end,
-                            },
-                            program: LocatedByte { value, offset },
-                        }),
-                    })),
-                    next,
-                    position,
-                    ActiveEventState::None,
-                )
-            }
-            0xb0..=0xbf => decode_midi_controller(
-                bytes,
-                cursor,
-                timing_end,
-                end,
-                previous_position,
-                LocatedByte {
-                    value: first,
-                    offset: timing_end,
-                },
-                true,
-            )?,
-            0xd0 => {
-                let (decoded, next) =
-                    decode_channel_pressure_entry_at(bytes, cursor, end, true).map_err(
-                        |source| MixedEventWalkError::MalformedChannelPressure { cursor, source },
-                    )?;
-                require_pressure_data(&decoded, cursor)?;
-                let position =
-                    add_position(previous_position, decoded.entry.timing_delta.value, cursor)?;
-                (
-                    pressure_item(position, decoded),
-                    next,
-                    position,
-                    ActiveEventState::ChannelPressure,
-                )
-            }
-            0xe0 => {
-                let (decoded, next) = decode_pitch_bend_entry_at(bytes, cursor, end, true)
-                    .map_err(|source| MixedEventWalkError::MalformedPitchBend { cursor, source })?;
-                require_bend_data(&decoded, cursor)?;
-                let position =
-                    add_position(previous_position, decoded.entry.timing_delta.value, cursor)?;
-                (
-                    bend_item(position, decoded),
-                    next,
-                    position,
-                    ActiveEventState::PitchBend,
-                )
-            }
-            observed => {
-                return Err(MixedEventWalkError::UnsupportedStatus {
-                    cursor,
-                    offset: timing_end,
-                    observed,
-                });
-            }
-        };
+            };
 
-        require_advance(cursor, next, end)?;
-        items.push(item);
-        cursor = next;
-        previous_position = next_position;
-        state = next_state;
-    }
+            require_advance(cursor, next, end)?;
+            items.push(item);
+            cursor = next;
+            previous_position = next_position;
+            state = next_state;
+        }
 
-    Ok(MixedEventWalk {
-        event_range: bounds.event_range.clone(),
-        items,
-        consumed_range: bounds.event_range,
-    })
+        Ok(())
+    })();
+    let error = match outcome {
+        Ok(()) => None,
+        Err(error) if retain_prefix => Some(error),
+        Err(error) => return Err(error),
+    };
+    Ok((
+        MixedEventWalk {
+            event_range: bounds.event_range,
+            items,
+            consumed_range: start..cursor,
+        },
+        error,
+    ))
 }
 
 fn decode_midi_controller(

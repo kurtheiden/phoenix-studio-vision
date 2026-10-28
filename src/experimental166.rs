@@ -38,6 +38,8 @@ pub struct ExcludedTrack166 {
 pub struct SelectedScope166 {
     pub selected: Vec<TrackIdentity166>,
     pub excluded: Vec<ExcludedTrack166>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mixed_tracks: Vec<crate::mixed_partial166::TrackRecovery>,
 }
 fn err(e: impl std::fmt::Debug) -> Error {
     Error(format!("{e:?}"))
@@ -95,6 +97,22 @@ pub(crate) fn build(
     source: &[u8],
     ordinal: usize,
     selection: &[TrackIdentity166],
+) -> Result<(ExperimentalReport, Vec<u8>), Error> {
+    build_impl(source, ordinal, selection, false)
+}
+
+pub(crate) fn build_mixed(
+    source: &[u8],
+    ordinal: usize,
+    selection: &[TrackIdentity166],
+) -> Result<(ExperimentalReport, Vec<u8>), Error> {
+    build_impl(source, ordinal, selection, true)
+}
+fn build_impl(
+    source: &[u8],
+    ordinal: usize,
+    selection: &[TrackIdentity166],
+    mixed: bool,
 ) -> Result<(ExperimentalReport, Vec<u8>), Error> {
     let project = parse_project_166(source).map_err(err)?;
     let s = project
@@ -160,7 +178,13 @@ pub(crate) fn build(
         MeterPolicy::KnownHistoricalOnly,
     )
     .map_err(err)?;
-    let routes = crate::bounded_routing::decode_bounded_routing(source).map_err(err)?;
+    let routes = if mixed {
+        crate::bounded_routing::decode_prefix_routing(source)
+    } else {
+        crate::bounded_routing::decode_bounded_routing(source)
+    }
+    .map_err(err)?;
+    let mut mixed_tracks = Vec::new();
     let mutes = crate::saved_mute::collect_saved_mute_evidence(source).map_err(err)?;
     let mut chunks = Vec::new();
     let mut expected = vec![crate::readback120::conductor_expected(&c, None)];
@@ -183,14 +207,20 @@ pub(crate) fn build(
         let state = format!("{:?}", mute.state);
         let bounds = s.validated_track_event_bounds(id.pair_ordinal).map_err(err);
         let walk = bounds.as_ref().map_err(err).and_then(|b| {
-            walk_bounded_mixed_events(
-                source,
-                MixedEventBounds {
-                    event_range: b.event_range.clone(),
-                },
-                Default::default(),
-            )
-            .map_err(err)
+            let bounds = MixedEventBounds {
+                event_range: b.event_range.clone(),
+            };
+            if mixed {
+                crate::mixed_event::walk_bounded_mixed_event_prefix(
+                    source,
+                    bounds,
+                    Default::default(),
+                )
+                .map(|(walk, _)| walk)
+                .map_err(err)
+            } else {
+                walk_bounded_mixed_events(source, bounds, Default::default()).map_err(err)
+            }
         });
         if !selected.contains(id) {
             // Known direct-Note lower bound only. Other events/context remain unclassified.
@@ -200,28 +230,7 @@ pub(crate) fn build(
             continue;
         }
         let bounds = bounds?;
-        let walk = walk?;
-        if walk.consumed_range != bounds.event_range || walk.items.is_empty() {
-            return Err(err("incomplete or empty selected body"));
-        }
-        let declared = u32::from_be_bytes(
-            s.track_pairs[id.pair_ordinal].primary.payload.bytes[2..6]
-                .try_into()
-                .map_err(err)?,
-        ) as usize;
-        if declared != walk.items.len() {
-            return Err(err("selected Note count mismatch"));
-        }
-        let mut events = Vec::new();
-        for (i, item) in walk.items.iter().enumerate() {
-            let MixedEventItem::Event(e) = item else {
-                return Err(err("unsupported selected Patch/context"));
-            };
-            let MixedEventKind::Note(note) = &e.event else {
-                return Err(err("unsupported selected musical family/context"));
-            };
-            events.push(DecodedExportEvent::from_note(e.position, i as u64, note));
-        }
+        let mut walk = walk?;
         let r = routes
             .iter()
             .find(|r| {
@@ -231,21 +240,109 @@ pub(crate) fn build(
             .result
             .as_ref()
             .map_err(err)?;
-        if r.event_range != bounds.event_range || r.consumed_range != bounds.event_range {
+        if mixed && r.consumed_range.end < walk.consumed_range.end {
+            walk.items
+                .retain(|item| item.representation_range().end <= r.consumed_range.end);
+            walk.consumed_range = r.consumed_range.clone();
+        }
+        if r.event_range != bounds.event_range || r.consumed_range != walk.consumed_range {
             return Err(err("route/body mismatch"));
         }
-        let adapted = midi_export::adapt_track(
-            &events,
-            Some(ChannelAssignment {
-                channel: smf::MidiChannel::new(r.midi_channel).map_err(err)?,
-                provenance: ChannelAssignmentProvenance::ParsedRouting,
-            }),
-            TimingPolicy::Identity480,
-            PatchPolicy::StrictKnownOnly,
-        )
-        .map_err(err)?;
+        let declared = u32::from_be_bytes(
+            s.track_pairs[id.pair_ordinal].primary.payload.bytes[2..6]
+                .try_into()
+                .map_err(err)?,
+        ) as usize;
+        let (mut events, mut mixed_report) = if mixed {
+            let (events, report) = crate::mixed_partial166::translate(
+                source,
+                ordinal,
+                id.pair_ordinal,
+                &walk,
+                r,
+                declared,
+            )?;
+            (events, Some(report))
+        } else {
+            if walk.consumed_range != bounds.event_range
+                || walk.items.is_empty()
+                || declared != walk.items.len()
+            {
+                return Err(err("incomplete or mismatched selected Note body"));
+            }
+            let mut events = Vec::new();
+            for (i, item) in walk.items.iter().enumerate() {
+                let MixedEventItem::Event(e) = item else {
+                    return Err(err("unsupported selected Patch/context"));
+                };
+                let MixedEventKind::Note(note) = &e.event else {
+                    return Err(err("unsupported selected musical family/context"));
+                };
+                events.push(DecodedExportEvent::from_note(e.position, i as u64, note));
+            }
+            (events, None)
+        };
+        let adapted = loop {
+            match midi_export::adapt_track(
+                &events,
+                Some(ChannelAssignment {
+                    channel: smf::MidiChannel::new(r.midi_channel).map_err(err)?,
+                    provenance: ChannelAssignmentProvenance::ParsedRouting,
+                }),
+                TimingPolicy::Identity480,
+                PatchPolicy::StrictKnownOnly,
+            )
+            .map_err(err)
+            .and_then(|adapted| {
+                let label = midi_export::adapt_text(
+                    d.label
+                        .as_ref()
+                        .ok_or_else(|| err("unbounded label"))?
+                        .bytes,
+                )
+                .map_err(err)?;
+                smf::serialize_named_musical_track_with_note_provenance(
+                    &label,
+                    &adapted.scheduled_events,
+                    &adapted.note_provenance,
+                )
+                .map_err(err)?;
+                Ok(adapted)
+            }) {
+                Ok(adapted) => break adapted,
+                Err(error) => {
+                    let Some(report) = mixed_report.as_mut() else {
+                        return Err(err(error));
+                    };
+                    let Some(last) = report.recovered_ranges.pop() else {
+                        return Err(err(error));
+                    };
+                    events.retain(|event| {
+                        event
+                            .source_range
+                            .as_ref()
+                            .is_some_and(|range| range.end <= last.start)
+                    });
+                    if events.is_empty() {
+                        return Err(err(error));
+                    }
+                    report.status = "partially recovered track".into();
+                    report
+                        .unresolved
+                        .retain(|span| span.range.end <= last.start);
+                    report.unresolved.push(crate::mixed_partial166::UnresolvedSpan { range:last.start..bounds.event_range.end,
+                        reason:format!("Stopped before an unsafe scheduling/translation suffix: {error:?}. No event ordering guessed.") });
+                }
+            }
+        };
         if !adapted.warnings.is_empty() || !adapted.untranslated_metadata.is_empty() {
             return Err(err("unreported translation"));
+        }
+        if let Some(mut report) = mixed_report.take() {
+            report.notes = adapted.counts.notes as usize;
+            report.controllers = adapted.counts.controllers as usize;
+            report.programs = adapted.counts.program_changes as usize;
+            mixed_tracks.push(report);
         }
         let label = midi_export::adapt_text(
             d.label
@@ -269,7 +366,7 @@ pub(crate) fn build(
         tracks.push(ExperimentalTrackReport {
             ordinal: id.descriptor_ordinal,
             name,
-            notes: events.len(),
+            notes: adapted.counts.notes as usize,
             channel: Some(r.midi_channel),
             pair_ranges: Some(id.pair_ranges.clone()),
             saved_mute: state,
@@ -290,7 +387,7 @@ pub(crate) fn build(
             .iter()
             .any(|id| id.pair_ranges.contains(&r.record_range))
         {
-            "Selected Note pair; framing retained as provenance"
+            "Selected event pair; exact recovered and unresolved spans retained in mixed_tracks when present"
         } else {
             "Excluded Track or unresolved project/conductor/terminal semantics; NOT rendered"
         };
@@ -309,12 +406,16 @@ pub(crate) fn build(
             Ok(_) => "Selected subset is not a whole-sequence verified authorization".into(),
             Err(e) => format!("{e:?}"),
         };
-    let report=ExperimentalReport{label:LABEL.into(),source_sha256:format!("{:x}",Sha256::digest(source)),sequence_ordinal:ordinal,sequence_range:s.sequence_range.clone(),source_name:String::from_utf8_lossy(s.sequence_name.bytes.bytes).into_owned(),verified_refusal:refusal,ppqn:c.ppqn,observed_initial_mpqn:tempo.mpqn(),observed_source_meter:meter_values,included_notes:tracks.iter().map(|t|t.notes).sum(),tracks,omitted_known_notes:omitted,unresolved_semantic_event_count:None,regions,partial120:None,selected_scope166:Some(SelectedScope166{selected,excluded}),limitations:vec![
+    let report=ExperimentalReport{label:LABEL.into(),source_sha256:format!("{:x}",Sha256::digest(source)),sequence_ordinal:ordinal,sequence_range:s.sequence_range.clone(),source_name:String::from_utf8_lossy(s.sequence_name.bytes.bytes).into_owned(),verified_refusal:refusal,ppqn:c.ppqn,observed_initial_mpqn:tempo.mpqn(),observed_source_meter:meter_values,included_notes:tracks.iter().map(|t|t.notes).sum(),tracks,omitted_known_notes:omitted,unresolved_semantic_event_count:None,regions,partial120:None,selected_scope166:Some(SelectedScope166{selected,excluded,mixed_tracks}),limitations:vec![
         "EXPERIMENTAL SELECTED TRACKS: incomplete conditional local timeline, NOT complete or verified recovery.".into(),
         "Observed matching initial tempo/meter copies used; prelude applicability, full map and synchronization remain UNRESOLVED. No default values invented.".into(),
         "Excluded Track known_notes and omitted_known_notes are direct-Note lower bounds only; unknown/unsupported semantics are UNKNOWN, never zero. No individual included event skipped.".into(),
         "Track selection explicitly includes original ON or Unknown saved states when selected; historical inclusion and Instrument/OMS timbre not reproduced.".into(),
         "Terminal meaning and original duration unresolved. EOT closes rendered releases only. Labels can be stripped by other applications.".into()]};
+    let mut report = report;
+    if mixed {
+        report.limitations.push("Mixed-event partial recovery: mixed_tracks lists complete/partial tracks, exact unresolved spans and recovered Note/Controller/Program counts. Only decoder-established boundaries may be crossed; no restart after a decoding failure. Omitted Patches may affect timbre.".into());
+    }
     let json = serde_json::to_vec(&report).map_err(err)?;
     chunks.insert(
         0,

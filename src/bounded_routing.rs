@@ -108,6 +108,18 @@ pub struct TrackRoutingResult {
 pub fn decode_bounded_routing(
     bytes: &[u8],
 ) -> Result<Vec<TrackRoutingResult>, RoutingEvidenceError> {
+    decode_routing(bytes, false)
+}
+
+pub(crate) fn decode_prefix_routing(
+    bytes: &[u8],
+) -> Result<Vec<TrackRoutingResult>, RoutingEvidenceError> {
+    decode_routing(bytes, true)
+}
+fn decode_routing(
+    bytes: &[u8],
+    prefix: bool,
+) -> Result<Vec<TrackRoutingResult>, RoutingEvidenceError> {
     let project = parse_project_166(bytes)
         .map_err(|e| RoutingEvidenceError::ProjectStructure(format!("{e:?}")))?;
     let evidence = collect_routing_evidence(bytes)?;
@@ -117,7 +129,14 @@ pub fn decode_bounded_routing(
             results.push(TrackRoutingResult {
                 structural_ordinal,
                 descriptor_ordinal: descriptor.ordinal,
-                result: resolve(bytes, structural_ordinal, sequence, descriptor, &evidence),
+                result: resolve(
+                    bytes,
+                    structural_ordinal,
+                    sequence,
+                    descriptor,
+                    &evidence,
+                    prefix,
+                ),
             });
         }
     }
@@ -150,6 +169,7 @@ fn resolve(
     sequence: &SequenceContainer<'_>,
     descriptor: &SequenceDescriptor<'_>,
     evidence: &RoutingEvidence,
+    prefix: bool,
 ) -> Result<BoundedRoutingResolution, RoutingRefusal> {
     let TrackAssociations::Ordinal(bindings) = &sequence.track_associations else {
         return Err(RoutingRefusal::AmbiguousOwnership);
@@ -230,18 +250,32 @@ fn resolve(
         [one] => *one,
         _ => return Err(RoutingRefusal::AmbiguousDevice),
     };
-    let walk = walk_bounded_mixed_events(
-        bytes,
-        MixedEventBounds {
-            event_range: bounds.event_range.clone(),
-        },
-        Default::default(),
-    )
+    let mut walk = if prefix {
+        crate::mixed_event::walk_bounded_mixed_event_prefix(
+            bytes,
+            MixedEventBounds {
+                event_range: bounds.event_range.clone(),
+            },
+            Default::default(),
+        )
+        .map(|(walk, _)| walk)
+    } else {
+        walk_bounded_mixed_events(
+            bytes,
+            MixedEventBounds {
+                event_range: bounds.event_range.clone(),
+            },
+            Default::default(),
+        )
+    }
     .map_err(|e| RoutingRefusal::IncompleteEventWalk(format!("{e:?}")))?;
-    if walk.consumed_range != bounds.event_range {
-        return Err(RoutingRefusal::IncompleteEventWalk(
-            "incomplete consumption".into(),
-        ));
+    if prefix {
+        // The shared validator sees only decoder-completed representations.
+        // Multi routing still requires its original complete per-Patch proof.
+        walk.event_range = walk.consumed_range.clone();
+    }
+    if walk.items.is_empty() {
+        return Err(RoutingRefusal::EmptyEventRegion);
     }
     let contexts = if association_form == AssociationForm::Multi {
         // A track-wide summary channel is never used to route these Patches.
@@ -267,7 +301,23 @@ fn resolve(
             })
             .collect::<Result<Vec<_>, RoutingRefusal>>()?
     } else {
-        validate_routing_contexts(&walk, i, true)?
+        if prefix {
+            loop {
+                match validate_routing_contexts(&walk, i, true) {
+                    Ok(contexts) => break contexts,
+                    Err(error) => {
+                        walk.items.pop();
+                        let Some(last) = walk.items.last() else {
+                            return Err(error);
+                        };
+                        walk.consumed_range.end = last.representation_range().end;
+                        walk.event_range = walk.consumed_range.clone();
+                    }
+                }
+            }
+        } else {
+            validate_routing_contexts(&walk, i, true)?
+        }
     };
     let range = |r: crate::compatibility::ByteRange| r.start() as usize..r.end_exclusive() as usize;
     Ok(BoundedRoutingResolution {

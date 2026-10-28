@@ -60,6 +60,7 @@ pub struct ExperimentalPlan {
     pub(crate) midi: Vec<u8>,
     pub(crate) selection166: Option<Vec<crate::experimental166::TrackIdentity166>>,
     pub(crate) partial120: bool,
+    pub(crate) mixed166: bool,
 }
 impl ExperimentalPlan {
     pub fn report(&self) -> &ExperimentalReport {

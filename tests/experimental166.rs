@@ -95,13 +95,15 @@ fn conductor_pair(b: &mut Vec<u8>, event: &[u8]) {
 }
 
 fn folder() -> PathBuf {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let p = Path::new("/tmp").join(format!(
-        "phoenix-cca031-{}-{}",
+        "phoenix-cca031-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir(&p).unwrap();
     p
@@ -493,6 +495,15 @@ fn approved_partial_corpus_reports_actual_available_tracks() {
                         .excluded
                         .len()
                 );
+                let mixed = &plan
+                    .report()
+                    .selected_scope166
+                    .as_ref()
+                    .unwrap()
+                    .mixed_tracks;
+                println!("MIXED {:?} {} notes={} controllers={} programs={} partial_tracks={} complete_tracks={} omitted_tracks={}",inclusion,sequence.display_name,
+                    mixed.iter().map(|t|t.notes).sum::<usize>(),mixed.iter().map(|t|t.controllers).sum::<usize>(),mixed.iter().map(|t|t.programs).sum::<usize>(),
+                    mixed.iter().filter(|t|!t.unresolved.is_empty()).count(),mixed.iter().filter(|t|t.unresolved.is_empty()).count(),plan.report().selected_scope166.as_ref().unwrap().excluded.len());
                 assert!(plan.report().included_notes > 0);
                 let destination = folder();
                 let request = req(&inspected, sequence.sequence_id.clone(), &destination);
@@ -506,4 +517,169 @@ fn approved_partial_corpus_reports_actual_available_tracks() {
         }
     }
     assert_eq!(std::fs::read(PROJECT).unwrap(), original);
+}
+
+#[test]
+fn mixed_prefix_keeps_note_and_controller_without_resynchronizing() {
+    use phoenix::sequence_container::parse_project_166;
+    let mut events = NOTE.to_vec();
+    events.extend([20, 255, 65, 5, 0, 1, 0, 7, 108]);
+    let stop = events.len();
+    events.extend([0, 255, 1, 0]); // Unknown dispatch; later bytes must never be scanned.
+    events.extend(NOTE);
+    let mut bytes = synthetic(&events);
+    let project = parse_project_166(&bytes).unwrap();
+    let pair = &project.sequences[0].track_pairs[0];
+    let count = pair.primary.payload.range.start + 2;
+    let event_start = project.sequences[0]
+        .validated_track_event_bounds(0)
+        .unwrap()
+        .event_range
+        .start;
+    bytes[count..count + 4].copy_from_slice(&4u32.to_be_bytes());
+    let dir = folder();
+    let path = dir.join("mixed");
+    std::fs::write(&path, &bytes).unwrap();
+    let mut service = AppService::new();
+    let inspected = inspect(&mut service, &path);
+    let plan = service
+        .preview_partial_recovery(
+            &inspected.session_id,
+            &inspected.sequences[0].sequence_id,
+            RecoveryInclusionOption::IncludeMuted,
+        )
+        .unwrap();
+    let track = &plan
+        .report()
+        .selected_scope166
+        .as_ref()
+        .unwrap()
+        .mixed_tracks[0];
+    assert_eq!((track.notes, track.controllers, track.programs), (1, 1, 0));
+    assert_eq!(track.status, "partially recovered track");
+    assert_eq!(track.unresolved.len(), 1);
+    assert_eq!(track.unresolved[0].range.start, event_start + stop);
+    assert!(track
+        .recovered_ranges
+        .iter()
+        .all(|r| r.end <= event_start + stop));
+    let strict = phoenix::mixed_event::walk_bounded_mixed_events(
+        &bytes,
+        phoenix::mixed_event::MixedEventBounds {
+            event_range: track.event_range.clone(),
+        },
+        Default::default(),
+    );
+    assert!(strict.is_err());
+    let (prefix, error) = phoenix::mixed_event::walk_bounded_mixed_event_prefix(
+        &bytes,
+        phoenix::mixed_event::MixedEventBounds {
+            event_range: track.event_range.clone(),
+        },
+        Default::default(),
+    )
+    .unwrap();
+    assert!(error.is_some());
+    assert_eq!(prefix.items.len(), 2);
+    let receipt = service
+        .export_experimental_sequence(
+            req(&inspected, inspected.sequences[0].sequence_id.clone(), &dir),
+            &plan,
+            true,
+        )
+        .unwrap();
+    let midi = std::fs::read(receipt.output_path).unwrap();
+    assert!(midi.windows(3).any(|w| w == [0xb3, 7, 108]));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
+fn mixed_routing_failure_retains_only_the_preceding_proven_span() {
+    let mut events = NOTE.to_vec();
+    events.extend([20, 255, 65, 5, 0, 2, 0, 7, 108]); // Foreign Instrument context; no inferred channel.
+    events.extend(NOTE);
+    let mut bytes = synthetic(&events);
+    let project = phoenix::sequence_container::parse_project_166(&bytes).unwrap();
+    let count = project.sequences[0].track_pairs[0]
+        .primary
+        .payload
+        .range
+        .start
+        + 2;
+    bytes[count..count + 4].copy_from_slice(&3u32.to_be_bytes());
+    let dir = folder();
+    let path = dir.join("source");
+    std::fs::write(&path, &bytes).unwrap();
+    let mut service = AppService::new();
+    let inspected = inspect(&mut service, &path);
+    let plan = service
+        .preview_partial_recovery(
+            &inspected.session_id,
+            &inspected.sequences[0].sequence_id,
+            RecoveryInclusionOption::IncludeMuted,
+        )
+        .unwrap();
+    let track = &plan
+        .report()
+        .selected_scope166
+        .as_ref()
+        .unwrap()
+        .mixed_tracks[0];
+    assert_eq!((track.notes, track.controllers), (1, 0));
+    assert_eq!(track.unresolved.len(), 1);
+    assert_eq!(
+        track.unresolved[0].range.start,
+        track.event_range.start + NOTE.len()
+    );
+    // Contradictory source accounting does not confer even partial authority.
+    bytes[count..count + 4].copy_from_slice(&0u32.to_be_bytes());
+    std::fs::write(&path, &bytes).unwrap();
+    let inspected = inspect(&mut service, &path);
+    assert!(service
+        .preview_partial_recovery(
+            &inspected.session_id,
+            &inspected.sequences[0].sequence_id,
+            RecoveryInclusionOption::IncludeMuted
+        )
+        .is_err());
+}
+
+#[test]
+fn mixed_ambiguous_order_stops_before_conflicting_notes() {
+    let mut second = NOTE.to_vec();
+    second[3] = 100;
+    let mut bytes = synthetic(&[NOTE, second.as_slice()].concat());
+    let project = phoenix::sequence_container::parse_project_166(&bytes).unwrap();
+    let count = project.sequences[0].track_pairs[0]
+        .primary
+        .payload
+        .range
+        .start
+        + 2;
+    bytes[count..count + 4].copy_from_slice(&2u32.to_be_bytes());
+    let dir = folder();
+    let path = dir.join("source");
+    std::fs::write(&path, &bytes).unwrap();
+    let mut service = AppService::new();
+    let inspected = inspect(&mut service, &path);
+    let plan = service
+        .preview_partial_recovery(
+            &inspected.session_id,
+            &inspected.sequences[0].sequence_id,
+            RecoveryInclusionOption::IncludeMuted,
+        )
+        .unwrap();
+    let track = &plan
+        .report()
+        .selected_scope166
+        .as_ref()
+        .unwrap()
+        .mixed_tracks[0];
+    assert_eq!(track.notes, 1);
+    assert_eq!(track.status, "partially recovered track");
+    assert!(track.unresolved[0].reason.contains("ordering"));
+    assert_eq!(
+        track.unresolved[0].range.start,
+        track.event_range.start + NOTE.len()
+    );
 }

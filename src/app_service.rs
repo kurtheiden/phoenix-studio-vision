@@ -1028,6 +1028,7 @@ impl AppService {
             midi,
             selection166: None,
             partial120: false,
+            mixed166: false,
         })
     }
 
@@ -1065,6 +1066,7 @@ impl AppService {
             midi,
             selection166: None,
             partial120: true,
+            mixed166: false,
         })
     }
 
@@ -1136,14 +1138,27 @@ impl AppService {
                             && m.state == crate::saved_mute::SavedMuteState::On
                     });
                 !excluded
-                    && crate::experimental166::build(&source, ordinal, std::slice::from_ref(id))
-                        .is_ok()
+                    && crate::experimental166::build_mixed(
+                        &source,
+                        ordinal,
+                        std::slice::from_ref(id),
+                    )
+                    .is_ok()
             })
             .collect();
         if selected.is_empty() {
             return Err(Error("No trustworthy supported musical tracks".into()));
         }
-        self.preview_experimental_selected166(session_id, sequence_id, &selected)
+        let (report, midi) = crate::experimental166::build_mixed(&source, ordinal, &selected)?;
+        Ok(crate::experimental_export::ExperimentalPlan {
+            session_id: session_id.clone(),
+            sequence_id: sequence_id.clone(),
+            report,
+            midi,
+            selection166: Some(selected),
+            partial120: false,
+            mixed166: true,
+        })
     }
 
     /// Explicit selected scope. Every identity is rederived from the inspected source.
@@ -1165,6 +1180,7 @@ impl AppService {
             midi,
             selection166: Some(selection.to_vec()),
             partial120: false,
+            mixed166: false,
         })
     }
 
@@ -1195,7 +1211,24 @@ impl AppService {
         if request.collision_policy != CollisionPolicy::FailIfExists {
             return Err(Error("experimental export requires fail-if-exists".into()));
         }
-        let fresh = if plan.partial120 {
+        let fresh = if plan.mixed166 {
+            let (source, ordinal) =
+                self.experimental_source166(&request.session_id, &request.sequence_id)?;
+            let selection = plan
+                .selection166
+                .as_ref()
+                .ok_or_else(|| Error("missing mixed scope".into()))?;
+            let (report, midi) = crate::experimental166::build_mixed(&source, ordinal, selection)?;
+            crate::experimental_export::ExperimentalPlan {
+                session_id: request.session_id.clone(),
+                sequence_id: request.sequence_id.clone(),
+                report,
+                midi,
+                selection166: Some(selection.clone()),
+                partial120: false,
+                mixed166: true,
+            }
+        } else if plan.partial120 {
             self.preview_experimental_partial120(&request.session_id, &request.sequence_id)?
         } else {
             match &plan.selection166 {

@@ -350,7 +350,7 @@ final class AppModel: ObservableObject {
                     sequenceID: sequence, inclusion: inclusion, destination: "", consent: nil)
                 let alert = NSAlert()
                 alert.messageText = "Export incomplete MIDI recovery?"
-                alert.informativeText = "Only independently qualified tracks will be exported. Original mute inclusion, full conductor map and completeness are not guaranteed. Review the recovery report below."
+                alert.informativeText = "Only independently qualified events will be exported. Whole tracks or individual regions may remain unresolved. Original mute inclusion, full conductor map and completeness are not guaranteed. Review the recovery report below."
                 let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 620, height: 360))
                 let text = NSTextView(frame: scroll.bounds)
                 text.string = report

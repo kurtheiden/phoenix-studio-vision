@@ -83,6 +83,21 @@ pub fn qualify_track(
     sequence_ordinal: usize,
     pair_ordinal: usize,
 ) -> Result<Vec<RoutingValidatedController>, ControllerRefusal> {
+    qualify_impl(source, sequence_ordinal, pair_ordinal, false)
+}
+pub(crate) fn qualify_prefix(
+    source: &[u8],
+    sequence_ordinal: usize,
+    pair_ordinal: usize,
+) -> Result<Vec<RoutingValidatedController>, ControllerRefusal> {
+    qualify_impl(source, sequence_ordinal, pair_ordinal, true)
+}
+fn qualify_impl(
+    source: &[u8],
+    sequence_ordinal: usize,
+    pair_ordinal: usize,
+    prefix: bool,
+) -> Result<Vec<RoutingValidatedController>, ControllerRefusal> {
     let project = parse_project_166(source).map_err(|_| ControllerRefusal::Ownership)?;
     let s = project
         .sequences
@@ -104,31 +119,46 @@ pub fn qualify_track(
         .track_pairs
         .get(pair_ordinal)
         .ok_or(ControllerRefusal::Ownership)?;
-    let route = decode_bounded_routing(source)
-        .map_err(|_| ControllerRefusal::Routing)?
-        .into_iter()
-        .find(|r| {
-            r.structural_ordinal == sequence_ordinal && r.descriptor_ordinal == pair_ordinal + 2
-        })
-        .ok_or(ControllerRefusal::Routing)?
-        .result
-        .map_err(|_| ControllerRefusal::Routing)?;
+    let route = (if prefix {
+        crate::bounded_routing::decode_prefix_routing(source)
+    } else {
+        decode_bounded_routing(source)
+    })
+    .map_err(|_| ControllerRefusal::Routing)?
+    .into_iter()
+    .find(|r| r.structural_ordinal == sequence_ordinal && r.descriptor_ordinal == pair_ordinal + 2)
+    .ok_or(ControllerRefusal::Routing)?
+    .result
+    .map_err(|_| ControllerRefusal::Routing)?;
     let bounds = s
         .validated_track_event_bounds(pair_ordinal)
         .map_err(|_| ControllerRefusal::Walk)?
         .event_range;
-    let walk = walk_bounded_mixed_events(
-        source,
-        MixedEventBounds {
-            event_range: bounds.clone(),
-        },
-        Default::default(),
-    )
+    let mut walk = if prefix {
+        crate::mixed_event::walk_bounded_mixed_event_prefix(
+            source,
+            MixedEventBounds {
+                event_range: bounds.clone(),
+            },
+            Default::default(),
+        )
+        .map(|(walk, _)| walk)
+    } else {
+        walk_bounded_mixed_events(
+            source,
+            MixedEventBounds {
+                event_range: bounds.clone(),
+            },
+            Default::default(),
+        )
+    }
     .map_err(|_| ControllerRefusal::Walk)?;
-    if walk.consumed_range != bounds
-        || route.event_range != bounds
-        || route.consumed_range != bounds
-    {
+    if prefix && route.consumed_range.end < walk.consumed_range.end {
+        walk.items
+            .retain(|item| item.representation_range().end <= route.consumed_range.end);
+        walk.consumed_range = route.consumed_range.clone();
+    }
+    if route.event_range != bounds || route.consumed_range != walk.consumed_range {
         return Err(ControllerRefusal::Walk);
     }
     let declared = u32::from_be_bytes(
@@ -200,7 +230,7 @@ pub fn qualify_track(
         logical += item.logical_event_count() as u64;
         raw += (item.logical_event_count() + contexts) as u64;
     }
-    if raw != u64::from(declared) {
+    if raw > u64::from(declared) || (walk.consumed_range == bounds && raw != u64::from(declared)) {
         return Err(ControllerRefusal::Accounting);
     }
     Ok(out)

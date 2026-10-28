@@ -37,6 +37,7 @@ pub mod json_transport;
 pub mod meter;
 pub mod midi_export;
 pub mod mixed_event;
+mod mixed_partial166;
 pub mod multitrack_export;
 pub mod numeric_program166;
 mod observed_layout120;
