@@ -207,7 +207,15 @@ fn saved_on_does_not_hide_decode_errors_and_policy_only_requires_complete_recove
         fs::write(&source, &b).unwrap();
         let c = census_path(&source).unwrap();
         let s = &c.sequences[0];
-        assert_eq!(s.proven_policy_only, complete);
+        assert!(!s.proven_policy_only);
+        assert_eq!(
+            s.application_default.outcome,
+            if complete {
+                Outcome::Passed
+            } else {
+                Outcome::Failed
+            }
+        );
         assert_eq!(
             s.general_include_muted.outcome,
             if complete {

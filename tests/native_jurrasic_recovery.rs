@@ -213,7 +213,7 @@ fn inspect(app: &mut AppService, path: &Path) -> InspectProjectResponse {
     .unwrap()
 }
 #[test]
-fn renamed_source_authorizes_only_nine_sequences_and_publishes_both_modes() {
+fn renamed_source_authorizes_general_recovery_and_publishes_both_modes() {
     let Some(f) = Fixture::new() else { return };
     let mut app = AppService::new();
     let i = f.inspect(&mut app);
@@ -222,7 +222,7 @@ fn renamed_source_authorizes_only_nine_sequences_and_publishes_both_modes() {
             .iter()
             .filter(|s| s.readiness == Readiness::Ready)
             .count(),
-        9
+        11
     );
     assert_eq!(
         i.sequences[13]
@@ -230,7 +230,7 @@ fn renamed_source_authorizes_only_nine_sequences_and_publishes_both_modes() {
             .as_ref()
             .unwrap()
             .contract_id,
-        "authenticated_jurrasic_recovery"
+        "generalized_sequence_recovery"
     );
     assert_eq!(
         i.sequences[0]
@@ -238,7 +238,7 @@ fn renamed_source_authorizes_only_nine_sequences_and_publishes_both_modes() {
             .as_ref()
             .unwrap()
             .contract_id,
-        "authenticated_xform_recovery"
+        "generalized_sequence_recovery"
     );
     for (index, mode) in [
         None,
@@ -303,7 +303,9 @@ fn revalidation_selection_json_and_legacy_preference_guards() {
         app.export_sequence(cross).unwrap_err().diagnostic_code,
         "unknown_sequence"
     );
-    assert!(app.export_sequence(f.request(&i, 2)).is_err());
+    let mut recovered = f.request(&i, 2);
+    recovered.filename_stem = "Recovered-sibling".into();
+    assert!(app.export_sequence(recovered).is_ok());
     assert_eq!(
         app.export_sequence_with_recovery_inclusion(
             f.request(&i, 14),
@@ -344,7 +346,7 @@ fn revalidation_selection_json_and_legacy_preference_guards() {
             if mode == Some("exclude_muted") { 5 } else { 6 }
         );
     }
-    v["payload"]["capability"] = serde_json::json!("authenticated_jurrasic_recovery");
+    v["payload"]["capability"] = serde_json::json!("generalized_sequence_recovery");
     let out: serde_json::Value =
         serde_json::from_slice(&dispatch_json(&mut app, &serde_json::to_vec(&v).unwrap())).unwrap();
     assert_eq!(out["ok"], false);
@@ -356,7 +358,7 @@ fn revalidation_selection_json_and_legacy_preference_guards() {
         "source_identity_changed"
     );
     let changed = f.inspect(&mut app);
-    assert!(changed.sequences[13].bounded_export_capability.is_none());
+    assert!(changed.sequences[13].bounded_export_capability.is_some());
     fs::remove_file(&f.source).unwrap();
     assert_eq!(
         app.export_sequence(r).unwrap_err().diagnostic_code,
@@ -366,7 +368,7 @@ fn revalidation_selection_json_and_legacy_preference_guards() {
 }
 
 #[test]
-fn modified_sequence_identity_and_incomplete_accounting_never_authorize() {
+fn renamed_sequence_qualifies_but_incomplete_accounting_never_authorizes() {
     let Some(f) = Fixture::new() else { return };
     let project = phoenix::sequence_container::parse_project_166(&f.bytes).unwrap();
     let s = &project.sequences[13];
@@ -378,8 +380,12 @@ fn modified_sequence_identity_and_incomplete_accounting_never_authorize() {
         fs::write(&f.source, &altered).unwrap();
         let mut app = AppService::new();
         let i = f.inspect(&mut app);
-        assert!(i.sequences[13].bounded_export_capability.is_none());
-        assert!(app.export_sequence(f.request(&i, 13)).is_err());
+        if offset == name {
+            assert!(i.sequences[13].bounded_export_capability.is_some());
+        } else {
+            assert!(i.sequences[13].bounded_export_capability.is_none());
+            assert!(app.export_sequence(f.request(&i, 13)).is_err());
+        }
         if offset == count {
             assert!(build_recovery_sequence_manifest(
                 &altered,

@@ -106,7 +106,9 @@ fn accepted(b: &[u8]) -> BoundedSequenceManifest {
     build_bounded_sequence_manifest(b, 0, 480).unwrap()
 }
 fn refused(b: &[u8]) -> ManifestRefusal {
-    assert_application_refusal(b);
+    if build_recovery_sequence_manifest(b, 0, 480, RecoveryInclusion::IncludeMuted).is_err() {
+        assert_application_refusal(b);
+    }
     build_bounded_sequence_manifest(b, 0, 480).unwrap_err()
 }
 #[test]

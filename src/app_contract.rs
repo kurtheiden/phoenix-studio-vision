@@ -347,18 +347,11 @@ pub struct BoundedExportCapability {
     pub display_label: String,
 }
 impl BoundedExportCapability {
-    pub(crate) fn xform_recovery() -> Self {
+    pub(crate) fn generalized_recovery() -> Self {
         Self {
-            contract_id: "authenticated_xform_recovery".into(),
+            contract_id: "generalized_sequence_recovery".into(),
             contract_revision: 1,
-            display_label: "Validated xForm recovery".into(),
-        }
-    }
-    pub(crate) fn jurrasic_recovery() -> Self {
-        Self {
-            contract_id: "authenticated_jurrasic_recovery".into(),
-            contract_revision: 1,
-            display_label: "Validated Jurrasic Park recovery".into(),
+            display_label: "Recoverable MIDI; original mute inclusion is not guaranteed".into(),
         }
     }
     pub(crate) fn validated120() -> Self {

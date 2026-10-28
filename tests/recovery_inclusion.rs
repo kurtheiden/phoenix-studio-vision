@@ -605,9 +605,12 @@ fn recovery_inclusion_does_not_change_profiles_or_application_authority() {
     assert!(xform.2.is_none());
     assert_eq!(
         xform.3.as_ref().unwrap().contract_id,
-        "authenticated_xform_recovery"
+        "generalized_sequence_recovery"
     );
-    assert_eq!(before.iter().filter(|s| s.1 == Readiness::Ready).count(), 9);
+    assert_eq!(
+        before.iter().filter(|s| s.1 == Readiness::Ready).count(),
+        11
+    );
     let bells = phoenix::compatibility_profiles::bells_for_her_profile().unwrap();
     for descriptor in [3, 8] {
         assert!(matches!(
@@ -923,7 +926,7 @@ fn authenticated_jurrasic_park_complete_recovery_and_independent_readback() {
             .as_ref()
             .unwrap()
             .contract_id,
-        "authenticated_jurrasic_recovery"
+        "generalized_sequence_recovery"
     );
 }
 
@@ -933,15 +936,15 @@ fn whole_project_empty_track_impact_keeps_other_refusals_and_authority() {
     let expected = [
         None,
         Some(("Patch", "PayloadLength")),
-        Some(("Patch", "NonzeroPosition")),
+        None,
         Some(("conductor prelude", "UnmatchedOrAmbiguous")),
         Some(("conductor prelude", "UnmatchedOrAmbiguous")),
         None,
-        Some(("Patch", "PayloadLength")),
+        Some(("source ordering", "AmbiguousSourceOrder")),
         Some(("conductor prelude", "UnmatchedOrAmbiguous")),
         Some(("ownership", "descriptor_count: 11, pair_count: 10")),
-        Some(("conductor prelude", "Routing")),
-        Some(("Patch", "PayloadLength")),
+        None,
+        None,
         Some(("Patch", "PayloadLength")),
         Some(("Patch", "unsupported standalone Patch")),
         None,
@@ -981,6 +984,6 @@ fn whole_project_empty_track_impact_keeps_other_refusals_and_authority() {
                 (result, expected) => panic!("ordinal {ordinal}: {result:?} expected {expected:?}"),
             }
         }
-        assert_eq!(passed, vec![0, 5, 13, 15, 16, 17]);
+        assert_eq!(passed, vec![0, 2, 5, 9, 10, 13, 15, 16, 17]);
     }
 }

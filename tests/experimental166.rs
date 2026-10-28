@@ -299,7 +299,13 @@ fn authentic_selected_subsets_have_explicit_exclusions_and_actual_service_output
         assert!(scope.excluded.iter().all(|t| !t.reason.is_empty()));
         let dir = folder();
         let q = req(&r, row.sequence_id.clone(), &dir);
-        assert!(s.export_sequence(q.clone()).is_err());
+        let mut complete_request = q.clone();
+        complete_request.filename_stem = "complete-recovery".into();
+        let complete = s.export_sequence(complete_request);
+        assert_eq!(
+            complete.is_ok(),
+            row.readiness == phoenix::app_contract::Readiness::Ready
+        );
         let out = s
             .export_experimental_sequence(q.clone(), &plan, true)
             .unwrap();
@@ -307,7 +313,10 @@ fn authentic_selected_subsets_have_explicit_exclusions_and_actual_service_output
             "CCA031_OUTPUT {} {} {}",
             name, out.output_path, out.limitations_path
         );
-        assert!(s.export_sequence(q).is_err());
+        assert_eq!(
+            s.export_sequence(q).is_ok(),
+            row.readiness == Readiness::Ready
+        );
     }
     let row = r
         .sequences

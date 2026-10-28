@@ -74,8 +74,8 @@ fn approved_baseline_exports_remain_identical() {
     let census = phoenix::census::census_path(std::path::Path::new(&source)).unwrap();
     assert_eq!(census.metrics.complete_include_muted, 9);
     assert_eq!(census.metrics.complete_exclude_muted, 9);
-    assert_eq!(census.metrics.application_authorized, 10);
-    assert_eq!(census.metrics.proven_policy_only, 1);
+    assert_eq!(census.metrics.application_authorized, 11);
+    assert_eq!(census.metrics.proven_policy_only, 0);
     assert_eq!(census.metrics.sequences_with_decoding_blockers, 0);
     use phoenix::census::{Family, Outcome, Stage};
     assert_eq!(
@@ -142,7 +142,7 @@ fn approved_baseline_exports_remain_identical() {
                 assert!(!d.prerequisites.is_empty());
             }
         }
-        if ![0, 13].contains(&ordinal) {
+        if !complete {
             assert_eq!(s.application_include_muted.outcome, Outcome::NotApplicable);
             assert_eq!(s.application_exclude_muted.outcome, Outcome::NotApplicable);
         }
@@ -297,7 +297,11 @@ fn approved_baseline_exports_remain_identical() {
         expected.sort();
         assert_eq!(actual, expected);
     }
-    assert!(census.sequences[9].proven_policy_only);
+    assert!(!census.sequences[9].proven_policy_only);
+    assert_eq!(
+        census.sequences[9].application_default.outcome,
+        Outcome::Passed
+    );
     let output = ledger.parent().unwrap().join("regression-midi");
     fs::create_dir(&output).unwrap();
     let mut digests = BTreeMap::new();
@@ -383,7 +387,7 @@ fn approved_baseline_exports_remain_identical() {
             );
         }
     }
-    assert_eq!(ready, 10);
+    assert_eq!(ready, 11);
     for mode in [
         RecoveryInclusion::IncludeMuted,
         RecoveryInclusion::ExcludeMuted,
@@ -441,6 +445,7 @@ fn approved_baseline_exports_remain_identical() {
             added,
             [
                 "application/2/None",
+                "application/9/None",
                 "general/10/ExcludeMuted",
                 "general/10/IncludeMuted",
                 "general/2/ExcludeMuted",
@@ -449,7 +454,7 @@ fn approved_baseline_exports_remain_identical() {
                 "general/9/IncludeMuted"
             ]
         );
-        assert_eq!(digests.len(), 32);
+        assert_eq!(digests.len(), 33);
     }
     assert_eq!(fs::read(source).unwrap(), bytes, "source changed");
 }

@@ -1918,7 +1918,7 @@ impl AppService {
             if !is_authenticated_recovery(&bytes, &hash, fresh_selection) {
                 return Err(fail(
                     "source_sequence_identity_changed",
-                    "Fresh source is not the authenticated CONTROL selection.",
+                    "Fresh source does not satisfy complete recovery qualification.",
                 ));
             }
             let manifest = build_recovery_sequence_manifest(
@@ -2803,6 +2803,7 @@ fn assess_export_precedence(
     }
 }
 
+#[cfg(test)]
 const XFORM_CONTROL_SHA256: &str =
     "e5a70056a4f8d6331b0c536a1c9841be1ec2f7f2c379c7123b3e1890767e5132";
 fn is_authenticated_recovery(
@@ -2810,24 +2811,21 @@ fn is_authenticated_recovery(
     hash: &str,
     selection: &InspectedSequenceStructure,
 ) -> bool {
-    bytes.len() == 211468
-        && hash == XFORM_CONTROL_SHA256
-        && recovery_capability(selection).is_some()
-}
-// Private exact sequence identities. This is not a caller-supplied permit.
-fn recovery_capability(selection: &InspectedSequenceStructure) -> Option<BoundedExportCapability> {
-    match (
-        selection.structural_ordinal,
-        selection.name_bytes.as_slice(),
-        selection.pair_count,
-        selection.descriptor_count,
-        selection.tracks.len(),
-    ) {
-        (0, b"xForm", 13, 15, 13) => Some(BoundedExportCapability::xform_recovery()),
-        (13, b"Jurrasic Park", 7, 9, 7) => Some(BoundedExportCapability::jurrasic_recovery()),
-        _ => None,
+    if sha256_hex(bytes) != hash {
+        return false;
     }
+    build_recovery_sequence_manifest(
+        bytes,
+        selection.structural_ordinal as usize,
+        480,
+        RecoveryInclusion::IncludeMuted,
+    )
+    .is_ok_and(|manifest| owned_range(&manifest.sequence_range()) == Some(selection.sequence_range))
 }
+fn recovery_capability(_selection: &InspectedSequenceStructure) -> Option<BoundedExportCapability> {
+    Some(BoundedExportCapability::generalized_recovery())
+}
+
 fn recovery_mode(mode: RecoveryInclusionOption) -> RecoveryInclusion {
     match mode {
         RecoveryInclusionOption::IncludeMuted => RecoveryInclusion::IncludeMuted,
@@ -5142,11 +5140,7 @@ pub(crate) mod tests {
                     5 => session.source_sha256 = "forged".into(),
                     6 => {
                         session.response.sequences[ordinal].bounded_export_capability =
-                            Some(if ordinal == 0 {
-                                BoundedExportCapability::jurrasic_recovery()
-                            } else {
-                                BoundedExportCapability::xform_recovery()
-                            })
+                            Some(BoundedExportCapability::validated())
                     }
                     _ => unreachable!(),
                 }

@@ -202,7 +202,7 @@ private struct ProjectInspectionView: View {
                 .toggleStyle(.checkbox)
                 .disabled(!model.canChangeRecoveryInclusion)
                 .help("Muted sequences (tracks) sometimes represent alternative takes and musical ideas. By default, Phoenix recovers all tracks, including muted ones. Check this box only if you're certain you don't want muted tracks included in your MIDI exports.")
-                Text("Applies to eligible xForm and Jurrasic Park recovery only. Other sequences retain their verified track selections.")
+                Text("Original mute inclusion cannot be guaranteed. Recover all tracks, including muted tracks, or exclude only tracks known to be muted.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             HStack(alignment: .center, spacing: 20) {

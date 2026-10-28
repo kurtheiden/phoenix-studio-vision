@@ -1288,7 +1288,8 @@ pub fn census_path(path: &Path) -> Result<ProjectCensus, &'static str> {
         s.application_default = application_probe(&app, &request, None);
         // Only authenticated recovery currently permits explicit inclusion.
         let explicit = summary.bounded_export_capability.as_ref().is_some_and(|c| {
-            c.contract_id == "authenticated_xform_recovery"
+            c.contract_id == "generalized_sequence_recovery"
+                || c.contract_id == "authenticated_xform_recovery"
                 || c.contract_id == "authenticated_jurrasic_recovery"
         });
         if explicit {

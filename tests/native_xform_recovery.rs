@@ -103,7 +103,7 @@ fn published_both_modes_default_renamed_copy_and_native_readback() {
     assert!(x.export_capability.is_none());
     assert_eq!(
         x.bounded_export_capability.as_ref().unwrap().contract_id,
-        "authenticated_xform_recovery"
+        "generalized_sequence_recovery"
     );
     for (index, mode) in [
         None,
@@ -205,18 +205,29 @@ fn changed_deleted_cross_session_edit_and_unsupported_preferences_refuse() {
         "unknown_sequence"
     );
     for legacy in ["Sequence R", "Bells for her", "Ode to Clarke"] {
-        let sibling = request(&f, &i, legacy);
-        assert_eq!(
-            app.export_sequence_with_recovery_inclusion(
-                sibling,
-                RecoveryInclusionOption::IncludeMuted
-            )
-            .unwrap_err()
-            .diagnostic_code,
-            "unsupported_recovery_inclusion"
+        let mut sibling = request(&f, &i, legacy);
+        sibling.filename_stem = format!("sibling-{legacy}");
+        let result = app.export_sequence_with_recovery_inclusion(
+            sibling,
+            RecoveryInclusionOption::IncludeMuted,
         );
+        if legacy == "Sequence R" {
+            assert!(result.is_ok());
+        } else {
+            assert_eq!(
+                result.unwrap_err().diagnostic_code,
+                "unsupported_recovery_inclusion"
+            );
+        }
     }
-    let blocked = request(&f, &i, "Situation");
+
+    let blocked_name = &i
+        .sequences
+        .iter()
+        .find(|s| s.readiness != Readiness::Ready)
+        .unwrap()
+        .display_name;
+    let blocked = request(&f, &i, blocked_name);
     assert!(app.export_sequence(blocked).is_err());
     let mut altered = f.bytes.clone();
     altered[0] ^= 1;
@@ -229,7 +240,7 @@ fn changed_deleted_cross_session_edit_and_unsupported_preferences_refuse() {
     assert!(mutated.sequences[0]
         .bounded_export_capability
         .as_ref()
-        .map_or(true, |c| c.contract_id != "authenticated_xform_recovery"));
+        .is_some_and(|c| c.contract_id == "generalized_sequence_recovery"));
     fs::remove_file(&f.source).unwrap();
     assert_eq!(
         app.export_sequence(r).unwrap_err().diagnostic_code,
@@ -288,7 +299,7 @@ fn strict_json_preferences_and_omission_defaults() {
         );
     }
     // Capability strings and arbitrary additional fields are not client authority.
-    v["payload"]["capability"] = serde_json::json!("authenticated_xform_recovery");
+    v["payload"]["capability"] = serde_json::json!("generalized_sequence_recovery");
     let response: serde_json::Value =
         serde_json::from_slice(&dispatch_json(&mut app, &serde_json::to_vec(&v).unwrap())).unwrap();
     assert_eq!(response["ok"], false);
