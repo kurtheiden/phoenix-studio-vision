@@ -1,7 +1,9 @@
 import Foundation
 import Combine
+import AppKit
 
 protocol PhoenixCoreServing: Sendable {
+    func partialRecovery(sessionID: String, sequenceID: String, inclusion: RecoveryInclusionPreference, destination: String, consent: String?) async throws -> String
     func handshake() async throws -> UInt32
     func inspectProject(path: String) async throws -> ProjectInspection
     func getDiagnostics(sessionID: String) async throws -> DiagnosticsSummary
@@ -12,6 +14,7 @@ protocol PhoenixCoreServing: Sendable {
 
 // Existing callers omit preferences; only the scoped recovery route accepts them.
 extension PhoenixCoreServing {
+    func partialRecovery(sessionID: String, sequenceID: String, inclusion: RecoveryInclusionPreference, destination: String, consent: String?) async throws -> String { throw NSError(domain: "PhoenixPartialRecovery", code: 1) }
     func exportSequence(sessionID: String, sequenceID: String, destinationFolder: String, filenameStem: String) async throws -> ExportSequenceResult {
         try await exportSequence(sessionID: sessionID, sequenceID: sequenceID, destinationFolder: destinationFolder,
                                  filenameStem: filenameStem, recoveryInclusion: nil)
@@ -144,8 +147,8 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var excludeMutedTracks = false
     var canChangeRecoveryInclusion: Bool {
-        guard !isExporting, case .inspected(let inspection) = projectState else { return false }
-        return inspection.sequences.contains(where: \.supportsRecoveryInclusion)
+        guard !isExporting, case .inspected = projectState else { return false }
+        return true
     }
     func setExcludeMutedTracks(_ excluded: Bool) {
         guard canChangeRecoveryInclusion else { return }
@@ -334,6 +337,43 @@ final class AppModel: ObservableObject {
             progress.isRunning = false
             batchRecovery = progress
             workspaceTab = .results
+        }
+    }
+
+    func recoverPartialSequence() {
+        guard !isExporting, case .inspected(let inspection) = projectState,
+              let sequence = selectedSequenceID else { return }
+        let inclusion = recoveryInclusion
+        Task {
+            do {
+                let report = try await core.partialRecovery(sessionID: inspection.sessionID,
+                    sequenceID: sequence, inclusion: inclusion, destination: "", consent: nil)
+                let alert = NSAlert()
+                alert.messageText = "Export incomplete MIDI recovery?"
+                alert.informativeText = "Only independently qualified tracks will be exported. Original mute inclusion, full conductor map and completeness are not guaranteed. Review the recovery report below."
+                let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 620, height: 360))
+                let text = NSTextView(frame: scroll.bounds)
+                text.string = report
+                text.isEditable = false
+                scroll.documentView = text
+                scroll.hasVerticalScroller = true
+                alert.accessoryView = scroll
+                alert.addButton(withTitle: "Export Incomplete MIDI…")
+                alert.addButton(withTitle: "Cancel")
+                guard alert.runModal() == .alertFirstButtonReturn,
+                      let destination = chooseDestination() else { return }
+                let receipt = try await core.partialRecovery(sessionID: inspection.sessionID,
+                    sequenceID: sequence, inclusion: inclusion, destination: destination.path, consent: report)
+                let done = NSAlert()
+                done.messageText = "Incomplete recovery exported"
+                done.informativeText = receipt
+                done.runModal()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Partial recovery unavailable"
+                alert.informativeText = String(describing: error)
+                alert.runModal()
+            }
         }
     }
 

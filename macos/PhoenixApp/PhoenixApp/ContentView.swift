@@ -225,6 +225,8 @@ private struct ProjectInspectionView: View {
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 8) {
+                    Button("Review Partial Recovery…") { model.recoverPartialSequence() }
+                        .disabled(model.selectedSequenceID == nil || model.isExporting)
                     Button(model.recoveryActionTitle) { model.recoverSelectedSequences() }
                         .buttonStyle(.borderedProminent)
                         .disabled(!model.canRecoverSelection)

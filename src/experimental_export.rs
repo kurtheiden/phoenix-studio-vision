@@ -66,7 +66,7 @@ impl ExperimentalPlan {
         &self.report
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ExperimentalExportResponse {
     pub label: &'static str,
     pub output_path: String,

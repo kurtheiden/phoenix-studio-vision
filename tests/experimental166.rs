@@ -413,3 +413,97 @@ fn all_three_existing_120_experimental_midi_bytes_remain_identical() {
         );
     }
 }
+
+#[test]
+fn generalized_partial_bridge_requires_exact_reviewed_report_and_preserves_source() {
+    use phoenix::json_transport::dispatch_json;
+    let dir = folder();
+    let path = dir.join("source-without-extension");
+    let mut bytes = synthetic(NOTE);
+    let end = bytes.len() - 1;
+    bytes[end] = 254;
+    std::fs::write(&path, &bytes).unwrap();
+    let mut service = AppService::new();
+    let inspected = inspect(&mut service, &path);
+    let mut request = serde_json::json!({"operation":"partial_recovery","contract_version":1,
+        "payload":{"session_id":inspected.session_id.as_str(),"sequence_id":inspected.sequences[0].sequence_id.as_str(),
+        "recovery_inclusion":"include_muted","destination_folder":dir,"filename_stem":"Partial"}});
+    let preview: serde_json::Value = serde_json::from_slice(&dispatch_json(
+        &mut service,
+        &serde_json::to_vec(&request).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(preview["ok"], true, "{preview}");
+    assert_eq!(preview["result"]["included_notes"], 1);
+    assert!(!dir.join("EXPERIMENTAL INCOMPLETE - Partial.mid").exists());
+    request["payload"]["consent_report"] = serde_json::json!({});
+    let refused: serde_json::Value = serde_json::from_slice(&dispatch_json(
+        &mut service,
+        &serde_json::to_vec(&request).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(refused["ok"], false);
+    request["payload"]["consent_report"] = preview["result"].clone();
+    let exported: serde_json::Value = serde_json::from_slice(&dispatch_json(
+        &mut service,
+        &serde_json::to_vec(&request).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(exported["ok"], true, "{exported}");
+    assert!(dir.join("EXPERIMENTAL INCOMPLETE - Partial.mid").exists());
+    assert!(dir
+        .join("EXPERIMENTAL INCOMPLETE - Partial.limitations.json")
+        .exists());
+    let mut changed = bytes.clone();
+    changed[0] ^= 1;
+    std::fs::write(&path, changed).unwrap();
+    let refused: serde_json::Value = serde_json::from_slice(&dispatch_json(
+        &mut service,
+        &serde_json::to_vec(&request).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(refused["ok"], false);
+}
+
+#[test]
+fn approved_partial_corpus_reports_actual_available_tracks() {
+    let mut service = AppService::new();
+    let inspected = inspect(&mut service, Path::new(PROJECT));
+    let original = std::fs::read(PROJECT).unwrap();
+    for sequence in &inspected.sequences {
+        for inclusion in [
+            RecoveryInclusionOption::IncludeMuted,
+            RecoveryInclusionOption::ExcludeMuted,
+        ] {
+            if let Ok(plan) = service.preview_partial_recovery(
+                &inspected.session_id,
+                &sequence.sequence_id,
+                inclusion,
+            ) {
+                println!(
+                    "PARTIAL {:?} {} notes={} tracks={} excluded={}",
+                    inclusion,
+                    sequence.display_name,
+                    plan.report().included_notes,
+                    plan.report().tracks.len(),
+                    plan.report()
+                        .selected_scope166
+                        .as_ref()
+                        .unwrap()
+                        .excluded
+                        .len()
+                );
+                assert!(plan.report().included_notes > 0);
+                let destination = folder();
+                let request = req(&inspected, sequence.sequence_id.clone(), &destination);
+                let exported = service
+                    .export_experimental_sequence(request, &plan, true)
+                    .unwrap();
+                assert_eq!(exported.report.included_notes, plan.report().included_notes);
+                assert!(std::fs::metadata(exported.output_path).unwrap().len() > 0);
+                assert!(std::fs::metadata(exported.limitations_path).is_ok());
+            }
+        }
+    }
+    assert_eq!(std::fs::read(PROJECT).unwrap(), original);
+}

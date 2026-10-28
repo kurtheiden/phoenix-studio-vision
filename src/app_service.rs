@@ -1105,6 +1105,47 @@ impl AppService {
         Ok((source, ordinal as usize))
     }
 
+    /// Recover only independently qualified whole tracks. A failed track is never scanned
+    /// for a later restart; its complete source range remains in the omission ledger.
+    pub fn preview_partial_recovery(
+        &self,
+        session_id: &SessionId,
+        sequence_id: &SequenceId,
+        inclusion: RecoveryInclusionOption,
+    ) -> Result<
+        crate::experimental_export::ExperimentalPlan,
+        crate::experimental_export::ExperimentalExportError,
+    > {
+        use crate::experimental_export::ExperimentalExportError as Error;
+        let (source, ordinal) = self.experimental_source166(session_id, sequence_id)?;
+        if build_recovery_sequence_manifest(&source, ordinal, 480, RecoveryInclusion::IncludeMuted)
+            .is_ok()
+        {
+            return Err(Error("Use complete recovery for this sequence".into()));
+        }
+        let all = crate::experimental166::inventory(&source, ordinal)?;
+        let mutes = crate::saved_mute::collect_saved_mute_evidence(&source)
+            .map_err(|e| Error(format!("{e:?}")))?;
+        let selected: Vec<_> = all
+            .into_iter()
+            .filter(|id| {
+                let excluded = inclusion == RecoveryInclusionOption::ExcludeMuted
+                    && mutes.iter().any(|m| {
+                        m.sequence_ordinal == ordinal
+                            && m.descriptor_ordinal == id.descriptor_ordinal
+                            && m.state == crate::saved_mute::SavedMuteState::On
+                    });
+                !excluded
+                    && crate::experimental166::build(&source, ordinal, std::slice::from_ref(id))
+                        .is_ok()
+            })
+            .collect();
+        if selected.is_empty() {
+            return Err(Error("No trustworthy supported musical tracks".into()));
+        }
+        self.preview_experimental_selected166(session_id, sequence_id, &selected)
+    }
+
     /// Explicit selected scope. Every identity is rederived from the inspected source.
     pub fn preview_experimental_selected166(
         &self,

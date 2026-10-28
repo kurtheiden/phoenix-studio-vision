@@ -137,6 +137,7 @@ pub fn dispatch_json(service: &mut AppService, request: &[u8]) -> Vec<u8> {
         "get_api_info" => dispatch_api_info(service, value),
         "inspect_project" => dispatch_inspect_project(service, value),
         "get_diagnostics" => dispatch_get_diagnostics(service, value),
+        "partial_recovery" => dispatch_partial_recovery(service, value),
         "export_sequence" => dispatch_export_sequence(service, value),
         "cancel_operation" => dispatch_cancel_operation(service, value),
         _ => transport_error_json(UNKNOWN_OPERATION, "The requested operation is unknown."),
@@ -181,6 +182,74 @@ fn dispatch_get_diagnostics(service: &AppService, value: Value) -> Vec<u8> {
         &SessionId::new(envelope.payload.session_id),
         envelope.payload.diagnostics_level,
     ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PartialPayload {
+    session_id: String,
+    sequence_id: String,
+    recovery_inclusion: RecoveryInclusionOption,
+    destination_folder: String,
+    filename_stem: String,
+    consent_report: Option<Value>,
+}
+fn dispatch_partial_recovery(service: &AppService, value: Value) -> Vec<u8> {
+    let envelope: VersionedRequestEnvelope<PartialPayload> = match parse_fields(value) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    if envelope.contract_version != crate::app_contract::CONTRACT_VERSION {
+        return transport_error_json(INVALID_REQUEST_FIELDS, "Unsupported contract version");
+    }
+    let p = envelope.payload;
+    let session = SessionId::new(p.session_id);
+    let sequence = SequenceId::new(p.sequence_id);
+    let plan = match service.preview_partial_recovery(&session, &sequence, p.recovery_inclusion) {
+        Ok(plan) => plan,
+        Err(error) if error.0 == "Use complete recovery for this sequence" => {
+            return transport_error_json(
+                "complete_recovery_available",
+                "This sequence supports complete recovery. Use Recover instead.",
+            );
+        }
+        Err(_) => {
+            return transport_error_json(
+                "partial_unavailable",
+                "No trustworthy supported partial recovery; inspect diagnostics.",
+            )
+        }
+    };
+    let report = serde_json::to_value(plan.report()).expect("serializable report");
+    let Some(consent) = p.consent_report else {
+        return serde_json::to_vec(&SuccessEnvelope {
+            ok: true,
+            result: report,
+        })
+        .unwrap();
+    };
+    if consent != report {
+        return transport_error_json(
+            "partial_consent_changed",
+            "Recovery report changed; review it again.",
+        );
+    }
+    let request = ExportSequenceRequest {
+        contract_version: envelope.contract_version,
+        session_id: session,
+        sequence_id: sequence,
+        destination_folder: p.destination_folder,
+        filename_stem: p.filename_stem,
+        collision_policy: CollisionPolicy::FailIfExists,
+        operation_id: None,
+    };
+    match service.export_experimental_sequence(request, &plan, true) {
+        Ok(result) => serde_json::to_vec(&SuccessEnvelope { ok: true, result }).unwrap(),
+        Err(_) => transport_error_json(
+            "partial_export_failed",
+            "Partial export refused; check source and destination.",
+        ),
+    }
 }
 
 fn dispatch_export_sequence(service: &AppService, value: Value) -> Vec<u8> {
