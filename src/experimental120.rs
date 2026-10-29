@@ -32,7 +32,12 @@ pub struct Partial120TrackAccounting {
     pub instrument_pitch_provenance:
         Option<crate::instrument_transposition::InstrumentPitchProvenance>,
     pub ordinal: usize,
-    pub primary_range: Range<usize>,
+    /// Absent only for an exact EXP039 no-data descriptor, never a fake body range.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_range: Option<Range<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub no_event_data: Option<NoEventDataProvenance>,
+    /// Stored primary count, or structurally zero for a no-data descriptor.
     pub declared_source_objects: u32,
     pub exported: ExportCountsView,
     pub contexts: Option<usize>,
@@ -40,6 +45,23 @@ pub struct Partial120TrackAccounting {
     pub refusal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bounded_prefix: Option<BoundedPrefixAccounting>,
+}
+
+/// Exact EXP039 ownership evidence; no physical event body or channel exists.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct NoEventDataProvenance {
+    /// Correspondence view retained by the semantic bridge; not exclusive ownership.
+    pub descriptor_range: Range<usize>,
+    pub label_range: Range<usize>,
+    pub label_bytes: Vec<u8>,
+    pub state_context_range: Range<usize>,
+    pub state_context_bytes: Vec<u8>,
+}
+
+enum PartialTrack<'s, 'a> {
+    Paired(&'s crate::semantic_layout120::OrdinaryBinding<'a>),
+    PrimaryOnly(&'s crate::semantic_layout120::PrimaryOnlyBinding<'a>),
+    NoData(&'s crate::semantic_layout120::NoEventDataTrack<'a>),
 }
 
 /// Counted source framing is retained separately from the exported MIDI bytes.
@@ -196,11 +218,11 @@ pub(crate) fn build(
         .ok_or_else(|| err("unknown sequence"))?
         .association
         .map_err(err)?;
-    // Scope is the established bounded single-primary-only neighborhood, not a
-    // fallback for failed strict decoding of arbitrary paired projects.
-    if s.primary_only.len() != 1 || !s.no_event_data.is_empty() {
+    // Ownership still comes exclusively from the unchanged semantic bridge.
+    // Its one-primary-only cap is not a format maximum and is not relaxed here.
+    if s.primary_only.len() > 1 {
         return Err(err(
-            "partial120 requires one bounded primary-only neighborhood",
+            "partial120 supports at most one bounded primary-only body",
         ));
     }
     let root = parse_root_record_stream(source).map_err(err)?;
@@ -288,16 +310,65 @@ pub(crate) fn build(
     let mut units: Vec<_> = s
         .ordinary
         .iter()
-        .map(|t| (t.slot.ordinal, Some(t)))
+        .map(|t| (t.slot.ordinal, PartialTrack::Paired(t)))
         .collect();
-    units.extend(s.primary_only.iter().map(|t| (t.slot.ordinal, None)));
+    units.extend(
+        s.primary_only
+            .iter()
+            .map(|t| (t.slot.ordinal, PartialTrack::PrimaryOnly(t))),
+    );
+    units.extend(
+        s.no_event_data
+            .iter()
+            .map(|t| (t.slot.ordinal, PartialTrack::NoData(t))),
+    );
     units.sort_by_key(|t| t.0);
-    for (ordinal, paired) in units {
-        let (label, primary, secondary) = if let Some(t) = paired {
-            (t.slot.label.bytes, &t.pair.primary, Some(&t.pair.secondary))
-        } else {
-            let t = &s.primary_only[0];
-            (t.slot.label.bytes, &t.primary, None)
+    for (ordinal, unit) in units {
+        let (paired, primary_only) = match unit {
+            PartialTrack::Paired(t) => (Some(t), None),
+            PartialTrack::PrimaryOnly(t) => (None, Some(t)),
+            PartialTrack::NoData(t) => {
+                let name = midi_export::adapt_text(t.slot.label.bytes).map_err(err)?;
+                chunks.push(smf::serialize_named_musical_track(&name, &[]).map_err(err)?);
+                expected.push(crate::readback120::musical_expected(&name, &[]));
+                reports.push(ExperimentalTrackReport {
+                    ordinal,
+                    name: String::from_utf8_lossy(t.slot.label.bytes).into_owned(),
+                    notes: 0,
+                    channel: None,
+                    pair_ranges: None,
+                    saved_mute: "Unknown; no automatic mute omission".into(),
+                    inclusion: "Exact EXP039 no-event-data descriptor; zero events, no physical body or channel".into(),
+                });
+                accounting.push(Partial120TrackAccounting {
+                    ordinal,
+                    primary_range: None,
+                    no_event_data: Some(NoEventDataProvenance {
+                        descriptor_range: t.slot.view_range.clone(),
+                        label_range: t.slot.label.range.clone(),
+                        label_bytes: t.slot.label.bytes.to_vec(),
+                        state_context_range: t.state_context.range.clone(),
+                        state_context_bytes: t.state_context.bytes.to_vec(),
+                    }),
+                    // Structurally zero, not a fabricated stored primary count.
+                    declared_source_objects: 0,
+                    exported: ExportCountsView::default(),
+                    contexts: Some(0),
+                    unresolved_source_objects: 0,
+                    refusal: None,
+                    bounded_prefix: None,
+                    sysex_framing: vec![],
+                    controller_targets: vec![],
+                    ff60_controller_bridges: vec![],
+                    instrument_pitch_provenance: None,
+                });
+                continue;
+            }
+        };
+        let (label, primary, secondary) = match (paired, primary_only) {
+            (Some(t), _) => (t.slot.label.bytes, &t.pair.primary, Some(&t.pair.secondary)),
+            (_, Some(t)) => (t.slot.label.bytes, &t.primary, None),
+            _ => return Err(err("missing owned Track")),
         };
         let declared = u32::from_be_bytes(
             primary
@@ -319,7 +390,10 @@ pub(crate) fn build(
             // Mixed suffix is admitted only transactionally by the shared Multi
             // selector/table/program grammar, not by names or the first channel.
             let association = primary_only_association(&s, source, ordinal)?;
-            let full_range = s.primary_only[0].event_range.clone();
+            let full_range = primary_only
+                .ok_or_else(|| err("missing primary-only body"))?
+                .event_range
+                .clone();
             let mixed = crate::bounded_multi_patch::native_gs_multi_handoff(
                 source,
                 association,
@@ -394,7 +468,8 @@ pub(crate) fn build(
                 ff60_controller_bridges: vec![],
                 instrument_pitch_provenance: None,
                 ordinal,
-                primary_range: primary.record_range.clone(),
+                primary_range: Some(primary.record_range.clone()),
+                no_event_data: None,
                 declared_source_objects: declared,
                 exported: view,
                 contexts: Some(0),
@@ -465,7 +540,8 @@ pub(crate) fn build(
                     ff60_controller_bridges: controller_bridges(source, &walk),
                     instrument_pitch_provenance: Some(pitch_provenance),
                     ordinal,
-                    primary_range: primary.record_range.clone(),
+                    primary_range: Some(primary.record_range.clone()),
+                    no_event_data: None,
                     declared_source_objects: declared,
                     exported: ExportCountsView { sysex: sysex_framing(&walk, source).len() as u64, ..ExportCountsView::from(&a.counts) },
                     contexts: Some(contexts),
@@ -595,7 +671,8 @@ pub(crate) fn build(
             ff60_controller_bridges: bridges,
             instrument_pitch_provenance: pitch_provenance,
             ordinal,
-            primary_range: primary.record_range.clone(),
+            primary_range: Some(primary.record_range.clone()),
+            no_event_data: None,
             declared_source_objects: declared,
             exported: ExportCountsView {
                 sysex: sysex.len() as u64,
@@ -1723,3 +1800,7 @@ mod tests {
         .is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "experimental120_tests.rs"]
+pub(crate) mod admission_tests;

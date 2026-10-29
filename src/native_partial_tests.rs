@@ -69,7 +69,13 @@ fn call(app: &mut AppService, request: &Value) -> Value {
 }
 #[test]
 fn qualified_120_native_preview_consent_scope_mute_and_publication() {
-    let bytes = fixture();
+    publication_safety(fixture());
+}
+#[test]
+fn paired_and_zero_state_native_preview_consent_and_publication() {
+    publication_safety(crate::experimental120::admission_tests::publication_fixture());
+}
+fn publication_safety(bytes: Vec<u8>) {
     assert!(crate::observed_layout120::observe_project_120(&bytes).is_ok());
     assert!(crate::sequence_container::parse_project_166(&bytes).is_err());
     let source = crate::app_service::tests::portable_path(&bytes);
@@ -135,6 +141,12 @@ fn qualified_120_native_preview_consent_scope_mute_and_publication() {
     assert!(Path::new(published["result"]["output_path"].as_str().unwrap()).is_file());
     assert!(Path::new(published["result"]["limitations_path"].as_str().unwrap()).is_file());
     let file_count = fs::read_dir(&destination).unwrap().count();
+    assert_eq!(
+        call(&mut app, &request)["ok"],
+        false,
+        "collision must refuse"
+    );
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), file_count);
     fs::write(&source, &other_bytes).unwrap();
     request["payload"]["filename_stem"] = json!("Changed source");
     assert_eq!(
