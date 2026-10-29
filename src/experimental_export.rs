@@ -87,32 +87,19 @@ fn err(e: impl std::fmt::Debug) -> ExperimentalExportError {
     ExperimentalExportError(format!("{e:?}"))
 }
 
-pub(crate) fn build(
+/// CCA-027 event-only proof for the exact padded initial-primary profile.
+/// The caller supplies an existing same-source semantic association. Secondary
+/// applicability remains unresolved; this never grants complete conductor authority.
+pub(crate) fn decode_padded_initial_conductor(
     source: &[u8],
-    ordinal: usize,
-) -> Result<(ExperimentalReport, Vec<u8>), ExperimentalExportError> {
-    let proofs = prove_project120(source).map_err(err)?;
-    let proof = proofs
-        .into_iter()
-        .find(|p| p.ordinal == ordinal)
-        .ok_or_else(|| err("unknown object"))?
-        .result
-        .map_err(err)?;
-    let bridge = crate::semantic_layout120::associate_project_120(source).map_err(err)?;
-    let association = bridge
-        .candidates
-        .into_iter()
-        .nth(ordinal)
-        .ok_or_else(|| err("unknown association"))?
-        .association
-        .map_err(err)?;
-    if association.sequence_range != proof.range() || association.source_name.bytes != proof.name()
-    {
-        return Err(err("identity"));
-    }
-    // The known padded primary grammar identifies exactly ONE initial event.
-    // Its unknown secondary/context applicability is reported, never accepted
-    // as a complete conductor by this path.
+    association: &crate::semantic_layout120::Source120SequenceAssociation<'_>,
+) -> Result<
+    (
+        crate::meter::InitialMeterEvent,
+        crate::tempo::InitialTempoEvent,
+    ),
+    ExperimentalExportError,
+> {
     for (i, special) in association.leading_special.iter().enumerate() {
         let p = special.pair.primary.payload.bytes;
         let n = if i == 0 { 8 } else { 7 };
@@ -143,6 +130,33 @@ pub(crate) fn build(
         },
     )
     .map_err(err)?;
+    Ok((meter, tempo))
+}
+
+pub(crate) fn build(
+    source: &[u8],
+    ordinal: usize,
+) -> Result<(ExperimentalReport, Vec<u8>), ExperimentalExportError> {
+    let proofs = prove_project120(source).map_err(err)?;
+    let proof = proofs
+        .into_iter()
+        .find(|p| p.ordinal == ordinal)
+        .ok_or_else(|| err("unknown object"))?
+        .result
+        .map_err(err)?;
+    let bridge = crate::semantic_layout120::associate_project_120(source).map_err(err)?;
+    let association = bridge
+        .candidates
+        .into_iter()
+        .nth(ordinal)
+        .ok_or_else(|| err("unknown association"))?
+        .association
+        .map_err(err)?;
+    if association.sequence_range != proof.range() || association.source_name.bytes != proof.name()
+    {
+        return Err(err("identity"));
+    }
+    let (meter, tempo) = decode_padded_initial_conductor(source, &association)?;
     let meter_values = (
         meter.numerator.value,
         meter.denominator_exponent.value,

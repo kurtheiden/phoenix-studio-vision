@@ -75,6 +75,10 @@ fn qualified_120_native_preview_consent_scope_mute_and_publication() {
 fn paired_and_zero_state_native_preview_consent_and_publication() {
     publication_safety(crate::experimental120::admission_tests::publication_fixture());
 }
+#[test]
+fn padded_conductor_native_preview_consent_and_publication() {
+    publication_safety(crate::experimental120::admission_tests::padded_publication_fixture());
+}
 fn publication_safety(bytes: Vec<u8>) {
     assert!(crate::observed_layout120::observe_project_120(&bytes).is_ok());
     assert!(crate::sequence_container::parse_project_166(&bytes).is_err());
@@ -89,6 +93,10 @@ fn publication_safety(bytes: Vec<u8>) {
     assert_eq!(preview["ok"], true, "{preview}");
     let report = preview["result"].clone();
     assert_eq!(report["authorization"]["profile"], "layout120");
+    assert!(report["limitations"].as_array().unwrap().iter().any(|s| {
+        let text = s.as_str().unwrap();
+        text.contains("secondary/index applicability") && text.contains("unresolved")
+    }));
     assert_eq!(report["recovered_event_counts"]["notes"], 1);
     assert_eq!(
         report["recovered_event_counts"]["unresolved_source_objects"],

@@ -88,6 +88,249 @@ pub(crate) fn publication_fixture() -> Vec<u8> {
     ])
 }
 
+fn replace_payload(bytes: &[u8], index: usize, payload: &[u8]) -> Vec<u8> {
+    let root = parse_root_record_stream(bytes).unwrap();
+    let mut out = bytes[..8].to_vec();
+    for (i, r) in root.records.iter().enumerate() {
+        record(
+            &mut out,
+            r.record_type.value,
+            if i == index { payload } else { r.payload.bytes },
+        );
+    }
+    out
+}
+
+fn padded(bytes: &[u8], footer: bool) -> Vec<u8> {
+    let root = parse_root_record_stream(bytes).unwrap();
+    let mut tempo = root.records[4].payload.bytes.to_vec();
+    tempo.resize(38, 0);
+    let mut out = replace_payload(bytes, 4, &tempo);
+    for (index, event_bytes, value) in [
+        (3, 8u32, vec![0x58, 3, 2, 8, 8]),
+        (5, 7u32, vec![0x51, 7, 0xa1, 0x20]),
+    ] {
+        let mut secondary = vec![0, 1, 0, 0, 0, (18 + value.len()) as u8];
+        secondary.extend(1u32.to_be_bytes());
+        secondary.extend((event_bytes + 4).to_be_bytes());
+        secondary.extend([0, 255, 255, 255, 47, 0xd4, 0, 0, 0, 0]);
+        secondary.extend(value);
+        if footer {
+            secondary.extend([255; 3]);
+        }
+        out = replace_payload(&out, index, &secondary);
+    }
+    // Independently unsupported sequence terminal keeps this a partial fixture,
+    // even when its complete initial conductor is supported.
+    let root = parse_root_record_stream(&out).unwrap();
+    let terminal = root
+        .records
+        .iter()
+        .position(|r| r.record_type.value == 0)
+        .unwrap();
+    replace_payload(&out, terminal, &[0, 0])
+}
+
+pub(crate) fn padded_publication_fixture() -> Vec<u8> {
+    padded(&publication_fixture(), true)
+}
+
+fn shared_padded_proof(
+    bytes: &[u8],
+) -> Result<
+    (
+        crate::meter::InitialMeterEvent,
+        crate::tempo::InitialTempoEvent,
+    ),
+    crate::experimental_export::ExperimentalExportError,
+> {
+    let bridge = associate_semantic_project_120(bytes).unwrap();
+    crate::experimental_export::decode_padded_initial_conductor(
+        bytes,
+        bridge.candidates[0].association.as_ref().unwrap(),
+    )
+}
+
+#[test]
+fn padded_initial_conductor_reuses_exact_event_bounds_and_discloses_footer() {
+    let original = fixture(&[(
+        b"Playable",
+        Track::Paired(&crate::recovery120::tests::note(), 1),
+    )]);
+    for footer in [false, true] {
+        let bytes = padded(&original, footer);
+        let root = parse_root_record_stream(&bytes).unwrap();
+        let (meter, tempo) = shared_padded_proof(&bytes).unwrap();
+        assert_eq!(
+            meter.event_range,
+            root.records[2].payload.range.start + 14..root.records[2].payload.range.start + 22
+        );
+        assert_eq!(
+            tempo.event_range,
+            root.records[4].payload.range.start + 14..root.records[4].payload.range.start + 21
+        );
+        assert_eq!(tempo.mpqn(), 500000);
+        let legacy = crate::experimental_export::build(&bytes, 0).unwrap().0;
+        let (report, _) = build(&bytes, 0).unwrap();
+        assert_eq!(report.observed_initial_mpqn, legacy.observed_initial_mpqn);
+        assert_eq!(report.observed_source_meter, legacy.observed_source_meter);
+        assert_eq!(report.included_notes, 1);
+        assert_eq!(report.partial120.as_ref().unwrap().exported.tempo, 1);
+        assert!(report
+            .limitations
+            .iter()
+            .any(|s| s.contains("secondary/index applicability") && s.contains("unresolved")));
+        let ranges = [2, 3, 4, 5].map(|i| root.records[i].record_range.clone());
+        assert_eq!(
+            crate::bounded_conductor::decode_compact_conductor(&bytes, ranges).is_ok(),
+            !footer
+        );
+        assert!(crate::recovery120::recover_project120(&bytes).unwrap()[0]
+            .result
+            .is_err());
+        // Every opaque primary byte remains non-performance provenance.
+        for index in [2, 4] {
+            let mut payload = root.records[index].payload.bytes.to_vec();
+            payload[10..14].copy_from_slice(&[7, 9, 11, 13]);
+            let varied = replace_payload(&bytes, index, &payload);
+            assert_eq!(build(&varied, 0).unwrap().1, build(&bytes, 0).unwrap().1);
+        }
+    }
+}
+
+#[test]
+fn padded_conductor_counts_timing_terminals_headers_and_padding_fail_closed() {
+    let bytes = padded(
+        &fixture(&[(
+            b"Playable",
+            Track::Paired(&crate::recovery120::tests::note(), 1),
+        )]),
+        true,
+    );
+    let root = parse_root_record_stream(&bytes).unwrap();
+    for (index, tail) in [(2, 22), (4, 21)] {
+        let payload = root.records[index].payload.bytes;
+        for at in [0, 1, 5, 6, 14].into_iter().chain(tail..38) {
+            let mut changed = payload.to_vec();
+            changed[at] ^= 1;
+            let mutated = replace_payload(&bytes, index, &changed);
+            assert!(
+                shared_padded_proof(&mutated).is_err(),
+                "index={index}, at={at}"
+            );
+            assert!(crate::experimental_export::build(&mutated, 0).is_err());
+            assert!(build(&mutated, 0).is_err(), "index={index}, at={at}");
+        }
+        for len in 0..38 {
+            let mutated = replace_payload(&bytes, index, &payload[..len]);
+            assert!(shared_padded_proof(&mutated).is_err());
+            assert!(crate::experimental_export::build(&mutated, 0).is_err());
+            // Removing ALL Tempo padding produces the previously supported
+            // unpadded initial Tempo; preserve that existing branch explicitly.
+            if index == 4 && len == 28 {
+                assert!(build(&mutated, 0).is_ok());
+            } else {
+                assert!(build(&mutated, 0).is_err(), "index={index}, len={len}");
+            }
+        }
+        for header in [2, 3, 4, 12] {
+            let mut changed = payload.to_vec();
+            changed[1] = header;
+            let mutated = replace_payload(&bytes, index, &changed);
+            assert!(shared_padded_proof(&mutated).is_err());
+            assert!(build(&mutated, 0).is_err());
+        }
+    }
+}
+
+#[test]
+fn padded_conductor_cannot_hide_additional_or_missing_events() {
+    let bytes = padded(
+        &fixture(&[(
+            b"Playable",
+            Track::Paired(&crate::recovery120::tests::note(), 1),
+        )]),
+        true,
+    );
+    let root = parse_root_record_stream(&bytes).unwrap();
+    for (index, tail) in [(2, 22), (4, 21)] {
+        for extra in [
+            vec![0, 255, 81, 3, 7, 0xa1, 32],
+            vec![0, 255, 88, 4, 4, 2, 8, 8],
+            vec![0, 255, 89, 2, 0, 0],
+        ] {
+            let mut changed = root.records[index].payload.bytes.to_vec();
+            changed[tail + 7..tail + 7 + extra.len()].copy_from_slice(&extra);
+            assert!(build(&replace_payload(&bytes, index, &changed), 0).is_err());
+            let mut changed = root.records[index].payload.bytes.to_vec();
+            changed.splice(tail..tail, extra);
+            changed[2..6].copy_from_slice(&2u32.to_be_bytes());
+            assert!(build(&replace_payload(&bytes, index, &changed), 0).is_err());
+        }
+    }
+    let mut absent = root.records[2].payload.bytes[..14].to_vec();
+    absent[2..6].copy_from_slice(&0u32.to_be_bytes());
+    absent.extend([255, 255, 255, 127, 255, 47, 0]);
+    assert!(build(&replace_payload(&bytes, 2, &absent), 0).is_err());
+    let mut multiple = root.records[2].payload.bytes[..22].to_vec();
+    multiple[2..6].copy_from_slice(&2u32.to_be_bytes());
+    multiple.extend([0x8f, 0]);
+    multiple.extend(&root.records[2].payload.bytes[15..22]);
+    multiple.extend([255, 255, 0xf0, 127, 255, 47, 0]);
+    assert_eq!(multiple.len(), 38);
+    assert!(build(&replace_payload(&bytes, 2, &multiple), 0).is_err());
+}
+
+#[test]
+fn legacy_unpadded_and_multi_tempo_contracts_remain_unchanged() {
+    let bytes = fixture(&[(
+        b"Playable",
+        Track::Paired(&crate::recovery120::tests::note(), 1),
+    )]);
+    let root = parse_root_record_stream(&bytes).unwrap();
+    for header in [1, 2] {
+        let mut meter = root.records[2].payload.bytes.to_vec();
+        meter[1] = header;
+        let bytes = replace_payload(&bytes, 2, &meter);
+        assert!(shared_padded_proof(&bytes).is_err());
+        assert_eq!(
+            build(&bytes, 0)
+                .unwrap()
+                .0
+                .partial120
+                .unwrap()
+                .exported
+                .tempo,
+            1
+        );
+        let mut tempo = root.records[4].payload.bytes[..21].to_vec();
+        tempo[2..6].copy_from_slice(&2u32.to_be_bytes());
+        tempo.extend([0x81, 0x70, 255, 81, 3, 7, 0x0a, 0xe2]);
+        tempo.extend([135, 255, 255, 127, 255, 47, 0]);
+        let multi = replace_payload(&bytes, 4, &tempo);
+        let (report, midi) = build(&multi, 0).unwrap();
+        assert_eq!(report.partial120.unwrap().exported.tempo, 2);
+        assert!(midi
+            .windows(8)
+            .any(|b| b == [0x81, 0x70, 255, 81, 3, 7, 0x0a, 0xe2]));
+        let mut nonzero = tempo.clone();
+        nonzero[14] = 1;
+        assert!(build(&replace_payload(&bytes, 4, &nonzero), 0).is_err());
+        let mut simultaneous = tempo.clone();
+        simultaneous.splice(21..23, [0]);
+        assert!(build(&replace_payload(&bytes, 4, &simultaneous), 0).is_err());
+        let mut wrong_count = tempo;
+        wrong_count[5] = 1;
+        assert!(build(&replace_payload(&bytes, 4, &wrong_count), 0).is_err());
+    }
+    // Existing compact Key+Meter is complete-recovery evidence, not this helper.
+    let compact = crate::recovery120::tests::fixture(&crate::recovery120::tests::note(), 1);
+    assert!(shared_padded_proof(&compact).is_err());
+    assert!(crate::recovery120::recover_project120(&compact).unwrap()[0]
+        .result
+        .is_ok());
+}
+
 fn musical_chunks(midi: &[u8]) -> Vec<&[u8]> {
     let mut at = 14;
     let mut chunks = vec![];

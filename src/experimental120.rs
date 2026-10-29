@@ -238,35 +238,53 @@ pub(crate) fn build(
     let tp = &s.leading_special[1].pair.primary;
     let m = mp.payload.bytes;
     let t = tp.payload.bytes;
-    // These checks establish event-only extent; secondary/applicability semantics
-    // remain explicitly unresolved. Never waive the production conductor gate.
-    if m.len() != 38
-        || !matches!(&m[..2], [0, 1] | [0, 2])
-        || m[2..6] != 1u32.to_be_bytes()
-        || m[6..10] != [0; 4]
-        || m[22..29] != [135, 255, 255, 127, 255, 47, 0]
-        || m[29..].iter().any(|b| *b != 0)
+    let (meter, tempo_bounds) = if let Ok((meter, tempo)) =
+        crate::experimental_export::decode_padded_initial_conductor(source, &s)
     {
-        return Err(err("unsupported bounded initial meter"));
-    }
-    if t.len() < 28 || t[..2] != [0, 1] || t[6..10] != [0; 4] || t[t.len() - 3..] != [255, 47, 0] {
-        return Err(err("unsupported Tempo body envelope"));
-    }
-    let meter = crate::meter::decode_bounded_initial_meter(
-        source,
-        crate::meter::InitialMeterBounds {
-            event_range: mp.payload.range.start + 14..mp.payload.range.start + 22,
-        },
-    )
-    .map_err(err)?;
-    let map = crate::tempo::decode_bounded_tempo_map(
-        source,
-        crate::tempo::TempoMapBounds {
-            event_range: tp.payload.range.start + 14..tp.payload.range.end - 7,
-            declared_count: u32::from_be_bytes(t[2..6].try_into().map_err(err)?),
-        },
-    )
-    .map_err(err)?;
+        // Reuse CCA-027 exactly. Only the proved seven-byte event reaches
+        // the map decoder; the terminal and zero padding are not events.
+        (
+            meter,
+            crate::tempo::TempoMapBounds {
+                event_range: tempo.event_range,
+                declared_count: 1,
+            },
+        )
+    } else {
+        // These checks establish event-only extent; secondary/applicability semantics
+        // remain explicitly unresolved. Never waive the production conductor gate.
+        if m.len() != 38
+            || !matches!(&m[..2], [0, 1] | [0, 2])
+            || m[2..6] != 1u32.to_be_bytes()
+            || m[6..10] != [0; 4]
+            || m[22..29] != [135, 255, 255, 127, 255, 47, 0]
+            || m[29..].iter().any(|b| *b != 0)
+        {
+            return Err(err("unsupported bounded initial meter"));
+        }
+        if t.len() < 28
+            || t[..2] != [0, 1]
+            || t[6..10] != [0; 4]
+            || t[t.len() - 3..] != [255, 47, 0]
+        {
+            return Err(err("unsupported Tempo body envelope"));
+        }
+        let meter = crate::meter::decode_bounded_initial_meter(
+            source,
+            crate::meter::InitialMeterBounds {
+                event_range: mp.payload.range.start + 14..mp.payload.range.start + 22,
+            },
+        )
+        .map_err(err)?;
+        (
+            meter,
+            crate::tempo::TempoMapBounds {
+                event_range: tp.payload.range.start + 14..tp.payload.range.end - 7,
+                declared_count: u32::from_be_bytes(t[2..6].try_into().map_err(err)?),
+            },
+        )
+    };
+    let map = crate::tempo::decode_bounded_tempo_map(source, tempo_bounds).map_err(err)?;
     if map.events()[0].absolute_tick != 0
         || map.events().get(1).is_some_and(|e| e.absolute_tick == 0)
     {

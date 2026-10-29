@@ -770,18 +770,10 @@ fn authentic_120_partial_native_bridge_publication() {
             diagnostics_level: DiagnosticsLevel::Full,
         })
         .unwrap();
-    let sequence = inspected
-        .sequences
-        .iter()
-        .find(|s| {
-            app.preview_partial_recovery(
-                &inspected.session_id,
-                &s.sequence_id,
-                RecoveryInclusionOption::IncludeMuted,
-            )
-            .is_ok()
-        })
-        .expect("qualified native partial sequence");
+    // Pin the protected Sweeper output, even when earlier sequences also gain
+    // native partial recovery. Source identity is authenticated above.
+    let sequence = &inspected.sequences[5];
+    assert_eq!(sequence.display_name, "sweeper");
     let mut request = serde_json::json!({"operation":"partial_recovery","contract_version":1,"payload":{
         "session_id":inspected.session_id.as_str(),"sequence_id":sequence.sequence_id.as_str(),"recovery_inclusion":"include_muted",
         "destination_folder":destination,"filename_stem":"Native partial"}});
@@ -835,4 +827,172 @@ fn authentic_120_partial_native_bridge_publication() {
         serde_json::to_value(legacy.report()).unwrap()
     );
     assert_eq!(fs::read(source).unwrap(), before, "source changed");
+}
+
+#[test]
+#[ignore = "requires approved private five-project manifest and fresh destination"]
+fn authentic_padded_conductor_native_partial_gains() {
+    use phoenix::json_transport::dispatch_json;
+    use sha2::{Digest, Sha256};
+    use std::{collections::BTreeMap, fs, path::PathBuf};
+    let rows: Vec<serde_json::Value> = serde_json::from_slice(
+        &fs::read(std::env::var("PHOENIX_PADDED120_SOURCES").expect("approved manifest required"))
+            .unwrap(),
+    )
+    .unwrap();
+    let destination = PathBuf::from(
+        std::env::var("PHOENIX_PADDED120_DESTINATION").expect("fresh private destination required"),
+    );
+    assert!(destination.is_dir());
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+    // Source identities and results are regression assertions, never converter predicates.
+    let cases = [
+        (
+            "project-001",
+            "ae9da4a8d181508aeb96f70bd1f13cae4f3085e1556df7a771ccca8b57cb06d3",
+            0,
+            0,
+        ),
+        (
+            "project-002",
+            "22a9e2589098b0d475f6e288eeebc9303bed644aa8ce09f9971a0060c9160486",
+            20,
+            0,
+        ),
+        (
+            "project-003",
+            "22550cd1fd2984e36c83db208150f57709af4ddefe90ac7c224951fa110dfc7f",
+            0,
+            0,
+        ),
+        (
+            "project-008",
+            "bfd4fa1208e2cd884ec51ccfb1131d5c02723d7c90acafc98bd89597e1a20331",
+            15,
+            8,
+        ),
+        (
+            "project-011",
+            "f3c945c764280bae7bee96c2faab716b61a0743f6949df034d231a52257ab101",
+            1,
+            1,
+        ),
+    ];
+    let expected: BTreeMap<_, _> = [
+        (("project-002", 0), [64, 0, 0]),
+        (("project-002", 1), [71, 0, 0]),
+        (("project-002", 2), [225, 0, 0]),
+        (("project-002", 3), [1577, 1, 0]),
+        (("project-002", 4), [140, 0, 0]),
+        (("project-002", 5), [3921, 5870, 15]),
+        (("project-002", 6), [167, 0, 0]),
+        (("project-002", 7), [239, 0, 0]),
+        (("project-002", 8), [473, 40, 0]),
+        (("project-002", 10), [676, 0, 0]),
+        (("project-002", 14), [614, 0, 0]),
+        (("project-002", 17), [2896, 2810, 0]),
+        (("project-008", 10), [1389, 0, 0]),
+    ]
+    .into_iter()
+    .collect();
+    let mut published_count = 0;
+    let mut totals = [0u64; 3];
+    for (id, hash, sequences, complete) in cases {
+        let row = rows
+            .iter()
+            .find(|r| r["id"] == id)
+            .expect("missing approved source");
+        let path = row["path"].as_str().unwrap();
+        let before = fs::read(path).unwrap();
+        assert_eq!(format!("{:x}", Sha256::digest(&before)), hash);
+        let mut app = AppService::new();
+        let inspected = app
+            .inspect_project(InspectProjectRequest {
+                contract_version: 1,
+                source_path: path.into(),
+                diagnostics_level: DiagnosticsLevel::Full,
+            })
+            .unwrap();
+        assert_eq!(inspected.sequences.len(), sequences);
+        assert_eq!(
+            phoenix::recovery120::recover_project120(&before)
+                .map(|r| r.into_iter().filter(|r| r.result.is_ok()).count())
+                .unwrap_or(0),
+            complete
+        );
+        for (ordinal, sequence) in inspected.sequences.iter().enumerate() {
+            let folder = destination.join(format!("{id}-{ordinal}"));
+            let mut request = serde_json::json!({"operation":"partial_recovery","contract_version":1,"payload":{
+                "session_id":inspected.session_id.as_str(), "sequence_id":sequence.sequence_id.as_str(),
+                "recovery_inclusion":"include_muted", "destination_folder":folder, "filename_stem":"Native partial"}});
+            let call = |app: &mut AppService, r: &serde_json::Value| -> serde_json::Value {
+                serde_json::from_slice(&dispatch_json(app, &serde_json::to_vec(r).unwrap()))
+                    .unwrap()
+            };
+            let preview = call(&mut app, &request);
+            let Some(counts) = expected.get(&(id, ordinal)) else {
+                assert_eq!(
+                    preview["ok"], false,
+                    "unexpected qualification: {id}/{ordinal}"
+                );
+                continue;
+            };
+            assert_eq!(preview["ok"], true, "{id}/{ordinal}: {preview}");
+            assert!(!folder.exists(), "preview must not create files");
+            for (key, value) in ["notes", "controllers", "program_changes"]
+                .iter()
+                .zip(counts)
+            {
+                assert_eq!(preview["result"]["recovered_event_counts"][key], *value);
+            }
+            assert!(preview["result"]["limitations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s
+                    .as_str()
+                    .unwrap()
+                    .contains("secondary/index applicability")));
+            fs::create_dir(&folder).unwrap();
+            request["payload"]["consent_report"] = serde_json::json!({});
+            assert_eq!(
+                call(&mut app, &request)["error"]["code"],
+                "partial_consent_changed"
+            );
+            assert_eq!(fs::read_dir(&folder).unwrap().count(), 0);
+            request["payload"]["consent_report"] = preview["result"].clone();
+            let result = call(&mut app, &request);
+            assert_eq!(result["ok"], true, "{id}/{ordinal}: {result}");
+            let midi = fs::read(result["result"]["output_path"].as_str().unwrap()).unwrap();
+            assert!(
+                std::path::Path::new(result["result"]["limitations_path"].as_str().unwrap())
+                    .is_file()
+            );
+            let mut actual = [0u64; 3];
+            for track in reference_smf::midi_tracks(&midi) {
+                for (_, status, _) in track {
+                    match status & 0xf0 {
+                        0x90 => actual[0] += 1,
+                        0xb0 => actual[1] += 1,
+                        0xc0 => actual[2] += 1,
+                        _ => {}
+                    }
+                }
+            }
+            assert_eq!(&actual, counts);
+            assert_eq!(
+                call(&mut app, &request)["ok"],
+                false,
+                "collision must refuse"
+            );
+            assert_eq!(fs::read_dir(&folder).unwrap().count(), 2);
+            for (total, n) in totals.iter_mut().zip(actual) {
+                *total += n;
+            }
+            published_count += 1;
+        }
+        assert_eq!(fs::read(path).unwrap(), before, "source changed: {id}");
+    }
+    assert_eq!(published_count, 13);
+    assert_eq!(totals, [12452, 8721, 15]);
 }
