@@ -744,3 +744,95 @@ fn normalize_cc(track: &[(u32, u8, Vec<u8>)]) -> Vec<(u32, u8, Vec<u8>)> {
         })
         .collect()
 }
+
+#[test]
+#[ignore = "requires approved private project-002 source and private destination"]
+fn authentic_120_partial_native_bridge_publication() {
+    use phoenix::json_transport::dispatch_json;
+    use sha2::{Digest, Sha256};
+    use std::{fs, path::PathBuf};
+    let source = std::env::var("PHOENIX_COMIC_ORIGINAL_SOURCE").expect("approved source required");
+    let destination = PathBuf::from(
+        std::env::var("PHOENIX_NATIVE120_DESTINATION").expect("private destination required"),
+    );
+    assert!(destination.is_dir());
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+    let before = fs::read(&source).unwrap();
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&before)),
+        "22a9e2589098b0d475f6e288eeebc9303bed644aa8ce09f9971a0060c9160486"
+    );
+    let mut app = AppService::new();
+    let inspected = app
+        .inspect_project(InspectProjectRequest {
+            contract_version: 1,
+            source_path: source.clone(),
+            diagnostics_level: DiagnosticsLevel::Full,
+        })
+        .unwrap();
+    let sequence = inspected
+        .sequences
+        .iter()
+        .find(|s| {
+            app.preview_partial_recovery(
+                &inspected.session_id,
+                &s.sequence_id,
+                RecoveryInclusionOption::IncludeMuted,
+            )
+            .is_ok()
+        })
+        .expect("qualified native partial sequence");
+    let mut request = serde_json::json!({"operation":"partial_recovery","contract_version":1,"payload":{
+        "session_id":inspected.session_id.as_str(),"sequence_id":sequence.sequence_id.as_str(),"recovery_inclusion":"include_muted",
+        "destination_folder":destination,"filename_stem":"Native partial"}});
+    let call = |app: &mut AppService, request: &serde_json::Value| -> serde_json::Value {
+        serde_json::from_slice(&dispatch_json(app, &serde_json::to_vec(request).unwrap())).unwrap()
+    };
+    let preview = call(&mut app, &request);
+    assert_eq!(preview["ok"], true);
+    assert_eq!(preview["result"]["authorization"]["profile"], "layout120");
+    assert_eq!(preview["result"]["recovered_event_counts"]["notes"], 3921);
+    assert_eq!(
+        preview["result"]["recovered_event_counts"]["controllers"],
+        5870
+    );
+    assert_eq!(
+        preview["result"]["recovered_event_counts"]["program_changes"],
+        15
+    );
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+    request["payload"]["consent_report"] = serde_json::json!({});
+    assert_eq!(call(&mut app, &request)["ok"], false);
+    assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+    request["payload"]["consent_report"] = preview["result"].clone();
+    let published = call(&mut app, &request);
+    assert_eq!(published["ok"], true);
+    let midi = fs::read(published["result"]["output_path"].as_str().unwrap()).unwrap();
+    assert!(
+        std::path::Path::new(published["result"]["limitations_path"].as_str().unwrap()).is_file()
+    );
+    let tracks = reference_smf::midi_tracks(&midi);
+    let mut counts = [0u64; 3];
+    for track in tracks {
+        for (_, status, _) in track {
+            match status & 0xf0 {
+                0x90 => counts[0] += 1,
+                0xb0 => counts[1] += 1,
+                0xc0 => counts[2] += 1,
+                _ => {}
+            }
+        }
+    }
+    assert_eq!(counts, [3921, 5870, 15]);
+    assert!(midi
+        .windows(phoenix::experimental_export::LABEL.len())
+        .any(|w| w == phoenix::experimental_export::LABEL.as_bytes()));
+    let legacy = app
+        .preview_experimental_partial120(&inspected.session_id, &sequence.sequence_id)
+        .unwrap();
+    assert_eq!(
+        published["result"]["report"],
+        serde_json::to_value(legacy.report()).unwrap()
+    );
+    assert_eq!(fs::read(source).unwrap(), before, "source changed");
+}

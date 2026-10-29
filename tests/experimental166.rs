@@ -437,6 +437,31 @@ fn generalized_partial_bridge_requires_exact_reviewed_report_and_preserves_sourc
     .unwrap();
     assert_eq!(preview["ok"], true, "{preview}");
     assert_eq!(preview["result"]["included_notes"], 1);
+    assert_eq!(
+        preview["result"]["authorization"]["profile"],
+        "descriptor166"
+    );
+    assert_eq!(preview["result"]["recovered_event_counts"]["notes"], 1);
+    request["payload"]["consent_report"] = preview["result"].clone();
+    request["payload"]["recovery_inclusion"] = serde_json::json!("exclude_muted");
+    let refused: serde_json::Value = serde_json::from_slice(&dispatch_json(
+        &mut service,
+        &serde_json::to_vec(&request).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(refused["error"]["code"], "partial_consent_changed");
+    assert!(!dir.join("EXPERIMENTAL INCOMPLETE - Partial.mid").exists());
+    request["payload"]["recovery_inclusion"] = serde_json::json!("include_muted");
+    let mut wrong_profile = preview["result"].clone();
+    wrong_profile["authorization"]["profile"] = serde_json::json!("layout120");
+    request["payload"]["consent_report"] = wrong_profile;
+    let refused: serde_json::Value = serde_json::from_slice(&dispatch_json(
+        &mut service,
+        &serde_json::to_vec(&request).unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(refused["error"]["code"], "partial_consent_changed");
+    assert!(!dir.join("EXPERIMENTAL INCOMPLETE - Partial.mid").exists());
     assert!(!dir.join("EXPERIMENTAL INCOMPLETE - Partial.mid").exists());
     request["payload"]["consent_report"] = serde_json::json!({});
     let refused: serde_json::Value = serde_json::from_slice(&dispatch_json(

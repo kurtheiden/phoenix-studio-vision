@@ -438,3 +438,33 @@ enum PhoenixStartupPresentation {
         return image
     }
 }
+
+// Presentation of source-qualified counts; Swift does not interpret MIDI or omissions.
+struct PartialRecoveryReview: Decodable {
+    struct Counts: Decodable {
+        let notes: UInt64
+        let controllers: UInt64
+        let programChanges: UInt64
+        let omittedTracks: UInt64?
+        let unresolvedSourceObjects: UInt64?
+        let unresolvedRegions: UInt64?
+        enum CodingKeys: String, CodingKey {
+            case notes, controllers
+            case programChanges = "program_changes"
+            case omittedTracks = "omitted_tracks"
+            case unresolvedSourceObjects = "unresolved_source_objects"
+            case unresolvedRegions = "unresolved_regions"
+        }
+    }
+    let recoveredEventCounts: Counts
+    enum CodingKeys: String, CodingKey { case recoveredEventCounts = "recovered_event_counts" }
+}
+
+struct PartialRecoveryPublication: Decodable {
+    let outputPath: String
+    let limitationsPath: String
+    enum CodingKeys: String, CodingKey {
+        case outputPath = "output_path"
+        case limitationsPath = "limitations_path"
+    }
+}

@@ -213,6 +213,13 @@ fn dispatch_partial_recovery(service: &AppService, value: Value) -> Vec<u8> {
                 "This sequence supports complete recovery. Use Recover instead.",
             );
         }
+        Err(error)
+            if error
+                .0
+                .starts_with("120-layout partial recovery cannot prove saved mute states") =>
+        {
+            return transport_error_json("partial_mute_selection_unsupported", &error.0);
+        }
         Err(_) => {
             return transport_error_json(
                 "partial_unavailable",
@@ -220,7 +227,30 @@ fn dispatch_partial_recovery(service: &AppService, value: Value) -> Vec<u8> {
             )
         }
     };
-    let report = serde_json::to_value(plan.report()).expect("serializable report");
+    let mut report = serde_json::to_value(plan.report()).expect("serializable report");
+    // The full reviewed report remains the consent object; bind its context as
+    // well as its source-derived content, even when two scopes render identical MIDI.
+    report["authorization"] = serde_json::json!({
+        "session_id": session.as_str(), "sequence_id": sequence.as_str(),
+        "profile": if plan.partial120 { "layout120" } else { "descriptor166" },
+        "recovery_inclusion": p.recovery_inclusion, "revision": 1,
+    });
+    let r = plan.report();
+    report["recovered_event_counts"] = if let Some(accounting) = &r.partial120 {
+        serde_json::json!({"notes":accounting.exported.notes,"controllers":accounting.exported.controllers,
+            "program_changes":accounting.exported.patches,"omitted_tracks":null,
+            "unresolved_source_objects":accounting.unresolved_source_objects,"unresolved_regions":null})
+    } else {
+        let scope = r
+            .selected_scope166
+            .as_ref()
+            .expect("qualified Descriptor166 partial scope");
+        serde_json::json!({"notes":r.included_notes,
+            "controllers":scope.mixed_tracks.iter().map(|t|t.controllers).sum::<usize>(),
+            "program_changes":scope.mixed_tracks.iter().map(|t|t.programs).sum::<usize>(),
+            "omitted_tracks":scope.excluded.len(),"unresolved_source_objects":null,
+            "unresolved_regions":scope.mixed_tracks.iter().map(|t|t.unresolved.len()).sum::<usize>()})
+    };
     let Some(consent) = p.consent_report else {
         return serde_json::to_vec(&SuccessEnvelope {
             ok: true,
@@ -684,3 +714,7 @@ mod tests {
         assert!(value["diagnostic_ref"].is_null());
     }
 }
+
+#[cfg(test)]
+#[path = "native_partial_tests.rs"]
+mod native_partial_tests;

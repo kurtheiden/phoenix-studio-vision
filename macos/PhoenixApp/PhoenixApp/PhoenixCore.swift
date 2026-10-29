@@ -238,7 +238,7 @@ actor PhoenixCore: PhoenixCoreServing {
     }
 
     func partialRecovery(sessionID: String, sequenceID: String, inclusion: RecoveryInclusionPreference,
-                         destination: String, consent: String?) throws -> String {
+                         destination: String, consent: String?) async throws -> String {
         var payload: [String: Any] = ["session_id": sessionID, "sequence_id": sequenceID,
             "recovery_inclusion": inclusion.rawValue, "destination_folder": destination,
             "filename_stem": "Recovered partial MIDI"]
@@ -250,7 +250,9 @@ actor PhoenixCore: PhoenixCoreServing {
         let response = try Self.call(handle: ensureHandle(), request: request)
         guard let envelope = try JSONSerialization.jsonObject(with: response) as? [String: Any],
               envelope["ok"] as? Bool == true, let result = envelope["result"] else {
-            throw PhoenixCoreError.transport(String(decoding: response, as: UTF8.self))
+            let object = try? JSONSerialization.jsonObject(with: response) as? [String: Any]
+            let error = object?["error"] as? [String: Any]
+            throw PhoenixCoreError.transport(error?["message"] as? String ?? "Phoenix refused partial recovery.")
         }
         let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
         return String(decoding: data, as: UTF8.self)

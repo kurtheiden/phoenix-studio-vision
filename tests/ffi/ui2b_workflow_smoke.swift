@@ -97,6 +97,24 @@ actor ProbeCore: PhoenixCoreServing {
 }
 @main struct BatchSmoke {
     @MainActor static func main() async throws {
+        // The actor must supply the async protocol witness, not its test fallback.
+        let nativePartialCore = PhoenixCore()
+        do {
+            _ = try await nativePartialCore.partialRecovery(sessionID: "missing", sequenceID: "missing",
+                inclusion: .includeMuted, destination: "", consent: nil)
+            fatalError("Unknown native partial session accepted")
+        } catch {
+            check(String(describing: error).contains("No trustworthy supported partial recovery"), "Concrete partial actor reaches Rust transport")
+        }
+        let nativePartialProtocol: any PhoenixCoreServing = nativePartialCore
+        do {
+            _ = try await nativePartialProtocol.partialRecovery(sessionID: "missing", sequenceID: "missing",
+                inclusion: .includeMuted, destination: "", consent: nil)
+            fatalError("Unknown partial protocol session accepted")
+        } catch {
+            check(String(describing: error).contains("No trustworthy supported partial recovery"), "Partial protocol witness reaches Rust transport")
+        }
+
         // CCA-101: preference lifecycle and captured batch/single contexts.
         do {
             let core = ProbeCore(); await core.enableRecovery(); let pickers = Pickers()

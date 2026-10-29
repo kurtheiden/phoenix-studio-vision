@@ -1107,8 +1107,8 @@ impl AppService {
         Ok((source, ordinal as usize))
     }
 
-    /// Recover only independently qualified whole tracks. A failed track is never scanned
-    /// for a later restart; its complete source range remains in the omission ledger.
+    /// Select an existing partial builder only from positive, unambiguous source structure.
+    /// Every builder retains its own ownership, timing, accounting and omission contracts.
     pub fn preview_partial_recovery(
         &self,
         session_id: &SessionId,
@@ -1120,6 +1120,28 @@ impl AppService {
     > {
         use crate::experimental_export::ExperimentalExportError as Error;
         let (source, ordinal) = self.experimental_source166(session_id, sequence_id)?;
+        let descriptor166 = parse_project_166(&source);
+        match observe_project_120(&source) {
+            Ok(_) if descriptor166.is_err() => {
+                if inclusion == RecoveryInclusionOption::ExcludeMuted {
+                    return Err(Error("120-layout partial recovery cannot prove saved mute states; choose include-muted recovery to retain recoverable material.".into()));
+                }
+                return self.preview_experimental_partial120(session_id, sequence_id);
+            }
+            Ok(_) => {
+                return Err(Error(
+                    "ambiguous partial recovery structural profile".into(),
+                ))
+            }
+            Err(error) if error.is_layout_conflict() => {
+                return Err(Error(
+                    "ambiguous or mixed partial recovery structural profile".into(),
+                ))
+            }
+            Err(_) => {}
+        }
+        descriptor166
+            .map_err(|error| Error(format!("Unsupported partial recovery structure: {error:?}")))?;
         if build_recovery_sequence_manifest(&source, ordinal, 480, RecoveryInclusion::IncludeMuted)
             .is_ok()
         {

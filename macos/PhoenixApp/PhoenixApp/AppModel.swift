@@ -342,15 +342,25 @@ final class AppModel: ObservableObject {
 
     func recoverPartialSequence() {
         guard !isExporting, case .inspected(let inspection) = projectState,
-              let sequence = selectedSequenceID else { return }
+              let sequence = selectedSequenceID, let source = inspectedSourceURL,
+              let selectedIndex = inspection.sequences.firstIndex(where: { $0.sequenceID == sequence }) else { return }
+        let selected = inspection.sequences[selectedIndex]
         let inclusion = recoveryInclusion
         Task {
             do {
                 let report = try await core.partialRecovery(sessionID: inspection.sessionID,
                     sequenceID: sequence, inclusion: inclusion, destination: "", consent: nil)
+                guard case .inspected(let current) = projectState,
+                      current.sessionID == inspection.sessionID, selectedSequenceID == sequence else { return }
+                let review = try JSONDecoder().decode(PartialRecoveryReview.self, from: Data(report.utf8))
+                let counts = review.recoveredEventCounts
+                var omissions: [String] = []
+                if let value = counts.omittedTracks { omissions.append("Omitted tracks: \(value)") }
+                if let value = counts.unresolvedSourceObjects { omissions.append("Unresolved source objects (not a MIDI event count): \(value)") }
+                if let value = counts.unresolvedRegions { omissions.append("Unresolved event regions: \(value)") }
                 let alert = NSAlert()
                 alert.messageText = "Export incomplete MIDI recovery?"
-                alert.informativeText = "Only independently qualified events will be exported. Whole tracks or individual regions may remain unresolved. Original mute inclusion, full conductor map and completeness are not guaranteed. Review the recovery report below."
+                alert.informativeText = "Source: \(source.path)\nSequence \(selectedIndex + 1): \(selected.displayName.isEmpty ? "Unnamed sequence" : selected.displayName)\nRecovered: \(counts.notes) Notes · \(counts.controllers) Controllers · \(counts.programChanges) Program Changes\n\(omissions.joined(separator: "\n"))\n\nThis recovery is incomplete. Original mute inclusion, full conductor map and completeness are not guaranteed. Review all omissions and limitations below before exporting."
                 let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 620, height: 360))
                 let text = NSTextView(frame: scroll.bounds)
                 text.string = report
@@ -366,7 +376,8 @@ final class AppModel: ObservableObject {
                     sequenceID: sequence, inclusion: inclusion, destination: destination.path, consent: report)
                 let done = NSAlert()
                 done.messageText = "Incomplete recovery exported"
-                done.informativeText = receipt
+                let publication = try JSONDecoder().decode(PartialRecoveryPublication.self, from: Data(receipt.utf8))
+                done.informativeText = "MIDI: \(publication.outputPath)\nLimitations report: \(publication.limitationsPath)\n\nThe exported MIDI is explicitly incomplete."
                 done.runModal()
             } catch {
                 let alert = NSAlert()

@@ -223,3 +223,16 @@ recoveryRow["bounded_export_capability"] = ["contract_id":"authenticated_jurrasi
 check((try! decodeRow(recoveryRow)).supportsRecoveryInclusion, "Jurrasic capability enables scoped preference")
 recoveryRow["bounded_export_capability"] = ["contract_id":"authenticated_jurrasic_recovery", "contract_revision":2, "display_label":"Future"]
 check(!(try! decodeRow(recoveryRow)).isExportEligible, "Unknown Jurrasic revision refuses")
+
+let partialCounts: [String: Any] = ["notes":3921,"controllers":5870,"program_changes":15,
+    "omitted_tracks":NSNull(),"unresolved_source_objects":6629,"unresolved_regions":NSNull()]
+let partialReview = try JSONDecoder().decode(PartialRecoveryReview.self,
+    from: JSONSerialization.data(withJSONObject: ["recovered_event_counts":partialCounts,
+        "authorization":["profile":"layout120"],"label":"INCOMPLETE"]))
+check(partialReview.recoveredEventCounts.programChanges == 15, "Partial Program Change count comes from Core")
+check(partialReview.recoveredEventCounts.unresolvedSourceObjects == 6629, "Raw unresolved objects remain distinct from MIDI events")
+check(partialReview.recoveredEventCounts.omittedTracks == nil, "Unknown omission count is not invented")
+let partialReceipt = try JSONDecoder().decode(PartialRecoveryPublication.self,
+    from: Data(#"{"output_path":"/private/tmp/partial.mid","limitations_path":"/private/tmp/partial.limitations.json"}"#.utf8))
+check(partialReceipt.limitationsPath.hasSuffix(".limitations.json"), "Partial receipt displays the companion limitations report")
+print("Profile-aware partial review and receipt model smoke passed")
