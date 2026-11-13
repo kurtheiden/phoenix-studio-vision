@@ -174,11 +174,78 @@ static NEXT_EXPORT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 static NEXT_SERVICE_NAMESPACE: AtomicU64 = AtomicU64::new(1);
 
 fn allocate_service_namespace() -> u64 {
-    NEXT_SERVICE_NAMESPACE
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-            value.checked_add(1)
-        })
-        .expect("AppService namespace space exhausted")
+    allocate_service_namespace_from(&NEXT_SERVICE_NAMESPACE)
+}
+
+fn allocate_service_namespace_from(counter: &AtomicU64) -> u64 {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let next = current
+            .checked_add(1)
+            .ok_or(current)
+            .expect("AppService namespace space exhausted");
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(previous) => return previous,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
+#[cfg(test)]
+mod service_namespace_tests {
+    use super::allocate_service_namespace_from;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    #[test]
+    fn sequential_allocations_return_consecutive_previous_values() {
+        let counter = AtomicU64::new(1);
+        for expected in 1..=4 {
+            assert_eq!(allocate_service_namespace_from(&counter), expected);
+            assert_eq!(counter.load(Ordering::Relaxed), expected + 1);
+        }
+    }
+
+    #[test]
+    fn concurrent_allocations_have_no_duplicates_or_gaps() {
+        let counter = Arc::new(AtomicU64::new(1));
+        let barrier = Arc::new(Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let counter = Arc::clone(&counter);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    (0..128)
+                        .map(|_| allocate_service_namespace_from(&counter))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let mut values: Vec<_> = handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap())
+            .collect();
+        values.sort_unstable();
+        assert_eq!(values, (1..=1024).collect::<Vec<_>>());
+        assert_eq!(counter.load(Ordering::Relaxed), 1025);
+    }
+
+    #[test]
+    fn overflow_preserves_counter_and_existing_panic_message() {
+        let counter = AtomicU64::new(u64::MAX - 1);
+        assert_eq!(allocate_service_namespace_from(&counter), u64::MAX - 1);
+        assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+        let panic = std::panic::catch_unwind(|| allocate_service_namespace_from(&counter))
+            .expect_err("allocation at MAX must panic");
+        let message = panic.downcast_ref::<String>().map(String::as_str);
+        assert_eq!(
+            message,
+            Some("AppService namespace space exhausted: 18446744073709551615")
+        );
+        assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
+    }
 }
 
 struct ExportResponsePreflight {
