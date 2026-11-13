@@ -1,0 +1,30 @@
+name: Synthetic Rust checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-rust:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Check formatting
+        run: cargo +stable fmt --check
+      - name: Strict Clippy (library)
+        run: cargo +stable clippy --locked --lib -- -D warnings
+      # Only independently constructed Meter/Key cases; no external fixtures.
+      # These checks do not constitute authentic-project regression validation.
+      - name: Synthetic Meter/Key decoder tests
+        run: cargo +stable test --locked --lib 'meter_key_map::tests::'
+      - name: Synthetic conductor map tests
+        run: cargo +stable test --locked --lib 'smf::conductor_map::tests::'
