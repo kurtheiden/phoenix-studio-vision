@@ -1263,3 +1263,8 @@ mod tests {
         );
     }
 }
+
+// Isolated serialization milestone; no recovery/export callers.
+#[allow(dead_code)]
+#[path = "conductor_map.rs"]
+pub(crate) mod conductor_map;

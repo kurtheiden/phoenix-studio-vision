@@ -35,6 +35,9 @@ pub(crate) mod inspection;
 pub mod instrument_transposition;
 pub mod json_transport;
 pub mod meter;
+// Decoder-only milestone: deliberately not consumed by recovery/export yet.
+#[allow(dead_code)]
+pub(crate) mod meter_key_map;
 pub mod midi_export;
 pub mod mixed_event;
 mod mixed_partial166;
