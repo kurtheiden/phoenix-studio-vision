@@ -164,3 +164,52 @@ pub(crate) fn verify(bytes: &[u8], ppqn: u16, expected: &[Events]) -> Result<(),
     }
     Ok(())
 }
+
+/// Expectations derived from the source maps and validated order, independently
+/// of serialized bytes. No default or initial-only conductor adaptation.
+#[allow(dead_code)]
+pub(crate) fn conductor_map_expected(
+    name: &[u8],
+    plan: &crate::smf::conductor_map::ConductorMapPlan<'_>,
+) -> Result<Events, crate::smf::conductor_map::MapError> {
+    use crate::{
+        meter_key_map::MeterKeyKind,
+        smf::conductor_map::{MapError, Origin},
+    };
+    let mut out = vec![(0, 3, name.to_vec())];
+    for origin in plan.order() {
+        let value = match *origin {
+            Origin::Tempo(i) => {
+                let e = &plan.tempo().events()[i];
+                (e.absolute_tick, 0x51, e.mpqn().to_be_bytes()[1..].to_vec())
+            }
+            Origin::MeterKey(i) => {
+                let e = &plan.meter_key().events()[i];
+                let (tag, data) = match &e.kind {
+                    MeterKeyKind::Key(k) => (0x59, vec![k.accidentals_byte.value, k.mode.value]),
+                    MeterKeyKind::Meter(m) => {
+                        let (signature, warnings) = crate::midi_export::adapt_meter_values(
+                            m.numerator.value,
+                            m.denominator_exponent.value,
+                            m.third_payload.value,
+                            m.fourth_payload.value,
+                            crate::midi_export::MeterPolicy::KnownHistoricalOnly,
+                        )
+                        .map_err(|_| MapError::UnsupportedMeter)?;
+                        if !warnings.is_empty() {
+                            return Err(MapError::UnsupportedMeter);
+                        }
+                        (
+                            0x58,
+                            crate::smf::serialize_time_signature(signature)[3..].to_vec(),
+                        )
+                    }
+                };
+                (e.absolute_tick, tag, data)
+            }
+        };
+        out.push(value);
+    }
+    out.push((out.last().unwrap().0, 0x2f, vec![]));
+    Ok(out)
+}
