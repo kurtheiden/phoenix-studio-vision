@@ -238,58 +238,101 @@ pub(crate) fn build(
     let tp = &s.leading_special[1].pair.primary;
     let m = mp.payload.bytes;
     let t = tp.payload.bytes;
-    let (meter, tempo_bounds) = if let Ok((meter, tempo)) =
-        crate::experimental_export::decode_padded_initial_conductor(source, &s)
-    {
-        // Reuse CCA-027 exactly. Only the proved seven-byte event reaches
-        // the map decoder; the terminal and zero padding are not events.
-        (
-            meter,
-            crate::tempo::TempoMapBounds {
-                event_range: tempo.event_range,
-                declared_count: 1,
-            },
-        )
-    } else {
-        // These checks establish event-only extent; secondary/applicability semantics
-        // remain explicitly unresolved. Never waive the production conductor gate.
-        if m.len() != 38
-            || !matches!(&m[..2], [0, 1] | [0, 2])
-            || m[2..6] != 1u32.to_be_bytes()
-            || m[6..10] != [0; 4]
-            || m[22..29] != [135, 255, 255, 127, 255, 47, 0]
-            || m[29..].iter().any(|b| *b != 0)
+    let padded = crate::experimental_export::decode_padded_initial_conductor(source, &s);
+    let prior = padded.as_ref().err().map(|failure| failure.0.clone());
+    let (meter, map) = (|| {
+        let (meter, tempo_bounds) = if let Ok((meter, tempo)) = padded {
+            // Reuse CCA-027 exactly. Only the proved seven-byte event reaches
+            // the map decoder; the terminal and zero padding are not events.
+            (
+                meter,
+                crate::tempo::TempoMapBounds {
+                    event_range: tempo.event_range,
+                    declared_count: 1,
+                },
+            )
+        } else {
+            // These checks establish event-only extent; secondary/applicability semantics
+            // remain explicitly unresolved. Never waive the production conductor gate.
+            let fail_meter = |predicate, range| {
+                crate::experimental_export::conductor_failure(
+                    mp,
+                    "Meter primary",
+                    predicate,
+                    range,
+                    "unsupported bounded initial meter",
+                )
+            };
+            if m.len() != 38 {
+                return Err(fail_meter("payload extent", 0..m.len()));
+            }
+            if !matches!(&m[..2], [0, 1] | [0, 2]) {
+                return Err(fail_meter("header", 0..2));
+            }
+            if m[2..6] != 1u32.to_be_bytes() {
+                return Err(fail_meter("declared count", 2..6));
+            }
+            if m[6..10] != [0; 4] {
+                return Err(fail_meter("zero prefix", 6..10));
+            }
+            if m[22..29] != [135, 255, 255, 127, 255, 47, 0] {
+                return Err(fail_meter("terminal marker", 22..29));
+            }
+            if m[29..].iter().any(|b| *b != 0) {
+                return Err(fail_meter("zero padding", 29..m.len()));
+            }
+            let fail_tempo = |predicate, range| {
+                crate::experimental_export::conductor_failure(
+                    tp,
+                    "Tempo primary",
+                    predicate,
+                    range,
+                    "unsupported Tempo body envelope",
+                )
+            };
+            if t.len() < 28 {
+                return Err(fail_tempo("minimum payload extent", 0..t.len()));
+            }
+            if t[..2] != [0, 1] {
+                return Err(fail_tempo("header", 0..2));
+            }
+            if t[6..10] != [0; 4] {
+                return Err(fail_tempo("zero prefix", 6..10));
+            }
+            if t[t.len() - 3..] != [255, 47, 0] {
+                return Err(fail_tempo("terminal marker", t.len() - 3..t.len()));
+            }
+            let meter = crate::meter::decode_bounded_initial_meter(
+                source,
+                crate::meter::InitialMeterBounds {
+                    event_range: mp.payload.range.start + 14..mp.payload.range.start + 22,
+                },
+            )
+            .map_err(err)?;
+            (
+                meter,
+                crate::tempo::TempoMapBounds {
+                    event_range: tp.payload.range.start + 14..tp.payload.range.end - 7,
+                    declared_count: u32::from_be_bytes(t[2..6].try_into().map_err(err)?),
+                },
+            )
+        };
+        let map = crate::tempo::decode_bounded_tempo_map(source, tempo_bounds).map_err(err)?;
+        if map.events()[0].absolute_tick != 0
+            || map.events().get(1).is_some_and(|e| e.absolute_tick == 0)
         {
-            return Err(err("unsupported bounded initial meter"));
+            return Err(err("ambiguous initial conductor ordering"));
         }
-        if t.len() < 28
-            || t[..2] != [0, 1]
-            || t[6..10] != [0; 4]
-            || t[t.len() - 3..] != [255, 47, 0]
-        {
-            return Err(err("unsupported Tempo body envelope"));
+        Ok((meter, map))
+    })()
+    .map_err(|mut failure: ExperimentalExportError| {
+        if let Some(prior) = prior {
+            failure
+                .0
+                .push_str(&format!("; prior padded attempt: {}", prior));
         }
-        let meter = crate::meter::decode_bounded_initial_meter(
-            source,
-            crate::meter::InitialMeterBounds {
-                event_range: mp.payload.range.start + 14..mp.payload.range.start + 22,
-            },
-        )
-        .map_err(err)?;
-        (
-            meter,
-            crate::tempo::TempoMapBounds {
-                event_range: tp.payload.range.start + 14..tp.payload.range.end - 7,
-                declared_count: u32::from_be_bytes(t[2..6].try_into().map_err(err)?),
-            },
-        )
-    };
-    let map = crate::tempo::decode_bounded_tempo_map(source, tempo_bounds).map_err(err)?;
-    if map.events()[0].absolute_tick != 0
-        || map.events().get(1).is_some_and(|e| e.absolute_tick == 0)
-    {
-        return Err(err("ambiguous initial conductor ordering"));
-    }
+        failure
+    })?;
     let meter_values = (
         meter.numerator.value,
         meter.denominator_exponent.value,

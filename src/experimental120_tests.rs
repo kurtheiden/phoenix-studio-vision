@@ -628,3 +628,82 @@ fn conductor_counts_timing_and_playable_note_requirements_remain() {
         .0
         .contains("already verified"));
 }
+
+#[test]
+fn conductor_refusal_diagnostics_locate_existing_checks_and_keep_prior_attempt() {
+    let bytes = padded_publication_fixture();
+    let root = parse_root_record_stream(&bytes).unwrap();
+    let bridge = associate_semantic_project_120(&bytes).unwrap();
+    let association = bridge.candidates[0].association.as_ref().unwrap();
+    let meter = &association.leading_special[0].pair.primary;
+    let index = root
+        .records
+        .iter()
+        .position(|r| r.record_range == meter.record_range)
+        .unwrap();
+    for (offset, predicate, field) in [
+        (1, "header", 0..2),
+        (5, "declared count", 2..6),
+        (29, "zero padding", 29..38),
+    ] {
+        let mut payload = meter.payload.bytes.to_vec();
+        payload[offset] ^= 0x40;
+        let changed = replace_payload(&bytes, index, &payload);
+        let failure = shared_padded_proof(&changed).unwrap_err().0;
+        let expected = format!(
+            "field={:?}",
+            meter.payload.range.start + field.start..meter.payload.range.start + field.end
+        );
+        assert!(
+            failure.contains(&format!("predicate={predicate}")),
+            "{failure}"
+        );
+        assert!(failure.contains("role=Meter primary"));
+        assert!(failure.contains(&expected), "{failure}");
+        assert!(failure.contains("candidate only; applicability unresolved"));
+        let fallback = build(&changed, 0).unwrap_err().0;
+        assert!(
+            fallback.starts_with("\"unsupported bounded initial meter\""),
+            "{fallback}"
+        );
+        assert_eq!(fallback.matches("prior padded attempt:").count(), 1);
+        assert!(fallback.ends_with(&failure), "{fallback}");
+        assert!(fallback.len() < 1024);
+        assert!(!fallback.contains("Proven tracks"));
+    }
+    let short = replace_payload(&bytes, index, &meter.payload.bytes[..37]);
+    let error = shared_padded_proof(&short).unwrap_err().0;
+    assert!(error.contains("predicate=payload extent"));
+    assert!(error.contains(&format!(
+        "field={:?}",
+        meter.payload.range.start..meter.payload.range.start + 37
+    )));
+}
+
+#[test]
+fn fallback_success_does_not_promote_padded_failure_or_change_midi() {
+    let bytes = publication_fixture(); // Existing unpadded Tempo path.
+    assert!(shared_padded_proof(&bytes).is_err());
+    let (legacy, midi) = build(&bytes, 0).unwrap();
+    let padded = padded_publication_fixture();
+    let (report, padded_midi) = build(&padded, 0).unwrap();
+    assert_eq!(midi, padded_midi);
+    // Padding moves later source ranges; compare musical accounting, not the
+    // deliberately different provenance offsets of these two synthetic sources.
+    let legacy = legacy.partial120.unwrap();
+    let current = report.partial120.as_ref().unwrap();
+    assert_eq!(legacy.exported, current.exported);
+    assert_eq!(
+        legacy.unresolved_source_objects,
+        current.unresolved_source_objects
+    );
+    assert!(report
+        .limitations
+        .iter()
+        .any(|s| s.contains("no complete conductor-envelope claim")));
+    assert!(!report
+        .limitations
+        .iter()
+        .any(|s| s.contains("prior padded attempt")));
+    // Both successful builds already invoke strict readback before returning.
+}
