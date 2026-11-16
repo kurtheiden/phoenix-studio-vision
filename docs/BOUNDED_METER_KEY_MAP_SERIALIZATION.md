@@ -52,3 +52,27 @@ Production integration remains separate. It requires owned exact envelopes,
 complete non-event accounting, independently justified tie order and existing
 track, timing, source-integrity, readback, preview, consent and publication gates.
 No additional recoverable sequence is claimed.
+
+## Initial-envelope parity bridge
+
+`bounded_conductor::parity_tests` is compiled only under `cfg(test)`. It first
+revalidates the existing complete compact or padded initial-conductor envelope,
+including secondary copies. Only then does it derive the event-only ranges from
+the accepted Tempo, Meter and optional Key provenance. The established envelope
+counts (one Tempo, one Meter and optionally one Key) bound the existing map
+decoders; terminal and padding bytes never enter either map.
+
+The bridge uses `conductor_map::prepare` and `serialize`, checks a Format-1 wrapper
+with map-derived expectations and strict `readback120::verify`, and requires exact
+conductor-track byte equality with `serialize_conductor_track_with_key`. Shared
+synthetic envelope fixtures cover the compact header/context variant and padded
+Meter-only form. Refusal tests retain contradictory-copy, truncation, nonzero
+initial timing, extra-event and padding guards.
+
+This is a synthetic parity check, not a new production handoff. It does not invoke
+the private reference-qualified admission path, authorize broader maps, change
+recovery/export callers, or establish authentic-project parity. Run it with:
+
+```sh
+cargo +stable test --locked --lib 'bounded_conductor::parity_tests::'
+```

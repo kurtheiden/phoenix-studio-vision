@@ -11,6 +11,11 @@ use crate::{
     tempo::{decode_bounded_initial_tempo, InitialTempoBounds, InitialTempoEvent},
 };
 
+// Synthetic parity only: no production caller or export authority.
+#[cfg(test)]
+#[path = "initial_conductor_parity_tests.rs"]
+mod parity_tests;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConductorRefusal {
     Framing,
