@@ -1,5 +1,38 @@
 # Decision Log
 
+## 2026-11-16: North Star for recovery development
+
+**Status:** Accepted; governing product-development principle
+
+Build an exceptionally versatile, reliable, and accurate recovery tool for
+anyone's legacy Opcode Studio Vision Pro projects, following the fastest
+evidence-supported development path to trustworthy recovery of unfamiliar
+files. General-purpose recovery is the goal; successful conversion of known
+examples is not proof of universal compatibility.
+
+Accurate preservation of musical content takes precedence over producing a
+playable but incomplete or inaccurate MIDI file. Unknown structures must not
+be silently ignored, guessed, or misrepresented as recovered. Any explicitly
+incomplete recovery must retain its documented limitations and consent gates;
+this principle does not expand current recovery eligibility or release claims.
+
+Private authentic projects are evidence for validating broad applicability,
+not a backlog whose completion defines success. Do not optimize priorities for
+the number of the owner's sequences recovered, easy export wins, or impressive
+short-term compatibility statistics. Never publish the owner's authentic
+musical projects without explicit authorization.
+
+Before proposing a new investigation, reconcile existing experiments,
+artifacts, implementation, and findings to prevent redundant work. Prioritize
+research by expected impact on general compatibility, available evidence, and
+time to trustworthy resolution. Progress means defensible format knowledge,
+exact musical fidelity, and independently validated behavior on unfamiliar
+files, including honest refusal when evidence is insufficient.
+
+This principle complements the [product strategy](PRODUCT_STRATEGY_2026_10_15.md)
+and the [roadmap's OS1 validation priority](ROADMAP.md), without removing their
+privacy, evidence, or release gates.
+
 ## 2026-07-10: begin with a minimal Rust CLI
 
 **Status:** Accepted
