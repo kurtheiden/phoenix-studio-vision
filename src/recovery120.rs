@@ -1,9 +1,7 @@
 //! Complete in-memory recovery of the established bounded 120 subprofile.
 //! No AppService capability, filesystem output or format fallback is provided.
 use crate::authority120::{prove_project120, SequenceProof120, TrackRoute120};
-use crate::bounded_conductor::{
-    decode_compact_conductor, decode_reference_qualified_conductor, CompactConductor,
-};
+use crate::bounded_conductor::{decode_reference_qualified_conductor, CompactConductor};
 use crate::bounded_terminal::{
     assess_reference_qualified_terminal, assess_terminal_coverage, TerminalDiagnostic,
 };
@@ -152,7 +150,21 @@ fn recover<'a>(
         crate::compatibility_profiles::qualify_native_reference120(source, ordinal, &proof.range());
     let conductor = match &qualification {
         Some(q) => decode_reference_qualified_conductor(source, ranges.clone(), q),
-        None => decode_compact_conductor(source, ranges.clone()),
+        None => match crate::bounded_conductor::decode_compact_conductor_diagnostic(
+            source,
+            ranges.clone(),
+        ) {
+            Ok(conductor) => Ok(conductor),
+            Err((error, context)) => {
+                let mut failure = refusal("conductor", None, error);
+                if let Some(context) = context {
+                    failure
+                        .detail
+                        .push_str(&format!("; {}", context.describe()));
+                }
+                return Err(failure);
+            }
+        },
     }
     .map_err(|e| refusal("conductor", None, e))?;
     let c = conductor

@@ -87,6 +87,18 @@ fn err(e: impl std::fmt::Debug) -> ExperimentalExportError {
     ExperimentalExportError(format!("{e:?}"))
 }
 
+pub(crate) fn conductor_failure(
+    record: &crate::sequence_container::FramedRecord<'_>,
+    role: &'static str,
+    predicate: &'static str,
+    relative: Range<usize>,
+    message: &'static str,
+) -> ExperimentalExportError {
+    let context =
+        crate::bounded_conductor::ConductorDiagnostic::new(record, role, predicate, relative);
+    ExperimentalExportError(format!("{message:?}; {}", context.describe()))
+}
+
 /// CCA-027 event-only proof for the exact padded initial-primary profile.
 /// The caller supplies an existing same-source semantic association. Secondary
 /// applicability remains unresolved; this never grants complete conductor authority.
@@ -104,14 +116,38 @@ pub(crate) fn decode_padded_initial_conductor(
         let p = special.pair.primary.payload.bytes;
         let n = if i == 0 { 8 } else { 7 };
         let tail = 14 + n;
-        if p.len() != 38
-            || p[..2] != [0, 1]
-            || p[2..6] != 1u32.to_be_bytes()
-            || p[6..10] != [0; 4]
-            || p[tail..tail + 7] != [135, 255, 255, 127, 255, 47, 0]
-            || p[tail + 7..].iter().any(|x| *x != 0)
-        {
-            return Err(err("unsafe initial conductor position/count/envelope"));
+        let record = &special.pair.primary;
+        let role = if i == 0 {
+            "Meter primary"
+        } else {
+            "Tempo primary"
+        };
+        let failure = |predicate, range| {
+            conductor_failure(
+                record,
+                role,
+                predicate,
+                range,
+                "unsafe initial conductor position/count/envelope",
+            )
+        };
+        if p.len() != 38 {
+            return Err(failure("payload extent", 0..p.len()));
+        }
+        if p[..2] != [0, 1] {
+            return Err(failure("header", 0..2));
+        }
+        if p[2..6] != 1u32.to_be_bytes() {
+            return Err(failure("declared count", 2..6));
+        }
+        if p[6..10] != [0; 4] {
+            return Err(failure("zero prefix", 6..10));
+        }
+        if p[tail..tail + 7] != [135, 255, 255, 127, 255, 47, 0] {
+            return Err(failure("terminal marker", tail..tail + 7));
+        }
+        if p[tail + 7..].iter().any(|x| *x != 0) {
+            return Err(failure("zero padding", tail + 7..p.len()));
         }
     }
     let m = &association.leading_special[0].pair.primary.payload.range;

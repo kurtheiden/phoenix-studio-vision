@@ -170,3 +170,43 @@ fn extra_counted_events_or_events_hidden_in_padding_still_refuse() {
         }
     }
 }
+
+#[test]
+fn complete_conductor_diagnostics_preserve_refusal_and_secondary_locations() {
+    let (source, ranges) = variant_fixture(true);
+    for (record, local, predicate, expected) in [
+        (0, 1, "header byte 1", 1..2),
+        (0, 5, "declared count", 2..6),
+        (0, 29, "zero padding", 29..38),
+        (1, 6, "secondary framing/count/length", 0..19),
+        (1, 24, "secondary value copy/zero fields", 20..29),
+    ] {
+        let mut changed = source.clone();
+        changed[ranges[record].start + 5 + local] ^= 0x40;
+        let old = decode_compact_conductor(&changed, ranges.clone()).unwrap_err();
+        let (failure, context) =
+            decode_compact_conductor_diagnostic(&changed, ranges.clone()).unwrap_err();
+        assert_eq!(failure, old);
+        let context = context.unwrap();
+        assert_eq!(context.predicate, predicate);
+        assert_eq!(context.record_range, ranges[record]);
+        assert_eq!(
+            context.field_range,
+            ranges[record].start + 5 + expected.start..ranges[record].start + 5 + expected.end
+        );
+        assert_eq!(
+            context.role,
+            if record == 0 {
+                "Meter primary"
+            } else {
+                "Meter secondary"
+            }
+        );
+        assert!(context.describe().contains("applicability unresolved"));
+    }
+    let mut wrong = ranges.clone();
+    wrong[0].start += 1;
+    let (failure, context) = decode_compact_conductor_diagnostic(&source, wrong).unwrap_err();
+    assert_eq!(failure, ConductorRefusal::RecordBounds);
+    assert!(context.is_none()); // No fabricated field provenance when framing fails.
+}
