@@ -93,11 +93,16 @@ private struct ProjectInspectionView: View {
                         .fixedSize()
                 }
                 if let source = model.inspectedSourceURL {
-                    Text(source.path)
-                        .font(.callout).foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                        .help(source.path)
-                        .accessibilityLabel("Source project path: \(source.path)")
+                    Text("Inspected source file")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ScrollView(.horizontal) {
+                        Text(verbatim: source.path)
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .textSelection(.enabled)
+                            .help(source.path)
+                            .accessibilityLabel("Inspected source file: \(source.path)")
+                    }
                 }
                 Text(inspection.recognizedStudioVision
                      ? "Studio Vision project" : "File not recognized as a supported Studio Vision project")
