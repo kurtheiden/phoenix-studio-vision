@@ -33,6 +33,95 @@ This principle complements the [product strategy](PRODUCT_STRATEGY_2026_10_15.md
 and the [roadmap's OS1 validation priority](ROADMAP.md), without removing their
 privacy, evidence, or release gates.
 
+## Current research-status cross-reference
+
+Status reconciled against public baseline `16b67ba610611969e04554b55139eb37fe2fb15a`.
+This is a navigation index to evidence and implementation, not a replacement
+for original reports or a second technical authority. Historical recommendations
+below and in linked checkpoints must be read with their later implementations.
+**Not accessible here is not the same as not investigated or not proven.**
+
+### CCA-045 / CCA-046 and Meter/Key maps
+
+- **Established / evidence:** [CCA-046](BOUNDED_MULTI_EVENT_TEMPO_RECOVERY_CCA_046.md)
+  records CCA-045's correlation of 152 Tempo and 35 Meter/Key objects with the
+  existing reference. Historical private session pointer, unavailable in Codex
+  Cloud: `rollout-2026-10-10T10-09-26-01a12513-0736-7241-849f-e67b832ea5f3.jsonl`.
+  The owner-reported October 29 nine-Meter-case review already located that
+  session; its detailed private conclusions are not reproduced here.
+- **Implemented:** counted Tempo maps, [Meter/Key decoding](BOUNDED_METER_KEY_MAP_DECODER.md)
+  and [serialization/readback](BOUNDED_METER_KEY_MAP_SERIALIZATION.md), plus
+  test-only initial-envelope parity (PRs #10/#14). The decoder/serializer gaps
+  are resolved; historical proposals to implement those capabilities are obsolete.
+- **Remaining / reopen only with:** independently established complete multi-event
+  envelope ownership, non-event accounting, applicability and cross-map order
+  beyond accepted initial layouts. The public records do not establish this
+  complete proof; whether private reviews already answer it requires a status
+  check first, not a repeat of CCA-045. Bounded decoding does not grant export
+  eligibility. Public summaries/code are available; private reports are not.
+
+### PM-R13 / CCA-004: explicit C0 Program entries
+
+- **Established / evidence:** the [PM-R13 checkpoint](PROLOGUE_POST_PM_R13_RECOVERY_RESEARCH_CHECKPOINT.md)
+  preserves the original-to-normalized Program bridge and the private report
+  locator. The [CCA-004 implementation](BOUNDED_EXPLICIT_PROGRAM_120_IMPLEMENTATION.md)
+  records scoped decoder, authority and MIDI handoff validation.
+- **Implemented:** owned 120-layout single-Instrument explicit Program support;
+  CCA-003's implementation recommendation is historical. CCA-004's former
+  sparse-association blocker is superseded by CCA-005 below.
+- **Remaining / reopen only with:** separate ownership/conductor gates still
+  apply. Broader statuses, continuation or Multi/166 applicability require new
+  independent timing, routing and count evidence for that exact extension.
+  Public conclusions/code are available; authentic fixtures and original private
+  evidence are unavailable in Codex Cloud. Do not repeat PM-R13 to implement C0.
+
+### PM-R11/12/12A / CCA-005: sparse type-07 association
+
+- **Established / evidence:** the [Prologue checkpoint](PROLOGUE_POST_PM_R13_RECOVERY_RESEARCH_CHECKPOINT.md)
+  preserves sparse-order evidence and original private report locators.
+  [CCA-005](BOUNDED_SPARSE_TYPE07_ASSOCIATION_IMPLEMENTATION.md) records the
+  implemented presence-mask/ordered-list association and authentic validation.
+- **Implemented:** bounded Track metadata association in `src/semantic_layout120.rs`;
+  earlier recommendations to implement this association are historical.
+- **Remaining / reopen only with:** cardinality and separate conductor refusals
+  remain. Association does not prove missing-pair ownership. Any expansion needs
+  independent slot-to-body correspondence, not list counts, labels or metadata
+  alone. Public findings/code are available; original reports and authentic
+  comparisons are private and unavailable in Codex Cloud.
+
+### Non-event terminal accounting
+
+- **Established / evidence:** [terminal findings](NON_EVENT_TERMINAL_DIAGNOSTIC.md)
+  preserve the bounded terminal families, complete preceding coverage and
+  verification, including later terminal generalizations and private report
+  locators. Earlier recorded terminal refusals resolved there are historical.
+- **Implemented:** `src/bounded_terminal.rs` retains diagnostics after exhaustive
+  paired-record coverage; this is neither arbitrary suffix acceptance nor export
+  authority.
+- **Remaining / reopen only with:** a different terminal form requires independent
+  non-event separation and complete preceding musical/record coverage. Failure
+  to recognize event bytes is insufficient. Public findings/code are available;
+  original reports, sources and listening artifacts remain private/unavailable
+  in Codex Cloud. Do not repeat the already documented terminal investigations.
+
+### PM-R14/15 / CCA-002 / CCA-023: conductor applicability
+
+- **Established / evidence:** [CCA-003's parked decisions](COMPATIBILITY_ENGINEERING_DECISION_CCA_003.md)
+  preserve the Prologue header and short-secondary applicability gaps and private
+  PM-R14/15 and CCA-002 report locators. [CCA-023](BOUNDED_COMIC_BOOK_REFERENCE_RECOVERY_IMPLEMENTATION.md)
+  establishes a separate exact-source native-reference qualification, not a
+  general resolution of those gaps.
+- **Implemented:** existing initial envelopes and secondary-copy checks in
+  `src/bounded_conductor.rs`, [padded partial reuse](BOUNDED_PADDED_CONDUCTOR_PARTIAL_120.md),
+  initial parity and source-bound refusal diagnostics (PRs #14/#15). The proposed
+  accounting manifest was rejected as redundant; diagnostic loss was addressed.
+- **Remaining / reopen only with:** positive applicability evidence for the exact
+  alternate header or secondary form. A matching event, another envelope's
+  acceptance or CCA-023's different specimen is insufficient. Public summaries
+  and code are available; original private reviews are unavailable in Codex Cloud.
+  Check their status before proposing new work; retain parked refusals absent
+  specifically new evidence. Broader eligibility is not implied by diagnostics.
+
 ## 2026-07-10: begin with a minimal Rust CLI
 
 **Status:** Accepted
