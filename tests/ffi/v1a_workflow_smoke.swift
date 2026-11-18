@@ -52,11 +52,13 @@ func receipt(_ call: ExportCall) throws -> ExportSequenceResult {
 }
 actor ControlledCore: PhoenixCoreServing {
     var opens = 0
+    var inspectedPath: String?
     var failInspection = false
     var calls: [ExportCall] = []
     var pending: CheckedContinuation<ExportSequenceResult, Error>?
     func handshake() -> UInt32 { 1 }
     func inspectProject(path: String) throws -> ProjectInspection {
+        inspectedPath = path
         opens += 1
         if failInspection { throw Failure() }
         return try inspection("session-\(opens)")
@@ -69,6 +71,7 @@ actor ControlledCore: PhoenixCoreServing {
     }
     func isPending() -> Bool { pending != nil }
     func callCount() -> Int { calls.count }
+    func lastInspectedPath() -> String? { inspectedPath }
     func lastCall() -> ExportCall { calls.last! }
     func setInspectionFailure() { failInspection = true }
     func finish(success: Bool) throws {
@@ -101,12 +104,14 @@ struct WorkflowSmoke {
         // A/B: selection changes while the real model awaits a controllable service.
         for success in [true, false] {
             let core = ControlledCore(); let pickers = Pickers()
+            pickers.source = URL(fileURLWithPath: "/archive/" + String(repeating: "Long folder name/", count: 20) + "original/Project")
             let model = AppModel(core: core, chooseProject: { pickers.source }, chooseDestination: { pickers.destination })
             await until { model.state == .ready(contractVersion: 1) }
             model.openProject()
             await until { if case .inspected = model.projectState { return true }; return false }
             check(model.inspectedSourceURL == pickers.source, "Selected source path retained")
             check(model.inspectedSourceURL?.lastPathComponent == "Project", "Source filename")
+            check(await core.lastInspectedPath() == model.inspectedSourceURL?.path, "Complete displayed source is the exact inspection request path")
             model.selectedSequenceID = "session-1-a"
             model.exportSelectedSequence()
             await until { await core.isPending() }
@@ -150,6 +155,9 @@ struct WorkflowSmoke {
             model.openProject()
             check(model.inspectedSourceURL == nil, "Old source cleared during inspection")
             await until { model.inspectedSourceURL == pickers.source }
+            check(model.inspectedSourceURL != oldSource, "Same basename retains distinct full source identity")
+            check(model.inspectedSourceURL?.lastPathComponent == oldSource?.lastPathComponent, "Same-basename regression fixture")
+            check(await core.lastInspectedPath() == model.inspectedSourceURL?.path, "New session uses its own complete inspection path")
             model.selectedSequenceID = "session-2-b"
             try await core.finish(success: success)
             await until { !model.isExporting }
